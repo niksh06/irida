@@ -9,6 +9,7 @@ import { cmdRun } from "./run.js";
 import { cmdChat } from "./chat.js";
 import { cmdSessions } from "./sessions_cmd.js";
 import { cmdResume } from "./resume.js";
+import { cmdSkills } from "./skills_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -21,6 +22,8 @@ Usage:
   csagent sessions            list stored sessions
   csagent resume <id> "<p>"   continue a stored session (Agent.resume)
   csagent config              print non-secret config
+  csagent skills list         list local Markdown skills
+  csagent skills search <q>   search skills by name/description/tags
 
 Note: bare \`cursor-agent\` in PATH is Cursor's official CLI (different tool).
 Use \`csagent\`, \`npm run doctor\`, or \`npm run dev -- doctor\` for this project.
@@ -56,6 +59,8 @@ async function main(argv: string[]): Promise<number> {
     }
     case "sessions":
       return cmdSessions();
+    case "skills":
+      return cmdSkills(rest);
     case "resume": {
       const { yes, rest: r } = extractFlags(rest);
       const [sid, ...p] = r;

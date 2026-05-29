@@ -69,6 +69,24 @@ npm run dev -- run --skill terse "capital of France"
 npm run dev -- chat --skill terse
 ```
 
+### Workspace context (`@file` / `@dir`)
+
+Attach local files or directory listings inline before the SDK call:
+
+```bash
+npm run dev -- run "review @file:src/cli.ts"
+npm run dev -- run "what lives in @dir:src?"
+```
+
+Paths are relative to project cwd; traversal outside the workspace is blocked.
+
+List or search installed skills:
+
+```bash
+npm run dev -- skills list
+npm run dev -- skills search review
+```
+
 ### MCP servers
 
 Configured in `agent.config.json` and passed inline to every SDK call (and on resume):

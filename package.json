@@ -19,6 +19,7 @@
     "sessions": "tsx src/cli.ts sessions",
     "resume": "tsx src/cli.ts resume",
     "config": "tsx src/cli.ts config",
+    "skills": "tsx src/cli.ts skills",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
     "accept": "tsx --test test/acceptance.test.ts",

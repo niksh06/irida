@@ -91,7 +91,54 @@ function toSkill(path: string): Skill {
 }
 
 export function listSkills(dir: string, skillsPath: string): Skill[] {
-  return candidateFiles(dir, skillsPath).map(toSkill);
+  const out: Skill[] = [];
+  for (const p of candidateFiles(dir, skillsPath)) {
+    try {
+      out.push(toSkill(p));
+    } catch {
+      // unreadable or invalid skill file — skip
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Case-insensitive search across name, description, and tags. */
+export function searchSkills(dir: string, skillsPath: string, query: string): Skill[] {
+  const q = query.trim().toLowerCase();
+  const all = listSkills(dir, skillsPath);
+  if (!q) return all;
+  return all.filter(
+    (s) =>
+      s.name.toLowerCase().includes(q) ||
+      s.description.toLowerCase().includes(q) ||
+      s.tags.some((t) => t.toLowerCase().includes(q))
+  );
+}
+
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+}
+
+export function suggestSkillNames(all: Skill[], want: string, max = 3): string[] {
+  const w = want.trim().toLowerCase();
+  if (!w || all.length === 0) return [];
+  return all
+    .map((s) => ({ name: s.name, d: editDistance(s.name.toLowerCase(), w) }))
+    .sort((a, b) => a.d - b.d)
+    .filter((x) => x.d <= Math.max(3, Math.floor(w.length / 2)))
+    .slice(0, max)
+    .map((x) => x.name);
 }
 
 export function loadSkill(dir: string, skillsPath: string, name: string): Skill {
@@ -100,7 +147,9 @@ export function loadSkill(dir: string, skillsPath: string, name: string): Skill 
   const hit = all.find((s) => s.name.toLowerCase() === want);
   if (!hit) {
     const avail = all.map((s) => s.name).join(", ") || "(none)";
-    throw new SkillError(`skill '${name}' not found. Available: ${avail}`);
+    const hints = suggestSkillNames(all, name);
+    const didYouMean = hints.length ? ` Did you mean: ${hints.join(", ")}?` : "";
+    throw new SkillError(`skill '${name}' not found. Available: ${avail}.${didYouMean}`);
   }
   return hit;
 }
