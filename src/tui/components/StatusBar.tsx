@@ -3,8 +3,13 @@ import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import type { SessionMeta } from "../types.js";
 
-export function StatusBar(props: { meta: SessionMeta | null; busy: boolean; error?: string | null }) {
-  const { meta, busy, error } = props;
+export function StatusBar(props: {
+  meta: SessionMeta | null;
+  busy: boolean;
+  error?: string | null;
+  scrollHint?: string | null;
+}) {
+  const { meta, busy, error, scrollHint } = props;
   const shortCwd = meta?.cwd ? shorten(meta.cwd, 28) : "—";
   const shortSid = meta?.sessionId ? meta.sessionId.slice(0, 12) : "—";
   const agent = meta?.agentId ? meta.agentId.slice(0, 10) : "—";
@@ -36,6 +41,12 @@ export function StatusBar(props: { meta: SessionMeta | null; busy: boolean; erro
         <Text dimColor>{shortSid}</Text>
         {"  agent "}
         <Text dimColor>{agent}</Text>
+        {scrollHint ? (
+          <>
+            {"  ·  "}
+            <Text dimColor>{scrollHint}</Text>
+          </>
+        ) : null}
       </Text>
     </Box>
   );

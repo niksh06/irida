@@ -12,7 +12,10 @@ export interface SessionMeta {
   agentId: string | null;
   cwd: string;
   model: string;
+  connectMode?: string;
 }
+
+export type Overlay = null | "help" | "sessions";
 
 export interface ConfirmState {
   reason: string;

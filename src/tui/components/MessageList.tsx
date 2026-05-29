@@ -10,18 +10,30 @@ const roleLabel: Record<ChatMessage["role"], { glyph: string; color: string }> =
   error: { glyph: "!", color: theme.error },
 };
 
-export function MessageList(props: { messages: ChatMessage[]; width: number }) {
-  const { messages } = props;
-  if (messages.length === 0) {
+export function MessageList(props: {
+  messages: ChatMessage[];
+  width: number;
+  hiddenAbove?: number;
+  hiddenBelow?: number;
+  atBottom?: boolean;
+}) {
+  const { messages, hiddenAbove = 0, hiddenBelow = 0, atBottom = true } = props;
+
+  if (messages.length === 0 && hiddenAbove === 0) {
     return (
       <Box flexDirection="column" paddingX={1} paddingY={1}>
-        <Text color={theme.muted}>Type a message. /exit to quit · Ctrl+C to leave.</Text>
+        <Text color={theme.muted}>
+          Type a message. /help for commands · Ctrl+C to leave.
+        </Text>
       </Box>
     );
   }
 
   return (
     <Box flexDirection="column" paddingX={1}>
+      {hiddenAbove > 0 ? (
+        <Text color={theme.muted}>↑ {hiddenAbove} earlier message{hiddenAbove === 1 ? "" : "s"}</Text>
+      ) : null}
       {messages.map((m, i) => {
         const style = roleLabel[m.role];
         const showSep = m.role === "user" && i > 0 && messages[i - 1]?.role !== "system";
@@ -46,6 +58,12 @@ export function MessageList(props: { messages: ChatMessage[]; width: number }) {
           </Box>
         );
       })}
+      {!atBottom && hiddenBelow === 0 ? (
+        <Text color={theme.muted}>↓ newer messages below (Ctrl+D)</Text>
+      ) : null}
+      {hiddenBelow > 0 ? (
+        <Text color={theme.muted}>↓ {hiddenBelow} newer · Ctrl+End to follow</Text>
+      ) : null}
     </Box>
   );
 }

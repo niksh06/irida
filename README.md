@@ -28,7 +28,7 @@ npm run build      # compile to dist/  (or use npm run dev for ts directly)
 npm run doctor                       # environment checks (key, node, cwd, config, mcp)
 npm run dev -- run "summarize repo"  # one-shot local task (Agent.prompt)
 npm run chat                         # interactive multi-turn session (Agent.create)
-npm run tui                          # Hermes-style Ink TUI (same engine as chat)
+npm run tui                          # Hermes-style Ink TUI (slash cmds, sessions, scroll)
 npm run sessions                     # list stored sessions (newest first)
 npm run resume -- <id> "<prompt>"  # continue a stored session (Agent.resume; replay fallback)
 npm run config                       # print non-secret config
@@ -123,7 +123,7 @@ State (sessions + runs) is stored in `<stateDir>/state.sqlite`. No secrets are p
 ## Safety
 
 - One-shot `run` and `resume` are non-interactive: detected destructive prompts are **denied** (exit 77). Override with `--yes-i-understand`.
-- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it).
+- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it). In TUI: `/help`, `/sessions`, `/clear`, scroll with Ctrl+U/D/E.
 - API keys and key-shaped tokens are redacted from logs and persisted state.
 
 > **Limitation (honest):** destructive detection is a best-effort **regex denylist**, not a sandbox or security boundary. It catches common shapes (`rm -rf`, `drop table`, force-push, fork bombs) but is trivially bypassed by obfuscation, and it does **not** police what the Cursor agent does with its own tools. Treat it as a speed-bump.
