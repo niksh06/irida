@@ -26,7 +26,7 @@ import {
 import { Store } from "./store.js";
 import { safetyGate } from "./safety.js";
 import { loadSkills, SkillError } from "./skills.js";
-import { buildPrompt } from "./promptBuilder.js";
+import { composePrompt, ContextRefError } from "./composePrompt.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -100,14 +100,16 @@ export async function cmdResume(
       return EXIT.noperm;
     }
 
-    let finalPrompt = prompt;
-    if (opts.skills && opts.skills.length) {
-      try {
-        finalPrompt = buildPrompt(prompt, loadSkills(dir, cfg.skillsPath, opts.skills));
-      } catch (e) {
-        console.error("resume: " + (e instanceof SkillError ? e.message : String(e)));
+    let finalPrompt: string;
+    try {
+      const skillList = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
+      finalPrompt = composePrompt({ userPrompt: prompt, cwd: cfg.cwd, skills: skillList });
+    } catch (e) {
+      if (e instanceof ContextRefError || e instanceof SkillError) {
+        console.error("resume: " + e.message);
         return EXIT.usage;
       }
+      throw e;
     }
 
     let sdk: ResumeSdk;

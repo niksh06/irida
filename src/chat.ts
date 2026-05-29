@@ -18,7 +18,7 @@ import {
 import { Store } from "./store.js";
 import { safetyGate, type Confirmer } from "./safety.js";
 import { loadSkills, SkillError, type Skill } from "./skills.js";
-import { buildPrompt } from "./promptBuilder.js";
+import { composePrompt, ContextRefError } from "./composePrompt.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -150,8 +150,20 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
 
       const runId = newId("run");
       const startedAt = nowIso();
-      // Inject selected skills as context on the first turn only.
-      const sendMsg = firstTurn && skills.length ? buildPrompt(msg, skills) : msg;
+      let sendMsg: string;
+      try {
+        sendMsg = composePrompt({
+          userPrompt: msg,
+          cwd: cfg.cwd,
+          skills: firstTurn ? skills : [],
+        });
+      } catch (e) {
+        if (e instanceof ContextRefError) {
+          console.error("chat: " + e.message);
+          continue;
+        }
+        throw e;
+      }
       firstTurn = false;
       const run: RunLike = await agent.send(sendMsg);
       let turnText = "";

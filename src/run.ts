@@ -8,7 +8,7 @@ import { runOneShot, StartupError, type SdkLike } from "./host.js";
 import { Store } from "./store.js";
 import { safetyGate } from "./safety.js";
 import { loadSkills, SkillError } from "./skills.js";
-import { buildPrompt } from "./promptBuilder.js";
+import { composePrompt, ContextRefError } from "./composePrompt.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -59,14 +59,16 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     return EXIT.noperm;
   }
 
-  let finalPrompt = prompt;
-  if (opts.skills && opts.skills.length) {
-    try {
-      finalPrompt = buildPrompt(prompt, loadSkills(dir, cfg.skillsPath, opts.skills));
-    } catch (e) {
-      console.error("run: " + (e instanceof SkillError ? e.message : String(e)));
+  let finalPrompt: string;
+  try {
+    const skills = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
+    finalPrompt = composePrompt({ userPrompt: prompt, cwd: cfg.cwd, skills });
+  } catch (e) {
+    if (e instanceof ContextRefError || e instanceof SkillError) {
+      console.error("run: " + e.message);
       return EXIT.usage;
     }
+    throw e;
   }
 
   const store = new Store(dir, cfg.stateDir);
