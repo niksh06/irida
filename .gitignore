@@ -1,0 +1,17 @@
+# secrets
+.env
+.env.*
+
+# agent runtime state (sessions, run logs, sqlite)
+.agent/
+
+# deps + build
+node_modules/
+dist/
+
+# logs
+*.log
+logs/
+
+# os
+.DS_Store
