@@ -27,9 +27,11 @@ cursor-agent doctor                  # environment checks (key, node, cwd, confi
 cursor-agent run "<prompt>"          # one-shot local task (Agent.prompt)
 cursor-agent chat                    # interactive multi-turn session (Agent.create)
 cursor-agent sessions                # list stored sessions (newest first)
-cursor-agent resume <id> "<prompt>"  # continue a stored session (Agent.resume)
+cursor-agent resume <id> "<prompt>"  # continue a stored session (Agent.resume; replay fallback)
 cursor-agent config                  # print non-secret config
 ```
+
+> **Resume caveat:** Cursor SDK local agents are not reliably durable after the process exits. `resume` tries live `Agent.resume` first; if that fails (common for local), it falls back to **transcript replay** — a fresh agent seeded with the stored (redacted, truncated) transcript. Context is approximate. Cloud (`bc-`) agents resume natively.
 
 During development run without building:
 
@@ -92,25 +94,33 @@ State (sessions + runs) is stored in `<stateDir>/state.sqlite`. No secrets are p
 
 ## Safety
 
-- One-shot `run` and `resume` are non-interactive: detected destructive prompts are **denied** (exit 3).
-- `chat` is interactive: destructive prompts require `[y/N]` confirmation.
+- One-shot `run` and `resume` are non-interactive: detected destructive prompts are **denied** (exit 77). Override with `--yes-i-understand`.
+- `chat` is interactive: destructive prompts require `[y/N]` confirmation (`--yes-i-understand` skips it).
 - API keys and key-shaped tokens are redacted from logs and persisted state.
+
+> **Limitation (honest):** destructive detection is a best-effort **regex denylist**, not a sandbox or security boundary. It catches common shapes (`rm -rf`, `drop table`, force-push, fork bombs) but is trivially bypassed by obfuscation, and it does **not** police what the Cursor agent does with its own tools. Treat it as a speed-bump.
 
 ## Exit codes
 
-| Code | Meaning |
-|------|---------|
-| `0` | run finished |
-| `1` | startup/config/auth failure (nothing executed) |
-| `2` | executed run failed (`status === "error"`) |
-| `3` | unsafe prompt denied / declined |
+BSD `sysexits(3)` convention (so callers/CI can branch on failure class):
+
+| Code | Name | Meaning |
+|------|------|---------|
+| `0` | EX_OK | run finished |
+| `64` | EX_USAGE | bad CLI usage: missing/extra args, unknown command/session/skill |
+| `70` | EX_SOFTWARE | executed run failed (`status === "error"`) or SDK startup/resume failure |
+| `77` | EX_NOPERM | unsafe destructive prompt denied/declined |
+| `78` | EX_CONFIG | missing `CURSOR_API_KEY`, invalid config, cloud not allowed |
+
+`doctor` is a diagnostic: `0` = all checks pass, `1` = some failed.
 
 ## Develop
 
 ```bash
 npm run typecheck
-npm test            # full unit suite
-npm run accept      # MVP acceptance harness (mocked SDK, CI-safe)
+npm test            # full unit suite (mocked SDK, CI-safe)
+npm run accept      # MVP acceptance harness
+npm run smoke       # live smoke vs real Cursor SDK (needs CURSOR_API_KEY)
 ```
 
 The acceptance harness (`test/acceptance.test.ts`) proves doctor / run / chat / sessions / resume / safety / redaction end-to-end without live Cursor calls.
