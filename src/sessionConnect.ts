@@ -1,0 +1,69 @@
+/**
+ * Connect an SDK agent to a stored session (live resume or transcript replay).
+ * Shared by `csagent resume` and TUI session picker.
+ */
+import {
+  createSession,
+  resumeSession,
+  StartupError,
+  type AgentLike,
+  type SdkCreateLike,
+  type SdkResumeLike,
+} from "./host.js";
+import type { AgentConfig } from "./config.js";
+import type { SessionRecord, Store } from "./store.js";
+import { redact } from "./redact.js";
+
+export type ConnectMode = "resumed" | "replayed";
+
+export interface ConnectResult {
+  agent: AgentLike;
+  mode: ConnectMode;
+  /** Prepended to the first user turn when mode is replayed. */
+  replayPrefix: string;
+  liveResumeError: string;
+}
+
+export function replayPreamble(store: Store, sessionId: string, max = 10): string {
+  const runs = store.listRuns(sessionId).slice(-max);
+  if (runs.length === 0) return "";
+  const turns = runs
+    .map((r) => `User: ${r.prompt_preview}\nAssistant: ${r.result_preview || "(no stored output)"}`)
+    .join("\n\n");
+  return `Earlier in this session (transcript, may be truncated):\n\n${turns}\n\n`;
+}
+
+export async function connectAgentForSession(
+  sdk: SdkResumeLike & SdkCreateLike,
+  store: Store,
+  session: SessionRecord,
+  cfg: AgentConfig,
+  apiKey: string
+): Promise<ConnectResult> {
+  const cwd = session.cwd || cfg.cwd;
+  let liveResumeError = "";
+
+  if (session.sdk_agent_id) {
+    try {
+      const agent = await resumeSession(sdk, session.sdk_agent_id, apiKey, cfg.mcpServers);
+      return { agent, mode: "resumed", replayPrefix: "", liveResumeError: "" };
+    } catch (e) {
+      liveResumeError = e instanceof StartupError ? e.message : String(e);
+    }
+  } else {
+    liveResumeError = "no stored SDK agent id";
+  }
+
+  const agent = await createSession(sdk, {
+    apiKey,
+    model: cfg.model,
+    cwd,
+    mcpServers: cfg.mcpServers,
+  });
+  return {
+    agent,
+    mode: "replayed",
+    replayPrefix: replayPreamble(store, session.id),
+    liveResumeError: redact(liveResumeError),
+  };
+}

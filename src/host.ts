@@ -73,6 +73,27 @@ export function eventText(ev: unknown): string {
   return "";
 }
 
+/** Best-effort label for tool / activity stream events. */
+export function eventActivity(ev: unknown): string | null {
+  const e = ev as {
+    type?: string;
+    name?: string;
+    tool?: string;
+    toolName?: string;
+    message?: { toolName?: string; name?: string };
+  };
+  const t = e?.type ?? "";
+  if (t === "tool_call" || t === "tool" || t === "tool_result" || t === "tool_use") {
+    const name = e.name ?? e.tool ?? e.toolName ?? e.message?.toolName ?? e.message?.name;
+    return name ? `${t}: ${name}` : t;
+  }
+  if (t.includes("tool")) {
+    const name = e.name ?? e.tool ?? e.toolName;
+    return name ? `${t}: ${name}` : t;
+  }
+  return null;
+}
+
 export async function createSession(
   sdk: SdkCreateLike,
   args: { apiKey: string; model: string; cwd: string; mcpServers?: McpServers }

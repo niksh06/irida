@@ -7,28 +7,36 @@ import {
   createSession,
   disposeAgent,
   eventText,
+  eventActivity,
   StartupError,
   type AgentLike,
   type RunLike,
   type SdkCreateLike,
+  type SdkResumeLike,
 } from "./host.js";
 import { Store } from "./store.js";
 import { safetyGate, type Confirmer } from "./safety.js";
 import { loadSkills, SkillError, type Skill } from "./skills.js";
 import { composePrompt, ContextRefError } from "./composePrompt.js";
+import { connectAgentForSession, type ConnectMode } from "./sessionConnect.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
+type ChatSdk = SdkCreateLike & SdkResumeLike;
+
 export interface ChatSessionOptions {
-  sdk?: SdkCreateLike;
+  sdk?: ChatSdk;
   dir?: string;
   skills?: string[];
   yesIUnderstand?: boolean;
   confirm?: Confirmer;
   interactive?: boolean;
+  /** Continue an existing stored session (live resume or transcript replay). */
+  resumeSessionId?: string;
   onLog?: (line: string) => void;
   onAssistantDelta?: (delta: string) => void;
+  onActivity?: (label: string) => void;
 }
 
 export type TurnOutcome =
@@ -40,14 +48,15 @@ export interface ChatSession {
   sessionId: string;
   cfg: AgentConfig;
   agentId: string | null;
+  connectMode: ConnectMode | "fresh";
   sendTurn(userMessage: string): Promise<TurnOutcome>;
   close(): Promise<void>;
 }
 
-async function resolveSdk(injected?: SdkCreateLike): Promise<SdkCreateLike> {
+async function resolveSdk(injected?: ChatSdk): Promise<ChatSdk> {
   if (injected) return injected;
   const mod = await import("@cursor/sdk");
-  return mod.Agent as unknown as SdkCreateLike;
+  return mod.Agent as unknown as ChatSdk;
 }
 
 export type OpenChatResult =
@@ -92,9 +101,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   }
 
   const store = new Store(dir, cfg.stateDir);
-  const sessionId = newId("sess");
 
-  let sdk: SdkCreateLike;
+  let sdk: ChatSdk;
   try {
     sdk = await resolveSdk(opts.sdk);
   } catch (e) {
@@ -103,38 +111,68 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   }
 
   let agent: AgentLike;
-  try {
-    agent = await createSession(sdk, {
-      apiKey,
-      model: cfg.model,
-      cwd: cfg.cwd,
-      mcpServers: cfg.mcpServers,
-    });
-  } catch (e) {
-    store.close();
-    const msg = e instanceof StartupError ? e.message : String(e);
-    return { ok: false, code: EXIT.software, message: "startup failed: " + redact(msg) };
+  let sessionId: string;
+  let connectMode: ConnectMode | "fresh" = "fresh";
+  let replayPrefix = "";
+  let sessionCwd = cfg.cwd;
+
+  if (opts.resumeSessionId) {
+    const existing = store.getSession(opts.resumeSessionId);
+    if (!existing) {
+      store.close();
+      return { ok: false, code: EXIT.usage, message: `session '${opts.resumeSessionId}' not found` };
+    }
+    sessionId = existing.id;
+    sessionCwd = existing.cwd || cfg.cwd;
+    try {
+      const connected = await connectAgentForSession(sdk, store, existing, cfg, apiKey);
+      agent = connected.agent;
+      connectMode = connected.mode;
+      replayPrefix = connected.replayPrefix;
+      if (connected.mode === "replayed") {
+        log(`[chat] resume replay session=${sessionId} (${connected.liveResumeError || "no agent id"})`);
+      } else {
+        log(`[chat] resume live session=${sessionId}`);
+      }
+    } catch (e) {
+      store.close();
+      const msg = e instanceof StartupError ? e.message : String(e);
+      return { ok: false, code: EXIT.software, message: "resume failed: " + redact(msg) };
+    }
+  } else {
+    sessionId = newId("sess");
+    try {
+      agent = await createSession(sdk, {
+        apiKey,
+        model: cfg.model,
+        cwd: cfg.cwd,
+        mcpServers: cfg.mcpServers,
+      });
+    } catch (e) {
+      store.close();
+      const msg = e instanceof StartupError ? e.message : String(e);
+      return { ok: false, code: EXIT.software, message: "startup failed: " + redact(msg) };
+    }
+    log(`[chat] agentId=${agent.agentId ?? "-"} session=${sessionId} cwd=${cfg.cwd}`);
   }
 
-  let firstTurn = true;
-  log(`[chat] agentId=${agent.agentId ?? "-"} session=${sessionId} cwd=${cfg.cwd}`);
   store.upsertSession({
     id: sessionId,
     title: "chat session",
-    cwd: cfg.cwd,
+    cwd: sessionCwd,
     runtime: cfg.runtime,
     sdk_agent_id: agent.agentId ?? null,
-    last_status: "created",
+    last_status: connectMode === "fresh" ? "created" : "resumed",
   });
 
-  const confirm: Confirmer =
-    opts.confirm ??
-    (async () => false);
+  let firstTurn = true;
+  const confirm: Confirmer = opts.confirm ?? (async () => false);
 
   const session: ChatSession = {
     sessionId,
     cfg,
     agentId: agent.agentId ?? null,
+    connectMode,
     async sendTurn(userMessage: string): Promise<TurnOutcome> {
       const msg = userMessage.trim();
       if (!msg) return { kind: "error", message: "empty message", fatal: false };
@@ -153,12 +191,15 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       try {
         sendMsg = composePrompt({
           userPrompt: msg,
-          cwd: cfg.cwd,
+          cwd: sessionCwd,
           skills: firstTurn ? skills : [],
         });
       } catch (e) {
         if (e instanceof ContextRefError) return { kind: "error", message: e.message, fatal: false };
         throw e;
+      }
+      if (firstTurn && replayPrefix) {
+        sendMsg = replayPrefix + "Continue. New request:\n\n" + sendMsg;
       }
       firstTurn = false;
 
@@ -169,6 +210,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         let turnText = "";
         if (typeof run.stream === "function") {
           for await (const ev of run.stream()) {
+            const activity = eventActivity(ev);
+            if (activity) opts.onActivity?.(activity);
             const t = eventText(ev);
             if (t) {
               turnText += t;
@@ -190,14 +233,14 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           error_kind: lastStatus === "error" ? "run_error" : null,
           started_at: startedAt,
           finished_at: nowIso(),
-          cwd: cfg.cwd,
+          cwd: sessionCwd,
           runtime: cfg.runtime,
           model: cfg.model,
         });
         store.upsertSession({
           id: sessionId,
           title: "chat session",
-          cwd: cfg.cwd,
+          cwd: sessionCwd,
           runtime: cfg.runtime,
           sdk_agent_id: agent.agentId ?? null,
           last_status: lastStatus,
@@ -207,8 +250,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         }
         return { kind: "ok", status: lastStatus, assistantText: turnText };
       } catch (e) {
-        const msg = e instanceof StartupError ? redact(e.message) : redact((e as Error).message);
-        return { kind: "error", message: msg, fatal: true };
+        const errMsg = e instanceof StartupError ? redact(e.message) : redact((e as Error).message);
+        return { kind: "error", message: errMsg, fatal: true };
       }
     },
     async close(): Promise<void> {

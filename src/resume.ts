@@ -12,17 +12,7 @@
  * --yes-i-understand. Skills may be injected.
  */
 import { loadConfig, ConfigError, type AgentConfig } from "./config.js";
-import {
-  resumeSession,
-  createSession,
-  disposeAgent,
-  eventText,
-  StartupError,
-  type AgentLike,
-  type RunLike,
-  type SdkResumeLike,
-  type SdkCreateLike,
-} from "./host.js";
+import { disposeAgent, eventText, StartupError, type RunLike, type SdkResumeLike, type SdkCreateLike } from "./host.js";
 import { Store } from "./store.js";
 import { safetyGate } from "./safety.js";
 import { loadSkills, SkillError } from "./skills.js";
@@ -30,6 +20,7 @@ import { composePrompt, ContextRefError } from "./composePrompt.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
+import { connectAgentForSession } from "./sessionConnect.js";
 
 type ResumeSdk = SdkResumeLike & SdkCreateLike;
 
@@ -45,15 +36,6 @@ async function resolveSdk(injected?: ResumeSdk): Promise<ResumeSdk> {
   if (injected) return injected;
   const mod = await import("@cursor/sdk");
   return mod.Agent as unknown as ResumeSdk;
-}
-
-function replayPreamble(store: Store, sessionId: string, max = 10): string {
-  const runs = store.listRuns(sessionId).slice(-max);
-  if (runs.length === 0) return "";
-  const turns = runs
-    .map((r) => `User: ${r.prompt_preview}\nAssistant: ${r.result_preview || "(no stored output)"}`)
-    .join("\n\n");
-  return `Earlier in this session (transcript, may be truncated):\n\n${turns}\n\n`;
 }
 
 export async function cmdResume(
@@ -120,29 +102,13 @@ export async function cmdResume(
       return EXIT.software;
     }
 
-    // Path 1: live resume. Path 2: transcript replay into a fresh agent.
-    let agent: AgentLike;
-    let mode: "resumed" | "replayed";
-    let liveErr = "";
-    if (session.sdk_agent_id) {
-      try {
-        agent = await resumeSession(sdk, session.sdk_agent_id, apiKey, cfg.mcpServers);
-        mode = "resumed";
-      } catch (e) {
-        liveErr = e instanceof StartupError ? e.message : String(e);
-        agent = await tryReplay();
-        mode = "replayed";
-      }
-    } else {
-      liveErr = "no stored SDK agent id";
-      agent = await tryReplay();
-      mode = "replayed";
-    }
-
-    async function tryReplay(): Promise<AgentLike> {
-      console.error(`resume: live resume unavailable (${redact(liveErr)}); replaying transcript into a fresh agent`);
-      finalPrompt = replayPreamble(store, sessionId) + "Continue. New request:\n\n" + finalPrompt;
-      return createSession(sdk, { apiKey, model: cfg.model, cwd: session!.cwd || cfg.cwd, mcpServers: cfg.mcpServers });
+    const connected = await connectAgentForSession(sdk, store, session, cfg, apiKey);
+    const { agent, mode, replayPrefix, liveResumeError } = connected;
+    if (mode === "replayed") {
+      console.error(
+        `resume: live resume unavailable (${liveResumeError}); replaying transcript into a fresh agent`
+      );
+      finalPrompt = replayPrefix + "Continue. New request:\n\n" + finalPrompt;
     }
 
     const runId = newId("run");
