@@ -22,18 +22,27 @@ npm run build      # compile to dist/  (or use npm run dev for ts directly)
 
 ## Commands
 
+> **Name collision:** if you have Cursor CLI installed, `cursor-agent` in your PATH is **Cursor's official agent**, not this repo. It has no `doctor` subcommand — `doctor` is treated as a prompt and the process hangs. Use **`csagent`**, **`npm run doctor`**, or **`npm run dev -- …`** below.
+
 ```bash
-cursor-agent doctor                  # environment checks (key, node, cwd, config, mcp)
-cursor-agent run "<prompt>"          # one-shot local task (Agent.prompt)
-cursor-agent chat                    # interactive multi-turn session (Agent.create)
-cursor-agent sessions                # list stored sessions (newest first)
-cursor-agent resume <id> "<prompt>"  # continue a stored session (Agent.resume; replay fallback)
-cursor-agent config                  # print non-secret config
+npm run doctor                       # environment checks (key, node, cwd, config, mcp)
+npm run dev -- run "summarize repo"  # one-shot local task (Agent.prompt)
+npm run chat                         # interactive multi-turn session (Agent.create)
+npm run sessions                     # list stored sessions (newest first)
+npm run resume -- <id> "<prompt>"  # continue a stored session (Agent.resume; replay fallback)
+npm run config                       # print non-secret config
+```
+
+After `npm link` (optional global install of **this** CLI):
+
+```bash
+csagent doctor
+csagent run "summarize this repository"
 ```
 
 > **Resume caveat:** Cursor SDK local agents are not reliably durable after the process exits. `resume` tries live `Agent.resume` first; if that fails (common for local), it falls back to **transcript replay** — a fresh agent seeded with the stored (redacted, truncated) transcript. Context is approximate. Cloud (`bc-`) agents resume natively.
 
-During development run without building:
+During development, any subcommand works via `npm run dev --`:
 
 ```bash
 npm run dev -- doctor
@@ -56,8 +65,8 @@ Always answer with exactly one lowercase word.
 Select per run (repeatable); content is injected as **context**, never executed:
 
 ```bash
-cursor-agent run --skill terse "capital of France"
-cursor-agent chat --skill terse
+npm run dev -- run --skill terse "capital of France"
+npm run dev -- chat --skill terse
 ```
 
 ### MCP servers
@@ -73,7 +82,7 @@ Configured in `agent.config.json` and passed inline to every SDK call (and on re
 }
 ```
 
-`cursor-agent doctor` validates each entry (stdio needs `command`, http needs `url`).
+`npm run doctor` (or `csagent doctor`) validates each entry (stdio needs `command`, http needs `url`).
 
 ## Configuration
 

@@ -12,15 +12,18 @@ import { cmdResume } from "./resume.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
-const HELP = `cursor-agent — local Cursor SDK agent
+const HELP = `csagent — local Cursor SDK agent
 
 Usage:
-  cursor-agent doctor              environment checks
-  cursor-agent run "<prompt>"      one-shot local task (Agent.prompt, local cwd)
-  cursor-agent chat                interactive multi-turn session (Agent.create)
-  cursor-agent sessions            list stored sessions
-  cursor-agent resume <id> "<p>"   continue a stored session (Agent.resume)
-  cursor-agent config              print non-secret config
+  csagent doctor              environment checks
+  csagent run "<prompt>"      one-shot local task (Agent.prompt, local cwd)
+  csagent chat                interactive multi-turn session (Agent.create)
+  csagent sessions            list stored sessions
+  csagent resume <id> "<p>"   continue a stored session (Agent.resume)
+  csagent config              print non-secret config
+
+Note: bare \`cursor-agent\` in PATH is Cursor's official CLI (different tool).
+Use \`csagent\`, \`npm run doctor\`, or \`npm run dev -- doctor\` for this project.
 
 Secrets: set CURSOR_API_KEY in the environment (never in config).
 `;

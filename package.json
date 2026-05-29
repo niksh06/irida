@@ -4,7 +4,7 @@
   "description": "Local-first personal agent powered by Cursor SDK (Hermes-inspired).",
   "type": "module",
   "bin": {
-    "cursor-agent": "dist/cli.js"
+    "csagent": "dist/cli.js"
   },
   "files": [
     "dist"
@@ -13,6 +13,12 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
+    "doctor": "tsx src/cli.ts doctor",
+    "run:agent": "tsx src/cli.ts run",
+    "chat": "tsx src/cli.ts chat",
+    "sessions": "tsx src/cli.ts sessions",
+    "resume": "tsx src/cli.ts resume",
+    "config": "tsx src/cli.ts config",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
     "accept": "tsx --test test/acceptance.test.ts",

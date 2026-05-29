@@ -11,7 +11,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("CLI --help exits 0 and names itself", async () => {
   const { stdout } = await exec("npx", ["tsx", "src/cli.ts", "--help"], { cwd: root });
-  assert.match(stdout, /cursor-agent/);
+  assert.match(stdout, /csagent/);
 });
 
 test("CLI unknown command exits non-zero", async () => {
