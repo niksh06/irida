@@ -10,6 +10,7 @@ import { cmdChat } from "./chat.js";
 import { cmdSessions } from "./sessions_cmd.js";
 import { cmdResume } from "./resume.js";
 import { cmdSkills } from "./skills_cmd.js";
+import { cmdTui } from "./tui_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -19,6 +20,7 @@ Usage:
   csagent doctor              environment checks
   csagent run "<prompt>"      one-shot local task (Agent.prompt, local cwd)
   csagent chat                interactive multi-turn session (Agent.create)
+  csagent tui                 Hermes-style Ink TUI for chat
   csagent sessions            list stored sessions
   csagent resume <id> "<p>"   continue a stored session (Agent.resume)
   csagent config              print non-secret config
@@ -56,6 +58,10 @@ async function main(argv: string[]): Promise<number> {
     case "chat": {
       const { skills, yes } = extractFlags(rest);
       return cmdChat({ skills, yesIUnderstand: yes });
+    }
+    case "tui": {
+      const { skills, yes } = extractFlags(rest);
+      return cmdTui({ skills, yesIUnderstand: yes });
     }
     case "sessions":
       return cmdSessions();

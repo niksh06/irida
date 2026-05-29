@@ -2,7 +2,7 @@
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
-> MVP is **local-only**. No cloud runs, messaging gateway, cron, dashboard, or TUI yet (see `docs/prd/cursor-sdk-agent.md`).
+> MVP is **local-only**. No cloud runs, messaging gateway, or cron yet. **Ink TUI** is available via `csagent tui` (see `docs/issues/020-tui.md`).
 
 ## Requirements
 
@@ -28,6 +28,7 @@ npm run build      # compile to dist/  (or use npm run dev for ts directly)
 npm run doctor                       # environment checks (key, node, cwd, config, mcp)
 npm run dev -- run "summarize repo"  # one-shot local task (Agent.prompt)
 npm run chat                         # interactive multi-turn session (Agent.create)
+npm run tui                          # Hermes-style Ink TUI (same engine as chat)
 npm run sessions                     # list stored sessions (newest first)
 npm run resume -- <id> "<prompt>"  # continue a stored session (Agent.resume; replay fallback)
 npm run config                       # print non-secret config
@@ -122,7 +123,7 @@ State (sessions + runs) is stored in `<stateDir>/state.sqlite`. No secrets are p
 ## Safety
 
 - One-shot `run` and `resume` are non-interactive: detected destructive prompts are **denied** (exit 77). Override with `--yes-i-understand`.
-- `chat` is interactive: destructive prompts require `[y/N]` confirmation (`--yes-i-understand` skips it).
+- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it).
 - API keys and key-shaped tokens are redacted from logs and persisted state.
 
 > **Limitation (honest):** destructive detection is a best-effort **regex denylist**, not a sandbox or security boundary. It catches common shapes (`rm -rf`, `drop table`, force-push, fork bombs) but is trivially bypassed by obfuscation, and it does **not** police what the Cursor agent does with its own tools. Treat it as a speed-bump.
@@ -161,7 +162,8 @@ See `docs/adr/0001-cursor-sdk-agent-runtime.md`. Briefly: thin command layer ove
 | `src/cli.ts` | command dispatch |
 | `src/config.ts` | project config + validation |
 | `src/host.ts` | SDK lifecycle (prompt / create+send / resume), failure model |
-| `src/run.ts` `src/chat.ts` `src/resume.ts` | command runtimes |
+| `src/run.ts` `src/chat.ts` `src/chatEngine.ts` `src/resume.ts` | command runtimes |
+| `src/tui/` | Ink TUI (`csagent tui`) |
 | `src/store.ts` | SQLite sessions/runs |
 | `src/skills.ts` `src/promptBuilder.ts` | skill loading + prompt composition |
 | `src/safety.ts` `src/redact.ts` | destructive-prompt gate + secret redaction |
