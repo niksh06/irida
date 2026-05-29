@@ -2,7 +2,7 @@
  * `cursor-agent doctor` — validate the minimum needed for a local SDK run
  * (issue 004). Never prints secret values.
  */
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { CONFIG_FILE, ConfigError, loadConfig, validateMcpServers } from "./config.js";
 
@@ -51,19 +51,19 @@ export function cmdDoctor(dir: string = process.cwd()): number {
     });
   }
 
+  // Non-mutating: check write access without creating anything.
   let writeOk = true;
-  let writeDetail = "writable";
+  let writeDetail = "cwd writable (.agent created on first run)";
+  const stateDir = resolve(dir, ".agent");
+  const probeTarget = existsSync(stateDir) ? stateDir : dir;
   try {
-    const stateDir = resolve(dir, ".agent");
-    mkdirSync(stateDir, { recursive: true });
-    const probe = resolve(stateDir, ".probe");
-    writeFileSync(probe, "x");
-    rmSync(probe);
-  } catch (e) {
+    accessSync(probeTarget, constants.W_OK);
+    if (existsSync(stateDir)) writeDetail = ".agent writable";
+  } catch {
     writeOk = false;
-    writeDetail = (e as Error).message;
+    writeDetail = `${probeTarget} not writable`;
   }
-  checks.push({ name: ".agent writable", ok: writeOk, detail: writeDetail });
+  checks.push({ name: "state writable", ok: writeOk, detail: writeDetail });
 
   let allOk = true;
   for (const c of checks) {
