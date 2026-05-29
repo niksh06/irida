@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { cmdResume } from "../src/resume.js";
 import { Store } from "../src/store.js";
-import type { SdkResumeLike, RunLike } from "../src/host.js";
+import type { SdkResumeLike, SdkCreateLike, RunLike, AgentLike } from "../src/host.js";
+
+type ResumeSdk = SdkResumeLike & SdkCreateLike;
 
 function tmp(): string {
   return mkdtempSync(resolve(tmpdir(), "resume-"));
@@ -27,81 +29,123 @@ function seedSession(dir: string, agentId: string | null): string {
   const s = new Store(dir, ".agent");
   const id = "sess_seed";
   s.upsertSession({ id, title: "seed", cwd: dir, runtime: "local", sdk_agent_id: agentId, last_status: "finished" });
+  s.recordRun({
+    id: "run_prior",
+    session_id: id,
+    sdk_agent_id: agentId,
+    sdk_run_id: "rp",
+    prompt_preview: "earlier question",
+    result_preview: "earlier answer",
+    status: "finished",
+    error_kind: null,
+    started_at: new Date().toISOString(),
+    finished_at: new Date().toISOString(),
+    cwd: dir,
+    runtime: "local",
+    model: "composer-2.5",
+  });
   s.close();
   return id;
 }
 
-function okSdk(disposed: { v: boolean }): SdkResumeLike {
+function agent(disposed: { v: boolean }, id = "agent_new"): AgentLike {
   return {
-    resume: async () => ({
-      agentId: "a1",
-      send: async (msg: string): Promise<RunLike> => ({
-        stream: async function* () {
-          yield { type: "assistant", message: { content: [{ type: "text", text: `r:${msg}` }] } };
-        },
-        wait: async () => ({ status: "finished", id: "run_x" }),
-      }),
-      [Symbol.asyncDispose]: async () => {
-        disposed.v = true;
+    agentId: id,
+    send: async (m: string): Promise<RunLike> => ({
+      stream: async function* () {
+        yield { type: "assistant", message: { content: [{ type: "text", text: `r:${m}` }] } };
       },
+      wait: async () => ({ status: "finished", id: "run_x" }),
     }),
+    [Symbol.asyncDispose]: async () => {
+      disposed.v = true;
+    },
   };
 }
 
-test("successful resume -> exit 0, persists new run, disposes", async () => {
+/** resume ok + create ok */
+function liveSdk(d: { v: boolean }): ResumeSdk {
+  return { resume: async () => agent(d, "agent_resumed"), create: async () => agent(d, "agent_created") };
+}
+/** resume throws, create ok -> replay path */
+function replaySdk(d: { v: boolean }): ResumeSdk {
+  return {
+    resume: async () => {
+      throw new Error("Agent not found");
+    },
+    create: async () => agent(d, "agent_created"),
+  };
+}
+/** both fail */
+function deadSdk(): ResumeSdk {
+  return {
+    resume: async () => {
+      throw new Error("resume down");
+    },
+    create: async () => {
+      throw new Error("create down");
+    },
+  };
+}
+
+test("live resume success -> 0, new run persisted", async () => {
   await withKey("k", async () => {
     const dir = tmp();
     const id = seedSession(dir, "agent-123");
-    const disposed = { v: false };
+    const d = { v: false };
     let out = "";
-    const code = await cmdResume(id, "continue please", { sdk: okSdk(disposed), dir, write: (s) => (out += s) });
+    const code = await cmdResume(id, "continue", { sdk: liveSdk(d), dir, write: (s) => (out += s) });
     assert.equal(code, 0);
-    assert.match(out, /r:continue please/);
-    assert.equal(disposed.v, true);
+    assert.match(out, /r:continue/);
+    assert.equal(d.v, true);
     const store = new Store(dir, ".agent");
-    assert.equal(store.listRuns(id).length, 1);
+    assert.equal(store.listRuns(id).length, 2); // prior + new
     store.close();
   });
 });
 
-test("missing session -> exit 1", async () => {
+test("missing session -> EX_USAGE 64", async () => {
   await withKey("k", async () => {
-    const code = await cmdResume("sess_nope", "hi", { sdk: okSdk({ v: false }), dir: tmp() });
-    assert.equal(code, 1);
+    assert.equal(await cmdResume("nope", "hi", { sdk: liveSdk({ v: false }), dir: tmp() }), 64);
   });
 });
 
-test("session without sdk_agent_id -> exit 1", async () => {
+test("no stored agent id -> transcript replay -> 0", async () => {
   await withKey("k", async () => {
     const dir = tmp();
     const id = seedSession(dir, null);
-    const code = await cmdResume(id, "hi", { sdk: okSdk({ v: false }), dir });
-    assert.equal(code, 1);
+    const code = await cmdResume(id, "go on", { sdk: liveSdk({ v: false }), dir, write: () => {} });
+    assert.equal(code, 0);
   });
 });
 
-test("SDK resume failure -> exit 1, state intact", async () => {
+test("live resume fails -> transcript replay -> 0", async () => {
   await withKey("k", async () => {
     const dir = tmp();
     const id = seedSession(dir, "agent-123");
-    const sdk: SdkResumeLike = {
-      resume: async () => {
-        throw new Error("resume unavailable");
-      },
-    };
-    const code = await cmdResume(id, "hi", { sdk, dir });
-    assert.equal(code, 1);
+    const code = await cmdResume(id, "go on", { sdk: replaySdk({ v: false }), dir, write: () => {} });
+    assert.equal(code, 0);
     const store = new Store(dir, ".agent");
-    assert.ok(store.getSession(id)); // session still present
+    assert.equal(store.getSession(id)!.sdk_agent_id, "agent_created"); // updated to replay agent
     store.close();
   });
 });
 
-test("destructive prompt -> exit 3", async () => {
+test("resume and replay both fail -> EX_SOFTWARE 70", async () => {
   await withKey("k", async () => {
     const dir = tmp();
     const id = seedSession(dir, "agent-123");
-    const code = await cmdResume(id, "rm -rf /", { sdk: okSdk({ v: false }), dir });
-    assert.equal(code, 3);
+    assert.equal(await cmdResume(id, "go", { sdk: deadSdk(), dir, write: () => {} }), 70);
+    const store = new Store(dir, ".agent");
+    assert.ok(store.getSession(id)); // state intact
+    store.close();
+  });
+});
+
+test("destructive prompt -> EX_NOPERM 77", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const id = seedSession(dir, "agent-123");
+    assert.equal(await cmdResume(id, "rm -rf /", { sdk: liveSdk({ v: false }), dir, write: () => {} }), 77);
   });
 });

@@ -76,12 +76,12 @@ test("error run status -> exit 2 and disposed", async () => {
       interactive: false,
       write: () => {},
     });
-    assert.equal(code, 2);
+    assert.equal(code, 70);
     assert.equal(disposed.v, true);
   });
 });
 
-test("destructive prompt non-interactive -> exit 3", async () => {
+test("destructive prompt non-interactive -> EX_NOPERM 77", async () => {
   await withKey("k", async () => {
     const disposed = { v: false };
     const code = await cmdChat({
@@ -91,13 +91,28 @@ test("destructive prompt non-interactive -> exit 3", async () => {
       interactive: false,
       write: () => {},
     });
-    assert.equal(code, 3);
+    assert.equal(code, 77);
   });
 });
 
-test("missing API key -> exit 1", async () => {
+test("destructive + --yes-i-understand non-interactive -> proceeds", async () => {
+  await withKey("k", async () => {
+    const disposed = { v: false };
+    const code = await cmdChat({
+      sdk: makeSdk({ disposed }),
+      dir: tmp(),
+      lines: ["rm -rf build", "exit"],
+      interactive: false,
+      yesIUnderstand: true,
+      write: () => {},
+    });
+    assert.equal(code, 0);
+  });
+});
+
+test("missing API key -> EX_CONFIG 78", async () => {
   await withKey(undefined, async () => {
     const code = await cmdChat({ dir: tmp(), lines: ["hi", "exit"], interactive: false, write: () => {} });
-    assert.equal(code, 1);
+    assert.equal(code, 78);
   });
 });

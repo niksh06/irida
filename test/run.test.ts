@@ -43,7 +43,7 @@ test("finished run -> exit 0 and persisted to sqlite", async () => {
   });
 });
 
-test("destructive prompt -> exit 3 (unsafe, non-interactive)", async () => {
+test("destructive prompt -> EX_NOPERM 77 (non-interactive)", async () => {
   await withKey("k", async () => {
     let called = false;
     const sdk = fakeSdk(async () => {
@@ -51,32 +51,40 @@ test("destructive prompt -> exit 3 (unsafe, non-interactive)", async () => {
       return { status: "finished" };
     });
     const code = await cmdRun("rm -rf /tmp/x", { sdk, dir: tmp() });
-    assert.equal(code, 3);
+    assert.equal(code, 77);
     assert.equal(called, false);
   });
 });
 
-test("executed error status -> exit 2", async () => {
+test("destructive prompt + --yes-i-understand -> proceeds", async () => {
+  await withKey("k", async () => {
+    const sdk = fakeSdk(async () => ({ status: "finished", result: "done", id: "r" }));
+    const code = await cmdRun("rm -rf /tmp/x", { sdk, dir: tmp(), yesIUnderstand: true });
+    assert.equal(code, 0);
+  });
+});
+
+test("executed error status -> EX_SOFTWARE 70", async () => {
   await withKey("k", async () => {
     const dir = tmp();
     const sdk = fakeSdk(async () => ({ status: "error", id: "r2" }));
     const code = await cmdRun("hi", { sdk, dir });
-    assert.equal(code, 2);
+    assert.equal(code, 70);
   });
 });
 
-test("thrown SDK error -> startup exit 1", async () => {
+test("thrown SDK error -> EX_SOFTWARE 70", async () => {
   await withKey("k", async () => {
     const dir = tmp();
     const sdk = fakeSdk(async () => {
       throw new Error("401 auth");
     });
     const code = await cmdRun("hi", { sdk, dir });
-    assert.equal(code, 1);
+    assert.equal(code, 70);
   });
 });
 
-test("missing API key -> exit 1 before SDK", async () => {
+test("missing API key -> EX_CONFIG 78 before SDK", async () => {
   await withKey(undefined, async () => {
     const dir = tmp();
     let called = false;
@@ -85,14 +93,14 @@ test("missing API key -> exit 1 before SDK", async () => {
       return { status: "finished" };
     });
     const code = await cmdRun("hi", { sdk, dir });
-    assert.equal(code, 1);
+    assert.equal(code, 78);
     assert.equal(called, false);
   });
 });
 
-test("empty prompt -> exit 1", async () => {
+test("empty prompt -> EX_USAGE 64", async () => {
   await withKey("k", async () => {
     const code = await cmdRun("   ", { sdk: fakeSdk(async () => ({ status: "finished" })), dir: tmp() });
-    assert.equal(code, 1);
+    assert.equal(code, 64);
   });
 });

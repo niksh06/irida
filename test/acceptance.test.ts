@@ -95,9 +95,21 @@ test("acceptance: run -> chat -> sessions -> resume flow", async () => {
     assert.equal(await cmdResume(chatSession!.id, "follow up", { sdk, dir, write: () => {} }), 0);
     assert.equal(store.listRuns(chatSession!.id).length, beforeRuns + 1);
 
-    // 5) resume failure: seed a session whose SDK agent id will be rejected
+    // 5) live resume rejected -> transcript replay succeeds (exit 0)
     store.upsertSession({ id: "sess_fail", title: "f", cwd: dir, runtime: "local", sdk_agent_id: "agent_fail" });
-    assert.equal(await cmdResume("sess_fail", "go", { sdk, dir, write: () => {} }), 1);
+    assert.equal(await cmdResume("sess_fail", "go", { sdk, dir, write: () => {} }), 0);
+
+    // 6) resume AND replay both fail -> EX_SOFTWARE 70, state intact
+    const dead = {
+      prompt: async () => ({ status: "finished" }),
+      create: async () => {
+        throw new Error("create down");
+      },
+      resume: async () => {
+        throw new Error("resume down");
+      },
+    };
+    assert.equal(await cmdResume("sess_fail", "go", { sdk: dead, dir, write: () => {} }), 70);
     assert.ok(store.getSession("sess_fail"), "failed resume leaves session intact");
     store.close();
   });
@@ -109,8 +121,10 @@ test("acceptance: destructive prompts gated", async () => {
     const disposed = { v: false };
     const sdk = mockSdk(disposed);
 
-    // one-shot destructive -> denied (exit 3)
-    assert.equal(await cmdRun("please rm -rf /tmp/foo", { sdk, dir }), 3);
+    // one-shot destructive -> denied (EX_NOPERM 77)
+    assert.equal(await cmdRun("please rm -rf /tmp/foo", { sdk, dir }), 77);
+    // ...unless explicitly overridden
+    assert.equal(await cmdRun("rm -rf /tmp/foo", { sdk, dir, yesIUnderstand: true }), 0);
 
     // chat destructive confirmed -> proceeds
     assert.equal(

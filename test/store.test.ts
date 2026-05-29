@@ -30,6 +30,7 @@ test("recordRun stores metadata and redacts secrets in preview", () => {
     sdk_agent_id: "a1",
     sdk_run_id: "r1",
     prompt_preview: "use CURSOR_API_KEY=key_abcdef123456 now",
+    result_preview: "ok done",
     status: "finished",
     error_kind: null,
     started_at: new Date().toISOString(),
