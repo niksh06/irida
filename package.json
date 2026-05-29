@@ -14,7 +14,8 @@
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "accept": "tsx --test test/acceptance.test.ts"
   },
   "engines": {
     "node": ">=20"
