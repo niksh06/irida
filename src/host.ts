@@ -15,10 +15,17 @@ export interface SdkPromptResult {
   agentId?: string;
 }
 
+export type McpServers = Record<string, unknown>;
+
 export interface SdkLike {
   prompt(
     message: string,
-    opts: { apiKey: string; model: { id: string }; local: { cwd: string } }
+    opts: {
+      apiKey: string;
+      model: { id: string };
+      local: { cwd: string };
+      mcpServers?: McpServers;
+    }
   ): Promise<SdkPromptResult>;
 }
 
@@ -49,6 +56,7 @@ export interface SdkCreateLike {
     apiKey: string;
     model: { id: string };
     local: { cwd: string };
+    mcpServers?: McpServers;
   }): Promise<AgentLike> | AgentLike;
 }
 
@@ -67,13 +75,14 @@ export function eventText(ev: unknown): string {
 
 export async function createSession(
   sdk: SdkCreateLike,
-  args: { apiKey: string; model: string; cwd: string }
+  args: { apiKey: string; model: string; cwd: string; mcpServers?: McpServers }
 ): Promise<AgentLike> {
   try {
     return await sdk.create({
       apiKey: args.apiKey,
       model: { id: args.model },
       local: { cwd: args.cwd },
+      ...(args.mcpServers && Object.keys(args.mcpServers).length ? { mcpServers: args.mcpServers } : {}),
     });
   } catch (e) {
     throw new StartupError((e as Error)?.message ?? String(e));
@@ -81,16 +90,23 @@ export async function createSession(
 }
 
 export interface SdkResumeLike {
-  resume(agentId: string, opts: { apiKey: string }): Promise<AgentLike> | AgentLike;
+  resume(
+    agentId: string,
+    opts: { apiKey: string; mcpServers?: McpServers }
+  ): Promise<AgentLike> | AgentLike;
 }
 
 export async function resumeSession(
   sdk: SdkResumeLike,
   agentId: string,
-  apiKey: string
+  apiKey: string,
+  mcpServers?: McpServers
 ): Promise<AgentLike> {
   try {
-    return await sdk.resume(agentId, { apiKey });
+    return await sdk.resume(agentId, {
+      apiKey,
+      ...(mcpServers && Object.keys(mcpServers).length ? { mcpServers } : {}),
+    });
   } catch (e) {
     throw new StartupError((e as Error)?.message ?? String(e));
   }
@@ -110,7 +126,7 @@ export async function disposeAgent(agent: AgentLike): Promise<void> {
 
 export async function runOneShot(
   sdk: SdkLike,
-  args: { prompt: string; apiKey: string; model: string; cwd: string }
+  args: { prompt: string; apiKey: string; model: string; cwd: string; mcpServers?: McpServers }
 ): Promise<OneShotResult> {
   let res: SdkPromptResult;
   try {
@@ -118,6 +134,7 @@ export async function runOneShot(
       apiKey: args.apiKey,
       model: { id: args.model },
       local: { cwd: args.cwd },
+      ...(args.mcpServers && Object.keys(args.mcpServers).length ? { mcpServers: args.mcpServers } : {}),
     });
   } catch (e) {
     throw new StartupError((e as Error)?.message ?? String(e));

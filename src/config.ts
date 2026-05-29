@@ -24,6 +24,24 @@ export interface AgentConfig {
 
 export class ConfigError extends Error {}
 
+/** Validate MCP server entries (stdio: command, http: url). Returns error strings. */
+export function validateMcpServers(mcp: Record<string, unknown>): string[] {
+  const errs: string[] = [];
+  for (const [name, v] of Object.entries(mcp)) {
+    if (typeof v !== "object" || v === null || Array.isArray(v)) {
+      errs.push(`mcp '${name}': must be an object`);
+      continue;
+    }
+    const o = v as Record<string, unknown>;
+    const hasCmd = typeof o.command === "string" && o.command.trim().length > 0;
+    const hasUrl = typeof o.url === "string" && o.url.trim().length > 0;
+    if (!hasCmd && !hasUrl) {
+      errs.push(`mcp '${name}': needs 'command' (stdio) or 'url' (http)`);
+    }
+  }
+  return errs;
+}
+
 const SECRET_KEYS = ["CURSOR_API_KEY", "cursorApiKey", "apiKey", "api_key"];
 
 export function defaults(dir: string): AgentConfig {

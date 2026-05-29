@@ -4,7 +4,7 @@
  */
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { CONFIG_FILE, ConfigError, loadConfig } from "./config.js";
+import { CONFIG_FILE, ConfigError, loadConfig, validateMcpServers } from "./config.js";
 
 interface Check {
   name: string;
@@ -29,16 +29,27 @@ export function cmdDoctor(dir: string = process.cwd()): number {
 
   let cfgOk = true;
   let cfgDetail = `defaults (no ${CONFIG_FILE})`;
+  let mcpErrs: string[] = [];
+  let mcpCount = 0;
   try {
     const c = loadConfig(dir);
     if (existsSync(resolve(dir, CONFIG_FILE))) {
       cfgDetail = `loaded (model=${c.model}, runtime=${c.runtime})`;
     }
+    mcpCount = Object.keys(c.mcpServers).length;
+    mcpErrs = validateMcpServers(c.mcpServers);
   } catch (e) {
     cfgOk = false;
     cfgDetail = e instanceof ConfigError ? e.message : String(e);
   }
   checks.push({ name: "config", ok: cfgOk, detail: cfgDetail });
+  if (cfgOk) {
+    checks.push({
+      name: "mcp config",
+      ok: mcpErrs.length === 0,
+      detail: mcpErrs.length ? mcpErrs.join("; ") : `${mcpCount} server(s), parse ok`,
+    });
+  }
 
   let writeOk = true;
   let writeDetail = "writable";
