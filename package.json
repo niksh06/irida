@@ -15,7 +15,8 @@
     "start": "node dist/cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "accept": "tsx --test test/acceptance.test.ts"
+    "accept": "tsx --test test/acceptance.test.ts",
+    "smoke": "bash scripts/smoke.sh"
   },
   "engines": {
     "node": ">=20"
