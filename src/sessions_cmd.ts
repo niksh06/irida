@@ -13,7 +13,7 @@ export function cmdSessions(dir: string = process.cwd()): ExitCode {
     cfg = loadConfig(dir);
   } catch (e) {
     console.error("sessions: " + (e instanceof ConfigError ? e.message : String(e)));
-    return EXIT.startup;
+    return EXIT.config;
   }
 
   const store = new Store(dir, cfg.stateDir);

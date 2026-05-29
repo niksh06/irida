@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * cursor-agent — local-first personal agent on the Cursor SDK.
- * P0 commands (issue 001): doctor, run, chat, sessions, resume, config.
- * Implemented in this slice: doctor, run, config. The rest stub out cleanly.
+ * P0 commands (issue 001): doctor, run, chat, sessions, resume, config — all
+ * implemented. See docs/reviews/mvp-p0-review.md for status and limitations.
  */
 import { cmdDoctor } from "./doctor.js";
 import { cmdRun } from "./run.js";
@@ -25,18 +25,17 @@ Usage:
 Secrets: set CURSOR_API_KEY in the environment (never in config).
 `;
 
-/** Pull repeatable `--skill <name>` flags out of args; return the rest. */
-function extractSkills(args: string[]): { skills: string[]; rest: string[] } {
+/** Pull `--skill <name>` (repeatable) and `--yes-i-understand` flags; return the rest. */
+function extractFlags(args: string[]): { skills: string[]; yes: boolean; rest: string[] } {
   const skills: string[] = [];
   const rest: string[] = [];
+  let yes = false;
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--skill" && i + 1 < args.length) {
-      skills.push(args[++i]);
-    } else {
-      rest.push(args[i]);
-    }
+    if (args[i] === "--skill" && i + 1 < args.length) skills.push(args[++i]);
+    else if (args[i] === "--yes-i-understand") yes = true;
+    else rest.push(args[i]);
   }
-  return { skills, rest };
+  return { skills, yes, rest };
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -45,19 +44,19 @@ async function main(argv: string[]): Promise<number> {
     case "doctor":
       return cmdDoctor();
     case "run": {
-      const { skills, rest: r } = extractSkills(rest);
-      return cmdRun(r.join(" "), { skills });
+      const { skills, yes, rest: r } = extractFlags(rest);
+      return cmdRun(r.join(" "), { skills, yesIUnderstand: yes });
     }
     case "chat": {
-      const { skills } = extractSkills(rest);
-      return cmdChat({ skills });
+      const { skills, yes } = extractFlags(rest);
+      return cmdChat({ skills, yesIUnderstand: yes });
     }
     case "sessions":
       return cmdSessions();
     case "resume": {
-      const { rest: r } = extractSkills(rest);
+      const { yes, rest: r } = extractFlags(rest);
       const [sid, ...p] = r;
-      return cmdResume(sid ?? "", p.join(" "));
+      return cmdResume(sid ?? "", p.join(" "), { yesIUnderstand: yes });
     }
     case "config": {
       try {
@@ -65,7 +64,7 @@ async function main(argv: string[]): Promise<number> {
         return EXIT.ok;
       } catch (e) {
         console.error("config: " + (e instanceof ConfigError ? e.message : String(e)));
-        return EXIT.startup;
+        return EXIT.config;
       }
     }
     case undefined:
@@ -76,7 +75,7 @@ async function main(argv: string[]): Promise<number> {
       return EXIT.ok;
     default:
       console.error(`unknown command: ${cmd}\n\n${HELP}`);
-      return EXIT.startup;
+      return EXIT.usage;
   }
 }
 
