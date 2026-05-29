@@ -29,6 +29,7 @@ export interface RunRecord {
   sdk_agent_id: string | null;
   sdk_run_id: string | null;
   prompt_preview: string;
+  result_preview: string;
   status: string;
   error_kind: string | null;
   started_at: string;
@@ -68,6 +69,7 @@ export class Store {
         sdk_agent_id TEXT,
         sdk_run_id TEXT,
         prompt_preview TEXT NOT NULL DEFAULT '',
+        result_preview TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT '',
         error_kind TEXT,
         started_at TEXT NOT NULL,
@@ -79,6 +81,12 @@ export class Store {
       CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_runs_session ON runs(session_id);
     `);
+    // Back-compat: add result_preview to pre-existing runs tables.
+    try {
+      this.db.exec(`ALTER TABLE runs ADD COLUMN result_preview TEXT NOT NULL DEFAULT ''`);
+    } catch {
+      // column already exists
+    }
   }
 
   upsertSession(s: {
@@ -117,11 +125,15 @@ export class Store {
   }
 
   recordRun(r: RunRecord): void {
-    const rec = { ...r, prompt_preview: redact(r.prompt_preview) };
+    const rec = {
+      ...r,
+      prompt_preview: redact(r.prompt_preview),
+      result_preview: redact(r.result_preview ?? ""),
+    };
     this.db
       .prepare(
-        `INSERT INTO runs (id,session_id,sdk_agent_id,sdk_run_id,prompt_preview,status,error_kind,started_at,finished_at,cwd,runtime,model)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+        `INSERT INTO runs (id,session_id,sdk_agent_id,sdk_run_id,prompt_preview,result_preview,status,error_kind,started_at,finished_at,cwd,runtime,model)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .run(
         rec.id,
@@ -129,6 +141,7 @@ export class Store {
         rec.sdk_agent_id,
         rec.sdk_run_id,
         rec.prompt_preview,
+        rec.result_preview,
         rec.status,
         rec.error_kind,
         rec.started_at,

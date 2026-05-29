@@ -9,6 +9,11 @@ export function preview(text: string, max = 120): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+/** Longer preview for assistant output stored for listing/replay (redacted by the store). */
+export function resultPreview(text: string, max = 2000): string {
+  return preview(text, max);
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }
