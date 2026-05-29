@@ -20,13 +20,14 @@ import { safetyGate, type Confirmer } from "./safety.js";
 import { loadSkills, SkillError, type Skill } from "./skills.js";
 import { buildPrompt } from "./promptBuilder.js";
 import { redact } from "./redact.js";
-import { newId, preview, nowIso } from "./util.js";
+import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
 export interface ChatOptions {
   sdk?: SdkCreateLike;
   dir?: string;
   skills?: string[];
+  yesIUnderstand?: boolean;
   /** Test/non-interactive driver: fixed input lines (no readline). */
   lines?: string[];
   /** Override confirmation (tests). Default: interactive y/N. */
@@ -52,7 +53,7 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
   const apiKey = (process.env.CURSOR_API_KEY ?? "").trim();
   if (!apiKey) {
     console.error("chat: CURSOR_API_KEY is not set (export it in your environment)");
-    return EXIT.startup;
+    return EXIT.config;
   }
 
   let cfg;
@@ -60,11 +61,11 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
     cfg = loadConfig(dir);
   } catch (e) {
     console.error("chat: " + (e instanceof ConfigError ? e.message : String(e)));
-    return EXIT.startup;
+    return EXIT.config;
   }
   if (cfg.runtime === "cloud" && !cfg.safety.allowCloud) {
     console.error("chat: cloud runtime requires safety.allowCloud=true (MVP is local-first)");
-    return EXIT.startup;
+    return EXIT.config;
   }
 
   let skills: Skill[] = [];
@@ -73,7 +74,7 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
       skills = loadSkills(dir, cfg.skillsPath, opts.skills);
     } catch (e) {
       console.error("chat: " + (e instanceof SkillError ? e.message : String(e)));
-      return EXIT.startup;
+      return EXIT.usage;
     }
   }
 
@@ -86,7 +87,7 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
   } catch (e) {
     console.error("chat: cannot load @cursor/sdk: " + redact((e as Error).message));
     store.close();
-    return EXIT.startup;
+    return EXIT.software;
   }
 
   // Input source: scripted lines (tests) or readline.
@@ -137,11 +138,11 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
       if (!msg) continue;
       if (msg === "exit" || msg === "quit" || msg === ":q") break;
 
-      const gate = await safetyGate({ prompt: msg, interactive, confirm });
+      const gate = await safetyGate({ prompt: msg, interactive, confirm, override: opts.yesIUnderstand });
       if (!gate.allowed) {
         console.error(`chat: blocked — ${gate.reason}`);
         if (!interactive) {
-          exitCode = EXIT.unsafe;
+          exitCode = EXIT.noperm;
           break;
         }
         continue;
@@ -153,10 +154,14 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
       const sendMsg = firstTurn && skills.length ? buildPrompt(msg, skills) : msg;
       firstTurn = false;
       const run: RunLike = await agent.send(sendMsg);
+      let turnText = "";
       if (typeof run.stream === "function") {
         for await (const ev of run.stream()) {
           const t = eventText(ev);
-          if (t) write(t);
+          if (t) {
+            turnText += t;
+            write(t);
+          }
         }
         write("\n");
       }
@@ -169,6 +174,7 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
         sdk_agent_id: agent.agentId ?? null,
         sdk_run_id: res.id ?? null,
         prompt_preview: preview(msg),
+        result_preview: resultPreview(turnText),
         status: lastStatus,
         error_kind: lastStatus === "error" ? "run_error" : null,
         started_at: startedAt,
@@ -185,15 +191,15 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
         sdk_agent_id: agent.agentId ?? null,
         last_status: lastStatus,
       });
-      if (lastStatus === "error") exitCode = EXIT.runError;
+      if (lastStatus === "error") exitCode = EXIT.software;
     }
   } catch (e) {
     if (e instanceof StartupError) {
       console.error("chat: startup failed: " + redact(e.message));
-      exitCode = EXIT.startup;
+      exitCode = EXIT.software;
     } else {
       console.error("chat: " + redact((e as Error).message));
-      exitCode = EXIT.startup;
+      exitCode = EXIT.software;
     }
   } finally {
     if (agent) await disposeAgent(agent);

@@ -10,13 +10,14 @@ import { safetyGate } from "./safety.js";
 import { loadSkills, SkillError } from "./skills.js";
 import { buildPrompt } from "./promptBuilder.js";
 import { redact } from "./redact.js";
-import { newId, preview, nowIso } from "./util.js";
+import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
 export interface RunOptions {
   sdk?: SdkLike;
   dir?: string;
   skills?: string[];
+  yesIUnderstand?: boolean;
 }
 
 async function resolveSdk(injected?: SdkLike): Promise<SdkLike> {
@@ -30,12 +31,12 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
 
   if (!prompt || !prompt.trim()) {
     console.error('run: a prompt is required, e.g. cursor-agent run "summarize this repo"');
-    return EXIT.startup;
+    return EXIT.usage;
   }
   const apiKey = (process.env.CURSOR_API_KEY ?? "").trim();
   if (!apiKey) {
     console.error("run: CURSOR_API_KEY is not set (export it in your environment)");
-    return EXIT.startup;
+    return EXIT.config;
   }
 
   let cfg;
@@ -43,18 +44,19 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     cfg = loadConfig(dir);
   } catch (e) {
     console.error("run: " + (e instanceof ConfigError ? e.message : String(e)));
-    return EXIT.startup;
+    return EXIT.config;
   }
   if (cfg.runtime === "cloud" && !cfg.safety.allowCloud) {
     console.error("run: cloud runtime requires safety.allowCloud=true (MVP is local-first)");
-    return EXIT.startup;
+    return EXIT.config;
   }
 
-  // One-shot is non-interactive: destructive prompts are denied.
-  const gate = await safetyGate({ prompt, interactive: false });
+  // One-shot is non-interactive: destructive prompts are denied unless the
+  // caller explicitly acknowledges with --yes-i-understand.
+  const gate = await safetyGate({ prompt, interactive: false, override: opts.yesIUnderstand });
   if (!gate.allowed) {
-    console.error(`run: blocked — ${gate.reason}. Use 'cursor-agent chat' to confirm interactively.`);
-    return EXIT.unsafe;
+    console.error(`run: blocked — ${gate.reason}. Use 'cursor-agent chat' or --yes-i-understand.`);
+    return EXIT.noperm;
   }
 
   let finalPrompt = prompt;
@@ -63,7 +65,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
       finalPrompt = buildPrompt(prompt, loadSkills(dir, cfg.skillsPath, opts.skills));
     } catch (e) {
       console.error("run: " + (e instanceof SkillError ? e.message : String(e)));
-      return EXIT.startup;
+      return EXIT.usage;
     }
   }
 
@@ -99,6 +101,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
       sdk_agent_id: r.agentId,
       sdk_run_id: r.runId,
       prompt_preview: preview(prompt),
+      result_preview: resultPreview(r.text),
       status: r.status,
       error_kind: failed ? "run_error" : null,
       started_at: startedAt,
@@ -109,7 +112,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     });
     if (failed) {
       console.error("run: executed run failed (status=error)");
-      return EXIT.runError;
+      return EXIT.software;
     }
     console.log(redact(r.text));
     return EXIT.ok;
@@ -130,6 +133,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
         sdk_agent_id: null,
         sdk_run_id: null,
         prompt_preview: preview(prompt),
+        result_preview: "",
         status: "startup_error",
         error_kind: "startup",
         started_at: startedAt,
@@ -138,7 +142,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
         runtime: cfg.runtime,
         model: cfg.model,
       });
-      return EXIT.startup;
+      return EXIT.software;
     }
     throw e;
   } finally {
