@@ -1,7 +1,18 @@
 /**
  * Safety baseline (issue 006). Redaction lives in redact.ts; here we gate
- * destructive prompts before any SDK run. Interactive callers must confirm;
- * non-interactive callers are denied.
+ * destructive prompts before any SDK run.
+ *
+ * LIMITATION (honest): detection is a best-effort regex denylist, NOT a real
+ * sandbox or guardrail. It catches common destructive shapes (`rm -rf`, `drop
+ * table`, force-push, fork bombs) but is trivially bypassed by obfuscation or
+ * by the agent's own tool actions inside the Cursor runtime. Treat it as a
+ * speed-bump, not a security boundary.
+ *
+ * Policy:
+ *  - non-destructive            -> allowed.
+ *  - destructive + interactive  -> ask the user to confirm.
+ *  - destructive + non-interactive + override (--yes-i-understand) -> allowed.
+ *  - destructive + non-interactive (no override) -> denied.
  */
 export interface SafetyDecision {
   allowed: boolean;
@@ -29,21 +40,20 @@ export function isDestructive(prompt: string): boolean {
 
 export type Confirmer = (reason: string) => Promise<boolean>;
 
-/**
- * Decide whether a prompt may proceed.
- *  - non-destructive -> allowed.
- *  - destructive + interactive -> ask `confirm`.
- *  - destructive + non-interactive -> denied.
- */
 export async function safetyGate(args: {
   prompt: string;
   interactive: boolean;
   confirm?: Confirmer;
+  /** Explicit non-interactive override (--yes-i-understand). */
+  override?: boolean;
 }): Promise<SafetyDecision> {
   if (!isDestructive(args.prompt)) {
     return { allowed: true, reason: "ok", destructive: false };
   }
   const reason = "prompt requests a potentially destructive action";
+  if (args.override) {
+    return { allowed: true, reason: `${reason} (overridden by --yes-i-understand)`, destructive: true };
+  }
   if (!args.interactive || !args.confirm) {
     return { allowed: false, reason: `${reason} (denied: non-interactive)`, destructive: true };
   }
