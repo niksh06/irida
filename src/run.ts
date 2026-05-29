@@ -7,6 +7,8 @@ import { loadConfig, ConfigError } from "./config.js";
 import { runOneShot, StartupError, type SdkLike } from "./host.js";
 import { Store } from "./store.js";
 import { safetyGate } from "./safety.js";
+import { loadSkills, SkillError } from "./skills.js";
+import { buildPrompt } from "./promptBuilder.js";
 import { redact } from "./redact.js";
 import { newId, preview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -14,6 +16,7 @@ import { EXIT, type ExitCode } from "./exit.js";
 export interface RunOptions {
   sdk?: SdkLike;
   dir?: string;
+  skills?: string[];
 }
 
 async function resolveSdk(injected?: SdkLike): Promise<SdkLike> {
@@ -54,6 +57,16 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     return EXIT.unsafe;
   }
 
+  let finalPrompt = prompt;
+  if (opts.skills && opts.skills.length) {
+    try {
+      finalPrompt = buildPrompt(prompt, loadSkills(dir, cfg.skillsPath, opts.skills));
+    } catch (e) {
+      console.error("run: " + (e instanceof SkillError ? e.message : String(e)));
+      return EXIT.startup;
+    }
+  }
+
   const store = new Store(dir, cfg.stateDir);
   const sessionId = newId("sess");
   const runId = newId("run");
@@ -63,7 +76,13 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     const sdk = await resolveSdk(opts.sdk).catch((e) => {
       throw new StartupError("cannot load @cursor/sdk: " + (e as Error).message);
     });
-    const r = await runOneShot(sdk, { prompt, apiKey, model: cfg.model, cwd: cfg.cwd });
+    const r = await runOneShot(sdk, {
+      prompt: finalPrompt,
+      apiKey,
+      model: cfg.model,
+      cwd: cfg.cwd,
+      mcpServers: cfg.mcpServers,
+    });
     console.error(`[run] agentId=${r.agentId ?? "-"} runId=${r.runId ?? "-"} status=${r.status}`);
     const failed = r.status === "error";
     store.upsertSession({

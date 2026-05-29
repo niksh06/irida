@@ -25,19 +25,38 @@ Usage:
 Secrets: set CURSOR_API_KEY in the environment (never in config).
 `;
 
+/** Pull repeatable `--skill <name>` flags out of args; return the rest. */
+function extractSkills(args: string[]): { skills: string[]; rest: string[] } {
+  const skills: string[] = [];
+  const rest: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--skill" && i + 1 < args.length) {
+      skills.push(args[++i]);
+    } else {
+      rest.push(args[i]);
+    }
+  }
+  return { skills, rest };
+}
+
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   switch (cmd) {
     case "doctor":
       return cmdDoctor();
-    case "run":
-      return cmdRun(rest.join(" "));
-    case "chat":
-      return cmdChat();
+    case "run": {
+      const { skills, rest: r } = extractSkills(rest);
+      return cmdRun(r.join(" "), { skills });
+    }
+    case "chat": {
+      const { skills } = extractSkills(rest);
+      return cmdChat({ skills });
+    }
     case "sessions":
       return cmdSessions();
     case "resume": {
-      const [sid, ...p] = rest;
+      const { rest: r } = extractSkills(rest);
+      const [sid, ...p] = r;
       return cmdResume(sid ?? "", p.join(" "));
     }
     case "config": {

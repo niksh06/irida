@@ -17,6 +17,8 @@ import {
 } from "./host.js";
 import { Store } from "./store.js";
 import { safetyGate, type Confirmer } from "./safety.js";
+import { loadSkills, SkillError, type Skill } from "./skills.js";
+import { buildPrompt } from "./promptBuilder.js";
 import { redact } from "./redact.js";
 import { newId, preview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -24,6 +26,7 @@ import { EXIT, type ExitCode } from "./exit.js";
 export interface ChatOptions {
   sdk?: SdkCreateLike;
   dir?: string;
+  skills?: string[];
   /** Test/non-interactive driver: fixed input lines (no readline). */
   lines?: string[];
   /** Override confirmation (tests). Default: interactive y/N. */
@@ -64,6 +67,16 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
     return EXIT.startup;
   }
 
+  let skills: Skill[] = [];
+  if (opts.skills && opts.skills.length) {
+    try {
+      skills = loadSkills(dir, cfg.skillsPath, opts.skills);
+    } catch (e) {
+      console.error("chat: " + (e instanceof SkillError ? e.message : String(e)));
+      return EXIT.startup;
+    }
+  }
+
   const store = new Store(dir, cfg.stateDir);
   const sessionId = newId("sess");
 
@@ -100,7 +113,13 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
   let exitCode: ExitCode = EXIT.ok;
   let lastStatus = "created";
   try {
-    agent = await createSession(sdk, { apiKey, model: cfg.model, cwd: cfg.cwd });
+    agent = await createSession(sdk, {
+      apiKey,
+      model: cfg.model,
+      cwd: cfg.cwd,
+      mcpServers: cfg.mcpServers,
+    });
+    let firstTurn = true;
     console.error(`[chat] agentId=${agent.agentId ?? "-"} session=${sessionId} cwd=${cfg.cwd}`);
     store.upsertSession({
       id: sessionId,
@@ -130,7 +149,10 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
 
       const runId = newId("run");
       const startedAt = nowIso();
-      const run: RunLike = await agent.send(msg);
+      // Inject selected skills as context on the first turn only.
+      const sendMsg = firstTurn && skills.length ? buildPrompt(msg, skills) : msg;
+      firstTurn = false;
+      const run: RunLike = await agent.send(sendMsg);
       if (typeof run.stream === "function") {
         for await (const ev of run.stream()) {
           const t = eventText(ev);

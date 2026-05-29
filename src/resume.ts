@@ -93,7 +93,7 @@ export async function cmdResume(
 
     let agent: AgentLike;
     try {
-      agent = await resumeSession(sdk, session.sdk_agent_id, apiKey);
+      agent = await resumeSession(sdk, session.sdk_agent_id, apiKey, cfg.mcpServers);
     } catch (e) {
       const msg = e instanceof StartupError ? e.message : String(e);
       console.error("resume: SDK resume failed: " + redact(msg));
