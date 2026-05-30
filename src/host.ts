@@ -77,6 +77,32 @@ export function eventText(ev: unknown): string {
   return "";
 }
 
+/** Extract thinking/reasoning text from stream events (best-effort). */
+export function eventThinkingText(ev: unknown): string {
+  const e = ev as {
+    type?: string;
+    text?: string;
+    delta?: string;
+    thinking?: string;
+    message?: { content?: unknown };
+  };
+  if (e?.type === "thinking") {
+    if (typeof e.text === "string") return e.text;
+    if (typeof e.thinking === "string") return e.thinking;
+  }
+  if (e?.type === "thinking_delta") {
+    if (typeof e.delta === "string") return e.delta;
+    if (typeof e.text === "string") return e.text;
+  }
+  if (e?.type === "assistant" && Array.isArray(e.message?.content)) {
+    return (e.message.content as Array<{ type?: string; text?: string; thinking?: string }>)
+      .filter((b) => b.type === "thinking" && typeof b.text === "string")
+      .map((b) => b.text as string)
+      .join("");
+  }
+  return "";
+}
+
 export interface ActivityDetail {
   label: string;
   kind: "tool" | "mcp" | "other";

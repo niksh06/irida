@@ -8,6 +8,7 @@ import {
   disposeAgent,
   eventText,
   eventActivityDetail,
+  eventThinkingText,
   parseStreamUsage,
   StartupError,
   type AgentLike,
@@ -41,6 +42,7 @@ export interface ChatSessionOptions {
   resumeSessionId?: string;
   onLog?: (line: string) => void;
   onAssistantDelta?: (delta: string) => void;
+  onThinkingDelta?: (chunk: string) => void;
   onActivity?: (entry: ActivityDetail) => void;
 }
 
@@ -69,6 +71,13 @@ async function resolveSdk(injected?: ChatSdk): Promise<ChatSdk> {
   if (injected) return injected;
   const mod = await import("@cursor/sdk");
   return mod.Agent as unknown as ChatSdk;
+}
+
+function resolveSessionTitle(store: Store, sessionId: string, userMsg: string): string {
+  const existing = store.getSession(sessionId);
+  const t = existing?.title?.trim() ?? "";
+  if (t && t !== "chat session") return t;
+  return preview(userMsg, 60);
 }
 
 export type OpenChatResult =
@@ -238,6 +247,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             }
             const u = parseStreamUsage(ev);
             if (u) usage = { ...usage, ...u };
+            const th = eventThinkingText(ev);
+            if (th) opts.onThinkingDelta?.(th);
             const t = eventText(ev);
             if (t) {
               turnText += t;
@@ -271,7 +282,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         });
         store.upsertSession({
           id: sessionId,
-          title: "chat session",
+          title: resolveSessionTitle(store, sessionId, msg),
           cwd: sessionCwd,
           runtime: cfg.runtime,
           sdk_agent_id: agent.agentId ?? null,

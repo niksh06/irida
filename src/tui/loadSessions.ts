@@ -25,3 +25,13 @@ export function loadSessionRuns(dir: string, sessionId: string) {
     store.close();
   }
 }
+
+export function renameStoredSession(dir: string, sessionId: string, title: string): boolean {
+  const cfg = loadConfig(dir);
+  const store = new Store(dir, cfg.stateDir);
+  try {
+    return store.updateSessionTitle(sessionId, title);
+  } finally {
+    store.close();
+  }
+}

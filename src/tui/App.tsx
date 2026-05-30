@@ -8,6 +8,7 @@ import { MessageList } from "./components/MessageList.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { HelpPanel } from "./components/HelpPanel.js";
 import { SessionPicker } from "./components/SessionPicker.js";
+import { ThinkingBar } from "./components/ThinkingBar.js";
 import { ActivityBar } from "./components/ActivityBar.js";
 import { ToolCallBanner } from "./components/ToolCallBanner.js";
 import { SlashSuggest } from "./components/SlashSuggest.js";
@@ -24,7 +25,13 @@ import { lastAssistantText, osc52Copy } from "./clipboard.js";
 import { parseSlash } from "./slash.js";
 import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
 import { estimateVisibleLines, maxScrollOffset, messagesToRowsCached, runsToMessages, scrollPositionLabel, shouldVirtualizeTranscript, useNativeTrackpadScroll, viewportRows, type MessageRowCache } from "./transcript.js";
-import { listStoredSessions, loadSessionRuns } from "./loadSessions.js";
+import { listStoredSessions, loadSessionRuns, renameStoredSession } from "./loadSessions.js";
+import {
+  applyContextRefCompletion,
+  commonPathPrefix,
+  completeContextRef,
+  parseContextRefPrefix,
+} from "./pathComplete.js";
 import { useAltScreen } from "./terminal.js";
 import type { ActivityDetail } from "../host.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, TurnStats } from "./types.js";
@@ -112,8 +119,9 @@ export function App(props: TuiOptions) {
   const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
   const [, tick] = useState(0);
   const [pickerSessions, setPickerSessions] = useState<SessionRecord[]>([]);
-  const [pickerIndex, setPickerIndex] = useState(0);
   const [recentSessions, setRecentSessions] = useState<SessionRecord[]>([]);
+  const [thinkingText, setThinkingText] = useState("");
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [modelOverride, setModelOverride] = useState<string | undefined>(undefined);
   const [modelPickerIndex, setModelPickerIndex] = useState(0);
   const [pickerModels, setPickerModels] = useState<string[]>(() => listPickerModelsFallback(dir));
@@ -164,6 +172,14 @@ export function App(props: TuiOptions) {
     return () => clearInterval(id);
   }, [busy, turnStartedAt]);
 
+  const patchThinking = useCallback((chunk: string) => {
+    setThinkingText((prev) => {
+      if (!chunk) return prev;
+      if (chunk.length >= prev.length && chunk.startsWith(prev)) return chunk;
+      return prev + chunk;
+    });
+  }, []);
+
   const patchStreaming = useCallback((delta: string) => {
     setMessages((prev) => {
       const next = [...prev];
@@ -205,6 +221,7 @@ export function App(props: TuiOptions) {
         interactive: true,
         confirm: (reason) => confirmRef.current(reason),
         onAssistantDelta: (d) => patchStreaming(d),
+        onThinkingDelta: (d) => patchThinking(d),
         onActivity: (entry) => noteActivity(entry),
         onLog: () => {},
       });
@@ -256,7 +273,7 @@ export function App(props: TuiOptions) {
       setRecentSessions(listStoredSessions(dir));
       return opened;
     },
-    [dir, modelOverride, noteActivity, patchStreaming, props.skills, props.yesIUnderstand]
+    [dir, modelOverride, noteActivity, patchStreaming, patchThinking, props.skills, props.yesIUnderstand]
   );
 
   useEffect(() => {
@@ -330,7 +347,6 @@ export function App(props: TuiOptions) {
   const openSessionsOverlay = useCallback(() => {
     try {
       setPickerSessions(listStoredSessions(dir));
-      setPickerIndex(0);
       setOverlay("sessions");
     } catch (e) {
       pushMessage({ role: "error", text: String(e) });
@@ -385,6 +401,10 @@ export function App(props: TuiOptions) {
         setScrollMode((m) => !m);
         return;
       }
+      if (key.ctrl && inputKey === "t" && !overlay && !confirm && !busy) {
+        setThinkingExpanded((e) => !e);
+        return;
+      }
       if (!overlay && !confirm && !busy && input === "") {
         if (key.ctrl && inputKey === "[") {
           cycleSessionTab(-1);
@@ -407,6 +427,18 @@ export function App(props: TuiOptions) {
         const matches = filterSlashSuggestions(input);
         if (matches.length === 1) setInput(matches[0]!);
         else if (matches.length > 1) setInput(commonSlashPrefix(matches));
+        return;
+      }
+      if (key.tab) {
+        const ref = parseContextRefPrefix(input);
+        if (ref) {
+          const matches = completeContextRef(dir, ref.kind, ref.prefix);
+          if (matches.length === 1) {
+            setInput(applyContextRefCompletion(input, ref, matches[0]!));
+          } else if (matches.length > 1) {
+            setInput(applyContextRefCompletion(input, ref, commonPathPrefix(matches)));
+          }
+        }
       }
     },
     { isActive: !scrollMode && !overlay && !confirm && !exiting }
@@ -501,6 +533,19 @@ export function App(props: TuiOptions) {
           }
           return;
         }
+        case "rename": {
+          if (!meta) {
+            pushMessage({ role: "error", text: "No active session" });
+            return;
+          }
+          if (renameStoredSession(dir, meta.sessionId, slash.title)) {
+            setRecentSessions(listStoredSessions(dir));
+            pushMessage({ role: "system", text: `Session renamed → ${slash.title}` });
+          } else {
+            pushMessage({ role: "error", text: "Rename failed" });
+          }
+          return;
+        }
         case "new":
           setBusy(true);
           {
@@ -539,6 +584,8 @@ export function App(props: TuiOptions) {
     setBusy(true);
     setTurnStartedAt(Date.now());
     setLastTurnStats(null);
+    setThinkingText("");
+    setThinkingExpanded(false);
     noteActivity({ label: "thinking…", kind: "other", command: "waiting for model", phase: "call" });
 
     const out = await session.sendTurn(text);
@@ -546,6 +593,7 @@ export function App(props: TuiOptions) {
     setBusy(false);
     setTurnStartedAt(null);
     setActivity(null);
+    setThinkingExpanded(false);
 
     if (out.kind === "ok") setLastTurnStats(out.stats);
 
@@ -610,6 +658,7 @@ export function App(props: TuiOptions) {
           totalLines={allRows.length}
         />
         <ToolCallBanner entry={activityLog[activityLog.length - 1] ?? null} />
+        <ThinkingBar text={thinkingText} expanded={thinkingExpanded} />
         <ActivityBar
           label={activity}
           busy={busy}
@@ -623,13 +672,6 @@ export function App(props: TuiOptions) {
         {overlay === "sessions" ? (
           <SessionPicker
             sessions={pickerSessions}
-            index={pickerIndex}
-            onMove={(d) =>
-              setPickerIndex((i) => {
-                if (pickerSessions.length === 0) return 0;
-                return (i + d + pickerSessions.length) % pickerSessions.length;
-              })
-            }
             onSelect={(s) => void switchToSession(s)}
             onCancel={() => setOverlay(null)}
           />

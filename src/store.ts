@@ -164,6 +164,22 @@ export class Store {
       | undefined;
   }
 
+  updateSessionTitle(id: string, title: string): boolean {
+    const row = this.getSession(id);
+    if (!row) return false;
+    this.upsertSession({
+      id: row.id,
+      title: redact(title.trim() || row.title),
+      cwd: row.cwd,
+      runtime: row.runtime,
+      sdk_agent_id: row.sdk_agent_id,
+      last_status: row.last_status,
+      selected_skills: row.selected_skills,
+      mcp_server_names: row.mcp_server_names,
+    });
+    return true;
+  }
+
   listRuns(sessionId: string): RunRecord[] {
     return this.db
       .prepare(`SELECT * FROM runs WHERE session_id=? ORDER BY started_at`)

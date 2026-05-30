@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import type { SessionRecord } from "../../store.js";
+import { sessionDisplayTitle } from "../sessionSearch.js";
 
 export function SessionTabBar(props: {
   sessions: SessionRecord[];
@@ -19,7 +20,7 @@ export function SessionTabBar(props: {
       <Text dimColor>tabs </Text>
       {tabs.map((s) => {
         const active = s.id === activeId;
-        const label = s.id.slice(0, 10);
+        const label = sessionDisplayTitle(s, 14);
         return (
           <Text key={s.id} color={active ? theme.primary : theme.muted} bold={active}>
             {active ? " ● " : " ○ "}

@@ -17,6 +17,7 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { cmd: "mcp", desc: "Show MCP server config" },
   { cmd: "copy", desc: "Copy last reply (OSC52)" },
   { cmd: "export", desc: "Export transcript markdown", args: "[path]" },
+  { cmd: "rename", desc: "Rename current session", args: "<title>" },
   { cmd: "exit", desc: "Quit TUI" },
 ];
 
@@ -26,7 +27,7 @@ export function slashHelpLines(): string[] {
     const usage = c.args ? `/${c.cmd} ${c.args}` : `/${c.cmd}`;
     return `${usage.padEnd(18)} — ${c.desc}`;
   });
-  return [...rows, "", "trackpad scroll · Ctrl+O keyboard scroll · Ctrl+G/E · Ctrl+J newline · @file:path"];
+  return [...rows, "", "trackpad scroll · /rename · Ctrl+T thinking · @file:<Tab> · Ctrl+O scroll"];
 }
 
 /** Match slash command prefixes for autocomplete (first token only). */

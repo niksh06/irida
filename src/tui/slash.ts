@@ -14,6 +14,7 @@ export type SlashAction =
   | { type: "mcp" }
   | { type: "copy" }
   | { type: "export"; path?: string }
+  | { type: "rename"; title: string }
   | { type: "unknown"; command: string };
 
 export const SLASH_HELP = slashHelpLines().join("\n");
@@ -60,6 +61,9 @@ export function parseSlash(input: string): SlashAction | null {
       return { type: "copy" };
     case "export":
       return { type: "export", path: arg || undefined };
+    case "rename":
+      if (!arg) return { type: "unknown", command: "/rename requires a title" };
+      return { type: "rename", title: arg };
     default:
       return { type: "unknown", command: cmd };
   }
