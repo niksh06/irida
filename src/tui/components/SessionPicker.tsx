@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import type { SessionRecord } from "../../store.js";
 import {
@@ -8,6 +8,7 @@ import {
   sessionDisplayTitle,
   sessionPickerWindow,
 } from "../sessionSearch.js";
+import { OverlayPanel } from "./OverlayPanel.js";
 
 const LIST_CAP = 8;
 
@@ -69,10 +70,7 @@ export function SessionPicker(props: {
   );
 
   return (
-    <Box flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={theme.border}>
-      <Text bold color={theme.primary}>
-        Sessions ({sessions.length}) — ↑↓ · Enter · filter · Esc
-      </Text>
+    <OverlayPanel title={`Sessions (${sessions.length}) — ↑↓ · Enter · filter · Esc`} footer="/resume id · Esc to close">
       <Text color={filter ? theme.primary : theme.muted}>
         filter: {filter || "…"}
         <Text dimColor> · {filtered.length} shown</Text>
@@ -102,7 +100,6 @@ export function SessionPicker(props: {
           ) : null}
         </>
       )}
-      <Text dimColor>/resume id · Esc to close</Text>
-    </Box>
+    </OverlayPanel>
   );
 }

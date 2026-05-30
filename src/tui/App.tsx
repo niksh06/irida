@@ -25,7 +25,18 @@ import { listMcpEntries } from "./mcpView.js";
 import { lastAssistantText, osc52Copy } from "./clipboard.js";
 import { parseSlash } from "./slash.js";
 import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
-import { estimateVisibleLines, maxScrollOffset, messagesToRowsCached, runsToMessages, scrollPositionLabel, shouldVirtualizeTranscript, useNativeTrackpadScroll, viewportRows, type MessageRowCache } from "./transcript.js";
+import {
+  estimateVisibleLines,
+  maxScrollOffset,
+  messagesToRowsCached,
+  runsToMessages,
+  scrollPositionLabel,
+  shouldVirtualizeTranscript,
+  useNativeTrackpadScroll,
+  viewportRows,
+  type MessageRowCache,
+} from "./transcript.js";
+import { overlayCloseScrollState } from "./overlayLifecycle.js";
 import { listStoredSessions, loadSessionRuns, renameStoredSession } from "./loadSessions.js";
 import {
   applyContextRefCompletion,
@@ -376,15 +387,14 @@ export function App(props: TuiOptions) {
   }, [exit, exiting]);
 
   const openOverlay = useCallback((kind: NonNullable<Overlay>) => {
-    setHoldNativeScroll(true);
     setOverlay(kind);
   }, []);
 
   const finishOverlay = useCallback(() => {
     setOverlay(null);
-    setScrollLineOffset(0);
+    setScrollLineOffset((o) => overlayCloseScrollState(o).scrollLineOffset);
     setScrollMode(false);
-    setHoldNativeScroll(true);
+    setHoldNativeScroll(false);
   }, []);
 
   const openSessionsOverlay = useCallback(() => {

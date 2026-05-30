@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import { gatherDoctorChecks, gatherDoctorApiChecks, doctorAllOk } from "../../doctorChecks.js";
+import { OverlayPanel } from "./OverlayPanel.js";
 
 export function DoctorPanel(props: { dir: string; onClose: () => void }) {
   const [checks, setChecks] = useState(() => gatherDoctorChecks(props.dir));
@@ -25,10 +26,7 @@ export function DoctorPanel(props: { dir: string; onClose: () => void }) {
   });
 
   return (
-    <Box flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={theme.border}>
-      <Text bold color={theme.primary}>
-        doctor {allOk ? "✓" : "✗"}
-      </Text>
+    <OverlayPanel title={`doctor ${allOk ? "✓" : "✗"}`} footer="Esc or Enter to close">
       {checks.map((c) => (
         <Text key={c.name}>
           <Text color={c.ok ? theme.system : theme.error}>{c.ok ? "OK  " : "FAIL"}</Text>
@@ -36,7 +34,6 @@ export function DoctorPanel(props: { dir: string; onClose: () => void }) {
           {c.name}: <Text dimColor>{c.detail}</Text>
         </Text>
       ))}
-      <Text dimColor>Esc or Enter to close</Text>
-    </Box>
+    </OverlayPanel>
   );
 }

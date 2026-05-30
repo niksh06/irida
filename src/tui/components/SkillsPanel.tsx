@@ -1,8 +1,9 @@
 import React from "react";
-import { Box, Text, useInput } from "ink";
+import { Text, useInput } from "ink";
 import { loadConfig, ConfigError } from "../../config.js";
 import { listSkills } from "../../skills.js";
 import { theme } from "../theme.js";
+import { OverlayPanel } from "./OverlayPanel.js";
 
 export function SkillsPanel(props: { dir: string; onClose: () => void }) {
   let skills: ReturnType<typeof listSkills> = [];
@@ -19,10 +20,7 @@ export function SkillsPanel(props: { dir: string; onClose: () => void }) {
   });
 
   return (
-    <Box flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={theme.border}>
-      <Text bold color={theme.primary}>
-        Skills ({skills.length})
-      </Text>
+    <OverlayPanel title={`Skills (${skills.length})`} footer="Pass --skill name at launch · Esc to close">
       {err ? <Text color={theme.error}>{err}</Text> : null}
       {skills.length === 0 && !err ? (
         <Text color={theme.muted}>No skills under skills/</Text>
@@ -35,7 +33,6 @@ export function SkillsPanel(props: { dir: string; onClose: () => void }) {
         ))
       )}
       {skills.length > 12 ? <Text dimColor>…and {skills.length - 12} more</Text> : null}
-      <Text dimColor>Pass --skill name at launch · Esc to close</Text>
-    </Box>
+    </OverlayPanel>
   );
 }

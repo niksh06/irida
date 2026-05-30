@@ -169,7 +169,7 @@ export function useNativeTrackpadScroll(opts: {
   scrollLineOffset: number;
   scrollMode: boolean;
   overlay?: boolean;
-  /** After overlay closes, stay on virtual viewport until user scrolls or sends a message. */
+  /** When true, force virtual viewport (e.g. transient UI states). Overlays use `overlay` instead. */
   holdNativeScroll?: boolean;
 }): boolean {
   return (
