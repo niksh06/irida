@@ -17,7 +17,8 @@ import { SessionTabBar } from "./components/SessionTabBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { McpPanel } from "./components/McpPanel.js";
 import { ToolsPanel } from "./components/ToolsPanel.js";
-import { listPickerModels } from "./models.js";
+import { listPickerModelsFallback, listPickerModelsFromSdk, type ModelListSource } from "./models.js";
+import { formatTranscriptMarkdown, resolveExportPath, writeTranscriptExport, ExportPathError } from "./exportTranscript.js";
 import { listMcpEntries } from "./mcpView.js";
 import { lastAssistantText, osc52Copy } from "./clipboard.js";
 import { parseSlash } from "./slash.js";
@@ -115,8 +116,22 @@ export function App(props: TuiOptions) {
   const [recentSessions, setRecentSessions] = useState<SessionRecord[]>([]);
   const [modelOverride, setModelOverride] = useState<string | undefined>(undefined);
   const [modelPickerIndex, setModelPickerIndex] = useState(0);
-  const pickerModels = useMemo(() => listPickerModels(dir), [dir]);
+  const [pickerModels, setPickerModels] = useState<string[]>(() => listPickerModelsFallback(dir));
+  const [modelListSource, setModelListSource] = useState<ModelListSource>("fallback");
+  const [modelListError, setModelListError] = useState<string | undefined>();
   const mcpView = useMemo(() => listMcpEntries(dir), [dir]);
+
+  const refreshPickerModels = useCallback(async () => {
+    const r = await listPickerModelsFromSdk(dir);
+    setPickerModels(r.models);
+    setModelListSource(r.source);
+    setModelListError(r.error);
+    return r;
+  }, [dir]);
+
+  useEffect(() => {
+    void refreshPickerModels();
+  }, [refreshPickerModels]);
 
   const slashSuggestions = useMemo(() => filterSlashSuggestions(input), [input]);
 
@@ -447,10 +462,13 @@ export function App(props: TuiOptions) {
         case "tools":
           setOverlay("tools");
           return;
-        case "model":
-          setModelPickerIndex(Math.max(0, pickerModels.indexOf(meta?.model ?? pickerModels[0] ?? "")));
+        case "model": {
+          const r = await refreshPickerModels();
+          const current = meta?.model ?? r.models[0] ?? "";
+          setModelPickerIndex(Math.max(0, r.models.indexOf(current)));
           setOverlay("model");
           return;
+        }
         case "mcp":
           setOverlay("mcp");
           return;
@@ -464,6 +482,22 @@ export function App(props: TuiOptions) {
             pushMessage({ role: "system", text: `Copied ${text.length} chars to clipboard (OSC52)` });
           } else {
             pushMessage({ role: "error", text: "Clipboard copy failed (terminal may not support OSC52)" });
+          }
+          return;
+        }
+        case "export": {
+          if (!meta) {
+            pushMessage({ role: "error", text: "No active session to export" });
+            return;
+          }
+          try {
+            const path = resolveExportPath(dir, meta.sessionId, slash.path);
+            const md = formatTranscriptMarkdown(messages, meta);
+            writeTranscriptExport(path, md);
+            pushMessage({ role: "system", text: `Exported transcript → ${path}` });
+          } catch (e) {
+            const msg = e instanceof ExportPathError ? e.message : String(e);
+            pushMessage({ role: "error", text: `Export failed: ${msg}` });
           }
           return;
         }
@@ -610,6 +644,8 @@ export function App(props: TuiOptions) {
             models={pickerModels}
             current={meta?.model ?? pickerModels[0] ?? ""}
             index={modelPickerIndex}
+            source={modelListSource}
+            sourceError={modelListError}
             onMove={(d) =>
               setModelPickerIndex((i) => {
                 if (pickerModels.length === 0) return 0;

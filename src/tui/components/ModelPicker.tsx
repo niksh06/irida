@@ -1,16 +1,19 @@
 import React from "react";
 import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
+import type { ModelListSource } from "../models.js";
 
 export function ModelPicker(props: {
   models: string[];
   current: string;
   index: number;
+  source?: ModelListSource;
+  sourceError?: string;
   onMove: (delta: number) => void;
   onSelect: (model: string) => void;
   onCancel: () => void;
 }) {
-  const { models, current, index, onMove, onSelect, onCancel } = props;
+  const { models, current, index, source, sourceError, onMove, onSelect, onCancel } = props;
 
   useInput((input, key) => {
     if (key.escape) {
@@ -30,6 +33,11 @@ export function ModelPicker(props: {
     <Box flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={theme.accent}>
       <Text bold color={theme.accent}>
         Model (↑↓ · Enter apply · Esc cancel)
+      </Text>
+      <Text dimColor>
+        {source === "sdk"
+          ? `${models.length} models from Cursor SDK`
+          : `static list${sourceError ? ` · ${sourceError}` : ""}`}
       </Text>
       {models.map((m, i) => {
         const active = i === index;

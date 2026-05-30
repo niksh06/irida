@@ -13,6 +13,7 @@ export type SlashAction =
   | { type: "model" }
   | { type: "mcp" }
   | { type: "copy" }
+  | { type: "export"; path?: string }
   | { type: "unknown"; command: string };
 
 export const SLASH_HELP = slashHelpLines().join("\n");
@@ -57,6 +58,8 @@ export function parseSlash(input: string): SlashAction | null {
     case "copy":
     case "yank":
       return { type: "copy" };
+    case "export":
+      return { type: "export", path: arg || undefined };
     default:
       return { type: "unknown", command: cmd };
   }

@@ -129,10 +129,12 @@ Project-local `agent.config.json` (all fields optional; defaults shown). **Secre
 
 State (sessions + runs) is stored in `<stateDir>/state.sqlite`. No secrets are persisted; prompt previews are redacted.
 
+**TUI `/model`** loads live ids from `Cursor.models.list()` (needs `CURSOR_API_KEY`); falls back to `CSAGENT_MODELS` or built-in defaults. Pick only SDK-listed models — not IDE-only slugs. **`/export`** writes markdown to `.agent/exports/` by default.
+
 ## Safety
 
 - One-shot `run` and `resume` are non-interactive: detected destructive prompts are **denied** (exit 77). Override with `--yes-i-understand`.
-- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it). **TUI:** trackpad transcript scroll (default), keyboard scroll via Ctrl+O, multiline composer, `@file`/`@dir` hints, grouped `/tools`.
+- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it). **TUI:** trackpad scroll, `/export` transcript, `/model` from SDK catalog, multiline composer, `@file`/`@dir`, grouped `/tools`.
 - API keys and key-shaped tokens are redacted from logs and persisted state.
 
 > **Limitation (honest):** destructive detection is a best-effort **regex denylist**, not a sandbox or security boundary. It catches common shapes (`rm -rf`, `drop table`, force-push, fork bombs) but is trivially bypassed by obfuscation, and it does **not** police what the Cursor agent does with its own tools. Treat it as a speed-bump.

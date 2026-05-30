@@ -16,6 +16,7 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { cmd: "model", desc: "Pick SDK model" },
   { cmd: "mcp", desc: "Show MCP server config" },
   { cmd: "copy", desc: "Copy last reply (OSC52)" },
+  { cmd: "export", desc: "Export transcript markdown", args: "[path]" },
   { cmd: "exit", desc: "Quit TUI" },
 ];
 
