@@ -22,9 +22,8 @@ import { listMcpEntries } from "./mcpView.js";
 import { lastAssistantText, osc52Copy } from "./clipboard.js";
 import { parseSlash } from "./slash.js";
 import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
-import { estimateVisibleLines, maxScrollOffset, messagesToRows, runsToMessages, viewportRows } from "./transcript.js";
+import { estimateVisibleLines, maxScrollOffset, messagesToRowsCached, runsToMessages, scrollPositionLabel, shouldVirtualizeTranscript, viewportRows, type MessageRowCache } from "./transcript.js";
 import { listStoredSessions, loadSessionRuns } from "./loadSessions.js";
-import { useAltScreen } from "./terminal.js";
 import type { ActivityDetail } from "../host.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, TurnStats } from "./types.js";
 import type { SessionRecord } from "../store.js";
@@ -87,10 +86,10 @@ export function App(props: TuiOptions) {
   const cols = stdout?.columns ?? 80;
   const rows = stdout?.rows ?? 24;
   const dir = props.dir ?? process.cwd();
-  const altScreen = useAltScreen();
 
   const sessionRef = useRef<ChatSession | null>(null);
   const bootGen = useRef(0);
+  const rowCacheRef = useRef<MessageRowCache>(new Map());
 
   const [meta, setMeta] = useState<SessionMeta | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
@@ -217,6 +216,7 @@ export function App(props: TuiOptions) {
       setFatal(null);
       setScrollLineOffset(0);
       setScrollMode(false);
+      rowCacheRef.current.clear();
       setActivityLog([]);
       setLastTurnStats(null);
       setTurnStartedAt(null);
@@ -252,19 +252,28 @@ export function App(props: TuiOptions) {
   }, [bootSession]);
 
   const visibleLines = useMemo(() => estimateVisibleLines(rows), [rows]);
-  const allRows = useMemo(() => messagesToRows(messages, cols), [messages, cols]);
+  const allRows = useMemo(
+    () => messagesToRowsCached(messages, cols, rowCacheRef.current),
+    [messages, cols]
+  );
   const maxScroll = useMemo(() => maxScrollOffset(allRows.length, visibleLines), [allRows.length, visibleLines]);
   const viewport = useMemo(
     () => viewportRows(allRows, visibleLines, scrollLineOffset),
     [allRows, visibleLines, scrollLineOffset]
   );
-  const displayRows = altScreen ? viewport.visible : allRows;
-  const displayHiddenAbove = altScreen ? viewport.hiddenAbove : 0;
-  const displayHiddenBelow = altScreen ? viewport.hiddenBelow : 0;
-  const displayAtBottom = altScreen ? viewport.atBottom : true;
+  const transcriptScrollable = shouldVirtualizeTranscript(allRows.length, visibleLines);
+  const displayRows = viewport.visible;
+  const displayHiddenAbove = viewport.hiddenAbove;
+  const displayHiddenBelow = viewport.hiddenBelow;
+  const displayAtBottom = viewport.atBottom;
+  const scrollPosLabel = scrollPositionLabel(allRows.length, viewport.hiddenAbove, visibleLines);
 
   const scrollKeysActive =
-    altScreen && !overlay && !confirm && !exiting && (scrollMode || input === "" || busy);
+    !overlay &&
+    !confirm &&
+    !exiting &&
+    (scrollMode || transcriptScrollable) &&
+    (scrollMode || input === "" || busy);
 
   const scrollUp = useCallback(
     (lines = 1) => {
@@ -280,7 +289,12 @@ export function App(props: TuiOptions) {
   );
   const scrollToBottom = useCallback(() => {
     setScrollLineOffset(0);
+    setScrollMode(false);
   }, []);
+
+  const scrollToTop = useCallback(() => {
+    setScrollLineOffset(maxScroll);
+  }, [maxScroll]);
 
   const shutdown = useCallback(async () => {
     if (exiting) return;
@@ -386,6 +400,7 @@ export function App(props: TuiOptions) {
       else if (key.ctrl && inputKey === "u") scrollUp(3);
       else if (key.ctrl && inputKey === "d") scrollDown(3);
       else if (key.ctrl && inputKey === "e") scrollToBottom();
+      else if (key.ctrl && inputKey === "g") scrollToTop();
       else if (scrollMode && (key.return || key.escape)) setScrollMode(false);
     },
     { isActive: scrollKeysActive }
@@ -509,17 +524,17 @@ export function App(props: TuiOptions) {
   };
 
   const composerDisabled = Boolean(
-    busy || fatal || confirm || exiting || overlay || !meta || (altScreen && scrollMode)
+    busy || fatal || confirm || exiting || overlay || !meta || scrollMode
   );
-  const scrollHint = !altScreen
-    ? null
-    : scrollMode
-      ? `scroll +${scrollLineOffset}L`
-      : scrollLineOffset > 0
-        ? `+${scrollLineOffset}L · Ctrl+O`
-        : displayHiddenAbove > 0
-          ? "Ctrl+O scroll"
-          : null;
+  const scrollHint = scrollMode
+    ? scrollPosLabel
+      ? `scroll ${scrollPosLabel}`
+      : `scroll +${scrollLineOffset}L`
+    : scrollLineOffset > 0
+      ? scrollPosLabel ?? `+${scrollLineOffset}L · Ctrl+E`
+      : transcriptScrollable
+        ? "↑↓ scroll · Ctrl+O"
+        : null;
 
   const turnElapsedMs =
     busy && turnStartedAt != null ? Date.now() - turnStartedAt : undefined;
@@ -546,8 +561,8 @@ export function App(props: TuiOptions) {
           hiddenAbove={displayHiddenAbove}
           hiddenBelow={displayHiddenBelow}
           atBottom={displayAtBottom}
-          scrollMode={altScreen && scrollMode}
-          nativeScroll={!altScreen}
+          scrollMode={scrollMode}
+          totalLines={allRows.length}
         />
         <ToolCallBanner entry={activityLog[activityLog.length - 1] ?? null} />
         <ActivityBar
@@ -606,7 +621,7 @@ export function App(props: TuiOptions) {
         onChange={setInput}
         onSubmit={(v) => void handleSubmit(v)}
         disabled={composerDisabled}
-        scrollMode={altScreen && scrollMode}
+        scrollMode={scrollMode}
         cwd={meta?.cwd ?? dir}
         placeholder={
           fatal
@@ -615,9 +630,9 @@ export function App(props: TuiOptions) {
               ? "close overlay first"
               : busy
                 ? "agent is thinking…"
-                : altScreen
-                  ? undefined
-                  : "trackpad scroll · /help"
+                : scrollMode
+                  ? "scroll mode · Enter compose"
+                  : "Ctrl+J newline · @file:path · /help"
         }
       />
 

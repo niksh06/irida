@@ -60,22 +60,63 @@ export function wrapToWidth(text: string, width: number): string[] {
   return out.length ? out : [""];
 }
 
+export type MessageRowCache = Map<
+  string,
+  {
+    text: string;
+    width: number;
+    rows: Array<Omit<TranscriptRow, "key" | "streaming">>;
+  }
+>;
+
 export function messagesToRows(messages: ChatMessage[], width: number): TranscriptRow[] {
+  const cache: MessageRowCache = new Map();
+  return messagesToRowsCached(messages, width, cache);
+}
+
+/** Re-wrap only messages whose text or width changed (streaming perf). */
+export function messagesToRowsCached(
+  messages: ChatMessage[],
+  width: number,
+  cache: MessageRowCache
+): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
+  const liveIds = new Set<string>();
+
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i]!;
-    const lines = wrapToWidth(m.text, width);
+    liveIds.add(m.id);
     const showSep = m.role === "user" && i > 0 && messages[i - 1]?.role !== "system";
-    for (let li = 0; li < lines.length; li++) {
-      rows.push({
+    const cached = cache.get(m.id);
+    let msgRows: TranscriptRow[];
+
+    if (cached && cached.text === m.text && cached.width === width) {
+      msgRows = cached.rows.map((r, li) => ({
+        ...r,
+        key: `${m.id}:${li}`,
+        streaming: Boolean(m.streaming && li === cached.rows.length - 1),
+      }));
+    } else {
+      const lines = wrapToWidth(m.text, width);
+      msgRows = lines.map((line, li) => ({
         key: `${m.id}:${li}`,
         role: m.role,
-        text: lines[li]!,
+        text: line,
         showRole: li === 0,
         showSep: li === 0 && showSep,
         streaming: Boolean(m.streaming && li === lines.length - 1),
+      }));
+      cache.set(m.id, {
+        text: m.text,
+        width,
+        rows: msgRows.map(({ role, text, showRole, showSep }) => ({ role, text, showRole, showSep })),
       });
     }
+    rows.push(...msgRows);
+  }
+
+  for (const id of cache.keys()) {
+    if (!liveIds.has(id)) cache.delete(id);
   }
   return rows;
 }
@@ -101,6 +142,22 @@ export function viewportRows(
 
 export function maxScrollOffset(totalLines: number, visibleLines: number): number {
   return Math.max(0, totalLines - Math.max(4, visibleLines));
+}
+
+/** Human-readable scroll position for status bar. */
+export function scrollPositionLabel(
+  totalLines: number,
+  hiddenAbove: number,
+  visibleCount: number
+): string | null {
+  const cap = Math.max(4, visibleCount);
+  if (totalLines <= cap) return null;
+  const bottomLine = Math.min(totalLines, hiddenAbove + cap);
+  return `L${bottomLine}/${totalLines}`;
+}
+
+export function shouldVirtualizeTranscript(totalLines: number, visibleLines: number): boolean {
+  return totalLines > Math.max(4, visibleLines);
 }
 
 export function estimateVisibleLines(rows: number): number {

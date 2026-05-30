@@ -17,7 +17,7 @@ export function MessageList(props: {
   hiddenBelow?: number;
   atBottom?: boolean;
   scrollMode?: boolean;
-  nativeScroll?: boolean;
+  totalLines?: number;
 }) {
   const {
     rows,
@@ -25,14 +25,14 @@ export function MessageList(props: {
     hiddenBelow = 0,
     atBottom = true,
     scrollMode = false,
-    nativeScroll = false,
+    totalLines = 0,
   } = props;
 
   if (rows.length === 0 && hiddenAbove === 0) {
     return (
       <Box flexDirection="column" paddingX={1} paddingY={1}>
         <Text color={theme.muted}>
-          Type a message. /help · {nativeScroll ? "trackpad scroll" : "Ctrl+O scroll"} · Ctrl+C quit
+          Type a message. /help · ↑↓ scroll · Ctrl+O scroll mode · Ctrl+C quit
         </Text>
       </Box>
     );
@@ -42,11 +42,14 @@ export function MessageList(props: {
     <Box flexDirection="column" paddingX={1}>
       {scrollMode ? (
         <Text color={theme.primary} bold>
-          SCROLL ↑↓ PgUp/Dn · Ctrl+E follow · Enter compose
+          SCROLL ↑↓ PgUp/Dn · Ctrl+G top · Ctrl+E bottom · Enter compose
         </Text>
       ) : null}
       {hiddenAbove > 0 ? (
-        <Text color={theme.muted}>↑ {hiddenAbove} earlier line{hiddenAbove === 1 ? "" : "s"} (Ctrl+O)</Text>
+        <Text color={theme.muted}>
+          ↑ {hiddenAbove} earlier line{hiddenAbove === 1 ? "" : "s"}
+          {totalLines > 0 ? ` · L${hiddenAbove + rows.length}/${totalLines}` : ""}
+        </Text>
       ) : null}
       {rows.map((row) => {
         const style = roleLabel[row.role];
