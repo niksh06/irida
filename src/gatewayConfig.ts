@@ -19,6 +19,9 @@ export interface GatewayConfig {
   maxMessageLength: number;
   skills: string[];
   yesIUnderstand?: boolean;
+  /** Env var for Telegram bot token (adapter=telegram). */
+  telegramTokenEnv: string;
+  telegramPollIntervalMs: number;
 }
 
 export class GatewayConfigError extends Error {}
@@ -77,6 +80,18 @@ export function loadGatewayConfig(dir: string = process.cwd()): GatewayConfig {
     : [];
   const maxMessageLength =
     typeof o.maxMessageLength === "number" && o.maxMessageLength > 0 ? o.maxMessageLength : 8000;
+  const telegram =
+    o.telegram && typeof o.telegram === "object" && !Array.isArray(o.telegram)
+      ? (o.telegram as Record<string, unknown>)
+      : {};
+  const telegramTokenEnv =
+    typeof telegram.tokenEnv === "string" && telegram.tokenEnv.trim()
+      ? telegram.tokenEnv.trim()
+      : "TELEGRAM_BOT_TOKEN";
+  const telegramPollIntervalMs =
+    typeof telegram.pollIntervalMs === "number" && telegram.pollIntervalMs >= 500
+      ? telegram.pollIntervalMs
+      : 1500;
   const skills = Array.isArray(o.skills)
     ? o.skills.filter((s): s is string => typeof s === "string" && s.trim() !== "").map((s) => s.trim())
     : [];
@@ -91,6 +106,8 @@ export function loadGatewayConfig(dir: string = process.cwd()): GatewayConfig {
     maxMessageLength,
     skills,
     yesIUnderstand: o.yesIUnderstand === true,
+    telegramTokenEnv,
+    telegramPollIntervalMs,
   };
 }
 
@@ -103,6 +120,9 @@ export function validateGatewayConfig(dir: string = process.cwd()): string[] {
     const cfg = loadGatewayConfig(dir);
     if (cfg.adapter === "webhook" && !gatewayWebhookSecret(cfg)) {
       return [`webhook secret env ${cfg.secretEnv} is unset`];
+    }
+    if (cfg.adapter === "telegram" && !(process.env[cfg.telegramTokenEnv] ?? "").trim()) {
+      return [`telegram token env ${cfg.telegramTokenEnv} is unset`];
     }
     if (cfg.allowedChatIds.length === 0) {
       return ["allowedChatIds is empty — gateway denies all peers until configured"];

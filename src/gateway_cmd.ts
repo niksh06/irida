@@ -14,6 +14,7 @@ import {
 } from "./gatewayConfig.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { startWebhookServer, type WebhookServer } from "./gatewayWebhook.js";
+import { startTelegramPoller, type TelegramPoller } from "./gatewayTelegram.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
 export interface GatewayRunOptions {
@@ -27,6 +28,7 @@ export interface GatewayRunHandle {
   cfg: GatewayConfig;
   router: GatewaySessionRouter;
   webhook?: WebhookServer;
+  telegram?: TelegramPoller;
   close(): Promise<void>;
 }
 
@@ -45,9 +47,6 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
   let cfg = loadGatewayConfig(dir);
   cfg = applyCliOverrides(cfg, opts);
 
-  if (cfg.adapter === "telegram") {
-    throw new GatewayConfigError("telegram adapter is not implemented yet — use webhook");
-  }
   if (cfg.allowedChatIds.length === 0) {
     throw new GatewayConfigError("allowedChatIds is empty — configure peers in gateway.json");
   }
@@ -59,6 +58,19 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
     yesIUnderstand: cfg.yesIUnderstand,
     sdk: opts.sdk,
   });
+
+  if (cfg.adapter === "telegram") {
+    const telegram = startTelegramPoller({ cfg, router });
+    return {
+      cfg,
+      router,
+      telegram,
+      close: async () => {
+        await telegram.stop();
+        await router.closeAll();
+      },
+    };
+  }
 
   const webhook = startWebhookServer(cfg, router);
   await new Promise<void>((resolve, reject) => {
@@ -73,7 +85,7 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
     webhook,
     close: async () => {
       await router.closeAll();
-      if (webhook) await webhook.close();
+      await webhook.close();
     },
   };
 }
@@ -120,25 +132,34 @@ export async function cmdGateway(argv: string[], opts: GatewayRunOptions = {}): 
     case "--help":
     case "help":
       console.log(`Usage:
-  csagent gateway run [--adapter webhook] [--port 18789]
+  csagent gateway run [--adapter webhook|telegram] [--port 18789]
 
 Config: .agent/gateway.json
-Secret: env GATEWAY_WEBHOOK_SECRET (or webhook.secretEnv in config)
+Webhook secret: env GATEWAY_WEBHOOK_SECRET
+Telegram token: env TELEGRAM_BOT_TOKEN
 
-Example gateway.json:
+Example gateway.json (webhook):
 {
   "version": 1,
   "adapter": "webhook",
   "listen": { "host": "127.0.0.1", "port": 18789 },
   "webhook": { "path": "/hook", "secretEnv": "GATEWAY_WEBHOOK_SECRET" },
   "allowedChatIds": ["u1"],
-  "maxMessageLength": 8000,
-  "skills": []
+  "maxMessageLength": 8000
+}
+
+Example gateway.json (telegram):
+{
+  "version": 1,
+  "adapter": "telegram",
+  "telegram": { "tokenEnv": "TELEGRAM_BOT_TOKEN", "pollIntervalMs": 1500 },
+  "allowedChatIds": ["123456789"],
+  "maxMessageLength": 8000
 }
 
 Webhook request:
   POST /hook
-  Header: X-Gateway-Secret: <secret>  (or Authorization: Bearer <secret>)
+  Header: X-Gateway-Secret: <secret>
   Body: { "chatId": "u1", "text": "hello" }
 `);
       return EXIT.ok;
@@ -163,24 +184,26 @@ export function writeExampleGatewayConfig(dir: string, partial: Partial<GatewayC
     allowedChatIds: ["u1"],
     maxMessageLength: 8000,
     skills: [],
+    telegramTokenEnv: "TELEGRAM_BOT_TOKEN",
+    telegramPollIntervalMs: 1500,
     ...partial,
   };
-  writeFileSync(
-    resolve(root, GATEWAY_FILE),
-    JSON.stringify(
-      {
-        version: 1,
-        adapter: example.adapter,
-        listen: { host: example.host, port: example.port },
-        webhook: { path: example.webhookPath, secretEnv: example.secretEnv },
-        allowedChatIds: example.allowedChatIds,
-        maxMessageLength: example.maxMessageLength,
-        skills: example.skills,
-      },
-      null,
-      2
-    ) + "\n",
-    { encoding: "utf8", mode: 0o600 }
-  );
+  const json: Record<string, unknown> = {
+    version: 1,
+    adapter: example.adapter,
+    allowedChatIds: example.allowedChatIds,
+    maxMessageLength: example.maxMessageLength,
+    skills: example.skills,
+  };
+  if (example.adapter === "webhook") {
+    json.listen = { host: example.host, port: example.port };
+    json.webhook = { path: example.webhookPath, secretEnv: example.secretEnv };
+  } else {
+    json.telegram = { tokenEnv: example.telegramTokenEnv, pollIntervalMs: example.telegramPollIntervalMs };
+  }
+  writeFileSync(resolve(root, GATEWAY_FILE), JSON.stringify(json, null, 2) + "\n", {
+    encoding: "utf8",
+    mode: 0o600,
+  });
   return example;
 }
