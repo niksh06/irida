@@ -14,6 +14,7 @@ import {
 import { formatCronWhen, nextCronRun } from "./cronSchedule.js";
 import { cronJobEnabled } from "./cronJobs.js";
 import { executeCronJob, cronTick, markCronJobRan } from "./cronEngine.js";
+import { sendCronJobNotify } from "./cronNotify.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
 import type { SdkLike, SdkCreateLike, SdkResumeLike } from "./host.js";
@@ -70,6 +71,7 @@ export async function cmdCronRun(jobId: string, opts: CronCmdOptions = {}): Prom
   }
   const exec = await executeCronJob(job, { dir, sdk: opts.sdk });
   markCronJobRan(dir, job.id);
+  await sendCronJobNotify(job, exec);
   if (exec.ok) {
     console.log(`cron: job '${job.id}' finished`);
     return EXIT.ok;

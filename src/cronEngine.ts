@@ -9,6 +9,7 @@ import { safetyGate } from "./safety.js";
 import { Store } from "./store.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { cronMinuteKey } from "./cronSchedule.js";
+import { sendCronJobNotify } from "./cronNotify.js";
 import {
   type CronJob,
   loadCronState,
@@ -169,6 +170,7 @@ export async function cronTick(
       const exec = await executeCronJob(job, opts);
       state.lastRun[job.id] = cronMinuteKey(at);
       saveCronState(dir, state);
+      await sendCronJobNotify(job, exec, at);
       if (exec.ok) {
         result.ran.push(job.id);
         console.error(`[cron] job=${job.id} ok`);

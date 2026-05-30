@@ -9,6 +9,12 @@ import { CronError, parseCronExpression, validateCronExpression, cronMinuteKey }
 export const CRON_JOBS_FILE = "cron.jobs.json";
 export const CRON_STATE_FILE = "cron.state.json";
 
+export interface CronJobNotify {
+  chatId: string;
+  webhookUrl?: string;
+  secretEnv?: string;
+}
+
 export interface CronJob {
   id: string;
   cron: string;
@@ -18,6 +24,8 @@ export interface CronJob {
   skills?: string[];
   enabled?: boolean;
   yesIUnderstand?: boolean;
+  /** Optional gateway webhook notify on completion (issue 038 P2). */
+  notify?: CronJobNotify;
 }
 
 export interface CronJobsFile {
@@ -71,6 +79,15 @@ function validateJob(raw: unknown, index: number): CronJob {
   }
   if (o.enabled === false) job.enabled = false;
   if (o.yesIUnderstand === true) job.yesIUnderstand = true;
+  if (o.notify && typeof o.notify === "object" && !Array.isArray(o.notify)) {
+    const n = o.notify as Record<string, unknown>;
+    const chatId = typeof n.chatId === "string" ? n.chatId.trim() : "";
+    if (chatId) {
+      job.notify = { chatId };
+      if (typeof n.webhookUrl === "string" && n.webhookUrl.trim()) job.notify.webhookUrl = n.webhookUrl.trim();
+      if (typeof n.secretEnv === "string" && n.secretEnv.trim()) job.notify.secretEnv = n.secretEnv.trim();
+    }
+  }
   return job;
 }
 
