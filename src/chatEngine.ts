@@ -21,13 +21,20 @@ import { Store } from "./store.js";
 import { safetyGate, type Confirmer } from "./safety.js";
 import { loadSkills, SkillError, type Skill } from "./skills.js";
 import { composePrompt, ContextRefError } from "./composePrompt.js";
-import { connectAgentForSession, type ConnectMode } from "./sessionConnect.js";
+import { connectAgentForSession, replayPreamble, type ConnectMode } from "./sessionConnect.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import type { ActivityDetail } from "./host.js";
+import { consumeRunStream, formatSdkError, isAgentRotatableError } from "./sdkErrors.js";
 
 type ChatSdk = SdkCreateLike & SdkResumeLike;
+
+export interface AgentRotatedInfo {
+  previousAgentId: string | null;
+  newAgentId: string | null;
+  replayTurns: number;
+}
 
 export interface ChatSessionOptions {
   sdk?: ChatSdk;
@@ -44,6 +51,10 @@ export interface ChatSessionOptions {
   onAssistantDelta?: (delta: string) => void;
   onThinkingDelta?: (chunk: string) => void;
   onActivity?: (entry: ActivityDetail) => void;
+  /** Fired once before retrying a turn after in-session agent rotation. */
+  onTurnRetry?: () => void;
+  /** Fired when SDK agent is replaced inside the same csagent session. */
+  onAgentRotated?: (info: AgentRotatedInfo) => void;
 }
 
 export type TurnOutcome =
@@ -228,18 +239,22 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       if (firstTurn && replayPrefix) {
         sendMsg = replayPrefix + "Continue. New request:\n\n" + sendMsg;
       }
+      const baseSendMsg = sendMsg;
       firstTurn = false;
 
-      const runId = newId("run");
-      const startedAt = nowIso();
-      const turnStartMs = Date.now();
-      let toolCalls = 0;
-      let usage: StreamUsage = {};
-      try {
-        const run: RunLike = await agent.send(sendMsg);
+      let attemptSendMsg = sendMsg;
+      let rotated = false;
+
+      for (;;) {
+        const runId = newId("run");
+        const startedAt = nowIso();
+        const turnStartMs = Date.now();
+        let toolCalls = 0;
+        let usage: StreamUsage = {};
         let turnText = "";
-        if (typeof run.stream === "function") {
-          for await (const ev of run.stream()) {
+        try {
+          const run: RunLike = await agent.send(attemptSendMsg);
+          await consumeRunStream(run, (ev) => {
             const activity = eventActivityDetail(ev);
             if (activity) {
               if (activity.phase === "call") toolCalls++;
@@ -254,47 +269,111 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
               turnText += t;
               opts.onAssistantDelta?.(t);
             }
+          });
+          const res = await run.wait();
+          const lastStatus = String(res.status);
+          const stats: TurnStats = {
+            durationMs: Date.now() - turnStartMs,
+            toolCalls,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          };
+          log(`[chat] runId=${res.id ?? "-"} status=${lastStatus} tools=${toolCalls} ${stats.durationMs}ms`);
+          store.recordRun({
+            id: runId,
+            session_id: sessionId,
+            sdk_agent_id: agent.agentId ?? null,
+            sdk_run_id: res.id ?? null,
+            prompt_preview: preview(msg),
+            result_preview: resultPreview(turnText),
+            status: lastStatus,
+            error_kind: lastStatus === "error" ? "run_error" : null,
+            started_at: startedAt,
+            finished_at: nowIso(),
+            cwd: sessionCwd,
+            runtime: cfg.runtime,
+            model: cfg.model,
+          });
+          store.upsertSession({
+            id: sessionId,
+            title: resolveSessionTitle(store, sessionId, msg),
+            cwd: sessionCwd,
+            runtime: cfg.runtime,
+            sdk_agent_id: agent.agentId ?? null,
+            last_status: lastStatus,
+          });
+          if (lastStatus === "error") {
+            return { kind: "error", message: "executed run failed (status=error)", fatal: false };
           }
+          return { kind: "ok", status: lastStatus, assistantText: turnText, stats };
+        } catch (e) {
+          if (!rotated && isAgentRotatableError(e)) {
+            rotated = true;
+            const previousAgentId = agent.agentId ?? null;
+            await disposeAgent(agent);
+            agent = await createSession(sdk, {
+              apiKey,
+              model: cfg.model,
+              cwd: sessionCwd,
+              mcpServers: cfg.mcpServers,
+            });
+            session.agentId = agent.agentId ?? null;
+            const replayTurns = store.listRuns(sessionId).slice(-10).length;
+            const prefix = replayPreamble(store, sessionId);
+            log(
+              `[chat] agent rotated old=${previousAgentId ?? "-"} new=${agent.agentId ?? "-"} replay=${replayTurns}`
+            );
+            opts.onAgentRotated?.({
+              previousAgentId,
+              newAgentId: agent.agentId ?? null,
+              replayTurns,
+            });
+            store.upsertSession({
+              id: sessionId,
+              title: resolveSessionTitle(store, sessionId, msg),
+              cwd: sessionCwd,
+              runtime: cfg.runtime,
+              sdk_agent_id: agent.agentId ?? null,
+              last_status: "agent_rotated",
+            });
+            attemptSendMsg = prefix
+              ? prefix + "Continue. New request:\n\n" + baseSendMsg
+              : baseSendMsg;
+            opts.onTurnRetry?.();
+            continue;
+          }
+
+          const formatted = formatSdkError(e);
+          log(`[chat] turn error kind=${formatted.errorKind} ${formatted.message}`);
+          store.recordRun({
+            id: runId,
+            session_id: sessionId,
+            sdk_agent_id: agent.agentId ?? null,
+            sdk_run_id: null,
+            prompt_preview: preview(msg),
+            result_preview: resultPreview(turnText),
+            status: "error",
+            error_kind: formatted.errorKind,
+            started_at: startedAt,
+            finished_at: nowIso(),
+            cwd: sessionCwd,
+            runtime: cfg.runtime,
+            model: cfg.model,
+          });
+          store.upsertSession({
+            id: sessionId,
+            title: resolveSessionTitle(store, sessionId, msg),
+            cwd: sessionCwd,
+            runtime: cfg.runtime,
+            sdk_agent_id: agent.agentId ?? null,
+            last_status: "error",
+          });
+          return {
+            kind: "error",
+            message: formatted.message,
+            fatal: !formatted.recoverable,
+          };
         }
-        const res = await run.wait();
-        const lastStatus = String(res.status);
-        const stats: TurnStats = {
-          durationMs: Date.now() - turnStartMs,
-          toolCalls,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-        };
-        log(`[chat] runId=${res.id ?? "-"} status=${lastStatus} tools=${toolCalls} ${stats.durationMs}ms`);
-        store.recordRun({
-          id: runId,
-          session_id: sessionId,
-          sdk_agent_id: agent.agentId ?? null,
-          sdk_run_id: res.id ?? null,
-          prompt_preview: preview(msg),
-          result_preview: resultPreview(turnText),
-          status: lastStatus,
-          error_kind: lastStatus === "error" ? "run_error" : null,
-          started_at: startedAt,
-          finished_at: nowIso(),
-          cwd: sessionCwd,
-          runtime: cfg.runtime,
-          model: cfg.model,
-        });
-        store.upsertSession({
-          id: sessionId,
-          title: resolveSessionTitle(store, sessionId, msg),
-          cwd: sessionCwd,
-          runtime: cfg.runtime,
-          sdk_agent_id: agent.agentId ?? null,
-          last_status: lastStatus,
-        });
-        if (lastStatus === "error") {
-          return { kind: "error", message: "executed run failed (status=error)", fatal: false };
-        }
-        return { kind: "ok", status: lastStatus, assistantText: turnText, stats };
-      } catch (e) {
-        const errMsg = e instanceof StartupError ? redact(e.message) : redact((e as Error).message);
-        return { kind: "error", message: errMsg, fatal: true };
       }
     },
     async close(): Promise<void> {

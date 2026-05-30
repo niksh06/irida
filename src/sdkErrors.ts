@@ -1,0 +1,94 @@
+import { redact } from "./redact.js";
+import { StartupError } from "./host.js";
+
+export interface FormattedSdkError {
+  message: string;
+  errorKind: string;
+  /** When true, TUI stays interactive (e.g. re-login and retry). */
+  recoverable: boolean;
+  /** When true, chatEngine may dispose agent, create fresh handle, and retry turn once. */
+  rotatable: boolean;
+}
+
+type ConnectDetail = {
+  error?: string;
+  details?: { title?: string; detail?: string; isRetryable?: boolean };
+};
+
+function parseConnectDetails(e: unknown): ConnectDetail | null {
+  if (e == null || typeof e !== "object") return null;
+  const details = (e as { details?: unknown[] }).details;
+  if (!Array.isArray(details) || details.length === 0) return null;
+  for (const item of details) {
+    if (item == null || typeof item !== "object") continue;
+    const debug = (item as { debug?: ConnectDetail }).debug;
+    if (debug && typeof debug === "object") return debug;
+  }
+  return null;
+}
+
+function isAuthError(e: unknown, detail: ConnectDetail | null): boolean {
+  if (detail?.error === "ERROR_NOT_LOGGED_IN") return true;
+  const code = (e as { code?: number }).code;
+  return code === 16; // Code.Unauthenticated
+}
+
+/** Normalize Cursor SDK / ConnectRPC failures for CLI and TUI. */
+export function formatSdkError(e: unknown): FormattedSdkError {
+  if (e instanceof StartupError) {
+    return { message: redact(e.message), errorKind: "startup", recoverable: false, rotatable: false };
+  }
+
+  const detail = parseConnectDetails(e);
+  const auth = isAuthError(e, detail);
+
+  if (detail?.details?.detail || detail?.details?.title) {
+    const title = detail.details.title ?? "SDK error";
+    const body = detail.details.detail ?? "";
+    const message = auth
+      ? `Authentication failed — ${body || "log in to Cursor and refresh CURSOR_API_KEY"}`
+      : body ? `${title}: ${body}` : title;
+    return {
+      message: redact(message),
+      errorKind: auth ? "auth" : detail.error ?? "sdk",
+      recoverable: auth || detail.details.isRetryable === true,
+      rotatable: !auth,
+    };
+  }
+
+  const raw = e instanceof Error ? e.message : String(e);
+  const message = redact(raw || "SDK request failed");
+  return {
+    message: auth ? `Authentication failed — ${message}` : message,
+    errorKind: auth ? "auth" : "sdk",
+    recoverable: auth,
+    rotatable: !auth,
+  };
+}
+
+/** True when sendTurn may rotate SDK agent and retry once (never for auth). */
+export function isAgentRotatableError(e: unknown): boolean {
+  return formatSdkError(e).rotatable;
+}
+
+/** Consume SDK run stream; swallow iterator cleanup rejections. */
+export async function consumeRunStream(
+  run: { stream?(): AsyncIterable<unknown> },
+  onEvent: (ev: unknown) => void
+): Promise<void> {
+  if (typeof run.stream !== "function") return;
+  const iter = run.stream()[Symbol.asyncIterator]();
+  try {
+    for (;;) {
+      const step = await iter.next();
+      if (step.done) break;
+      onEvent(step.value);
+    }
+  } finally {
+    try {
+      await iter.return?.();
+    } catch {
+      // Connect end-stream races can reject iterator.return(); already handled via next().
+    }
+  }
+}
