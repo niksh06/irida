@@ -15,7 +15,7 @@ import { SkillsPanel } from "./components/SkillsPanel.js";
 import { ToolsPanel } from "./components/ToolsPanel.js";
 import { parseSlash } from "./slash.js";
 import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
-import { estimateVisibleMessages, runsToMessages, viewportMessages } from "./transcript.js";
+import { estimateVisibleLines, maxScrollOffset, messagesToRows, runsToMessages, viewportRows } from "./transcript.js";
 import { listStoredSessions, loadSessionRuns } from "./loadSessions.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta } from "./types.js";
 import type { SessionRecord } from "../store.js";
@@ -59,7 +59,8 @@ export function App(props: TuiOptions) {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [exiting, setExiting] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const [scrollMode, setScrollMode] = useState(false);
+  const [scrollLineOffset, setScrollLineOffset] = useState(0);
   const [activity, setActivity] = useState<string | null>(null);
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [pickerSessions, setPickerSessions] = useState<SessionRecord[]>([]);
@@ -144,7 +145,8 @@ export function App(props: TuiOptions) {
         connectMode: s.connectMode,
       });
       setFatal(null);
-      setScrollOffset(0);
+      setScrollLineOffset(0);
+      setScrollMode(false);
       setActivityLog([]);
 
       const history = resumeSessionId ? runsToMessages(loadSessionRuns(dir, resumeSessionId)) : [];
@@ -176,11 +178,29 @@ export function App(props: TuiOptions) {
     };
   }, [bootSession]);
 
-  const visibleCount = useMemo(() => estimateVisibleMessages(rows), [rows]);
+  const visibleLines = useMemo(() => estimateVisibleLines(rows), [rows]);
+  const allRows = useMemo(() => messagesToRows(messages, cols), [messages, cols]);
+  const maxScroll = useMemo(() => maxScrollOffset(allRows.length, visibleLines), [allRows.length, visibleLines]);
   const viewport = useMemo(
-    () => viewportMessages(messages, visibleCount, scrollOffset),
-    [messages, visibleCount, scrollOffset]
+    () => viewportRows(allRows, visibleLines, scrollLineOffset),
+    [allRows, visibleLines, scrollLineOffset]
   );
+
+  const scrollUp = useCallback(
+    (lines = 1) => {
+      setScrollLineOffset((o) => Math.min(maxScroll, o + lines));
+    },
+    [maxScroll]
+  );
+  const scrollDown = useCallback(
+    (lines = 1) => {
+      setScrollLineOffset((o) => Math.max(0, o - lines));
+    },
+    []
+  );
+  const scrollToBottom = useCallback(() => {
+    setScrollLineOffset(0);
+  }, []);
 
   const shutdown = useCallback(async () => {
     if (exiting) return;
@@ -214,32 +234,54 @@ export function App(props: TuiOptions) {
     [bootSession, pushMessage]
   );
 
-  useInput((inputKey, key) => {
-    if (key.ctrl && inputKey === "c") {
-      void shutdown();
-      return;
-    }
-    if (overlay || confirm || busy || exiting) return;
+  useInput(
+    (inputKey, key) => {
+      if (key.ctrl && inputKey === "c") {
+        void shutdown();
+        return;
+      }
+      if (key.ctrl && inputKey === "o") {
+        setScrollMode((m) => !m);
+        return;
+      }
+    },
+    { isActive: !overlay && !confirm && !exiting }
+  );
 
-    if (key.tab && input.startsWith("/")) {
-      const matches = filterSlashSuggestions(input);
-      if (matches.length === 1) setInput(matches[0]!);
-      else if (matches.length > 1) setInput(commonSlashPrefix(matches));
-      return;
-    }
+  useInput(
+    (inputKey, key) => {
+      if (overlay || confirm || exiting || scrollMode) return;
 
-    if (key.ctrl && inputKey === "u") {
-      setScrollOffset((o) => Math.min(messages.length, o + 2));
-      return;
-    }
-    if (key.ctrl && inputKey === "d") {
-      setScrollOffset((o) => Math.max(0, o - 2));
-      return;
-    }
-    if (key.ctrl && inputKey === "e") {
-      setScrollOffset(0);
-    }
-  });
+      if (key.tab && input.startsWith("/")) {
+        const matches = filterSlashSuggestions(input);
+        if (matches.length === 1) setInput(matches[0]!);
+        else if (matches.length > 1) setInput(commonSlashPrefix(matches));
+        return;
+      }
+
+      if (!input && key.upArrow && maxScroll > 0) {
+        setScrollMode(true);
+        scrollUp(1);
+      }
+    },
+    { isActive: !scrollMode && !overlay && !confirm && !exiting }
+  );
+
+  useInput(
+    (inputKey, key) => {
+      if (overlay || confirm || exiting) return;
+
+      if (key.upArrow) scrollUp(1);
+      else if (key.downArrow) scrollDown(1);
+      else if (key.pageUp) scrollUp(visibleLines);
+      else if (key.pageDown) scrollDown(visibleLines);
+      else if (key.ctrl && inputKey === "u") scrollUp(3);
+      else if (key.ctrl && inputKey === "d") scrollDown(3);
+      else if (key.ctrl && inputKey === "e") scrollToBottom();
+      else if (key.return || key.escape) setScrollMode(false);
+    },
+    { isActive: scrollMode && !overlay && !confirm && !exiting }
+  );
 
   const handleSubmit = async (raw: string) => {
     const text = raw.trim();
@@ -256,7 +298,8 @@ export function App(props: TuiOptions) {
           return;
         case "clear":
           setMessages([{ id: nextId("sys"), role: "system", text: "Transcript cleared." }]);
-          setScrollOffset(0);
+          setScrollLineOffset(0);
+          setScrollMode(false);
           return;
         case "help":
           setOverlay("help");
@@ -306,7 +349,8 @@ export function App(props: TuiOptions) {
 
     pushMessage({ role: "user", text });
     pushMessage({ role: "assistant", text: "", streaming: true });
-    setScrollOffset(0);
+    scrollToBottom();
+    setScrollMode(false);
     setBusy(true);
     noteActivity("thinking…");
 
@@ -331,9 +375,14 @@ export function App(props: TuiOptions) {
     }
   };
 
-  const composerDisabled = Boolean(busy || fatal || confirm || exiting || overlay || !meta);
-  const scrollHint =
-    scrollOffset > 0 ? `scroll +${scrollOffset}` : viewport.hiddenAbove > 0 ? "scroll" : null;
+  const composerDisabled = Boolean(busy || fatal || confirm || exiting || overlay || !meta || scrollMode);
+  const scrollHint = scrollMode
+    ? `scroll +${scrollLineOffset}L`
+    : scrollLineOffset > 0
+      ? `+${scrollLineOffset}L · Ctrl+O`
+      : viewport.hiddenAbove > 0
+        ? "Ctrl+O scroll"
+        : null;
 
   return (
     <Box flexDirection="column" width="100%">
@@ -350,11 +399,12 @@ export function App(props: TuiOptions) {
         minHeight={8}
       >
         <MessageList
-          messages={viewport.visible}
+          rows={viewport.visible}
           width={cols}
           hiddenAbove={viewport.hiddenAbove}
           hiddenBelow={viewport.hiddenBelow}
           atBottom={viewport.atBottom}
+          scrollMode={scrollMode}
         />
         <ActivityBar label={activity} busy={busy} recent={activityLog} />
         {confirm ? (
@@ -389,6 +439,7 @@ export function App(props: TuiOptions) {
         onChange={setInput}
         onSubmit={(v) => void handleSubmit(v)}
         disabled={composerDisabled}
+        scrollMode={scrollMode}
         placeholder={
           fatal ? "session failed" : overlay ? "close overlay first" : busy ? "agent is thinking…" : undefined
         }

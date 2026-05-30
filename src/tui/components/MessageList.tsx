@@ -1,9 +1,9 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
-import type { ChatMessage } from "../types.js";
+import type { TranscriptRow } from "../transcript.js";
 
-const roleLabel: Record<ChatMessage["role"], { glyph: string; color: string }> = {
+const roleLabel: Record<TranscriptRow["role"], { glyph: string; color: string }> = {
   user: { glyph: "you ›", color: theme.user },
   assistant: { glyph: "◆", color: theme.assistant },
   system: { glyph: "·", color: theme.system },
@@ -11,19 +11,20 @@ const roleLabel: Record<ChatMessage["role"], { glyph: string; color: string }> =
 };
 
 export function MessageList(props: {
-  messages: ChatMessage[];
+  rows: TranscriptRow[];
   width: number;
   hiddenAbove?: number;
   hiddenBelow?: number;
   atBottom?: boolean;
+  scrollMode?: boolean;
 }) {
-  const { messages, hiddenAbove = 0, hiddenBelow = 0, atBottom = true } = props;
+  const { rows, hiddenAbove = 0, hiddenBelow = 0, atBottom = true, scrollMode = false } = props;
 
-  if (messages.length === 0 && hiddenAbove === 0) {
+  if (rows.length === 0 && hiddenAbove === 0) {
     return (
       <Box flexDirection="column" paddingX={1} paddingY={1}>
         <Text color={theme.muted}>
-          Type a message. /help for commands · Ctrl+C to leave.
+          Type a message. /help · Ctrl+O scroll mode · Ctrl+C quit
         </Text>
       </Box>
     );
@@ -31,38 +32,46 @@ export function MessageList(props: {
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {hiddenAbove > 0 ? (
-        <Text color={theme.muted}>↑ {hiddenAbove} earlier message{hiddenAbove === 1 ? "" : "s"}</Text>
+      {scrollMode ? (
+        <Text color={theme.primary} bold>
+          SCROLL ↑↓ PgUp/Dn · Ctrl+E follow · Enter compose
+        </Text>
       ) : null}
-      {messages.map((m, i) => {
-        const style = roleLabel[m.role];
-        const showSep = m.role === "user" && i > 0 && messages[i - 1]?.role !== "system";
+      {hiddenAbove > 0 ? (
+        <Text color={theme.muted}>↑ {hiddenAbove} earlier line{hiddenAbove === 1 ? "" : "s"} (Ctrl+O)</Text>
+      ) : null}
+      {rows.map((row) => {
+        const style = roleLabel[row.role];
         return (
-          <Box flexDirection="column" key={m.id} marginTop={showSep ? 1 : 0}>
-            {showSep ? (
+          <Box flexDirection="column" key={row.key} marginTop={row.showSep ? 1 : 0}>
+            {row.showSep ? (
               <Text color={theme.border}>{"─".repeat(Math.min(48, props.width - 4))}</Text>
             ) : null}
             <Box>
               <Box width={6}>
-                <Text bold={m.role === "user"} color={style.color}>
-                  {style.glyph}
-                </Text>
+                {row.showRole ? (
+                  <Text bold={row.role === "user"} color={style.color}>
+                    {style.glyph}
+                  </Text>
+                ) : (
+                  <Text> </Text>
+                )}
               </Box>
               <Box flexGrow={1}>
-                <Text wrap="wrap" color={m.role === "error" ? theme.error : style.color}>
-                  {m.text}
-                  {m.streaming ? <Text color={theme.muted}>▍</Text> : null}
+                <Text color={row.role === "error" ? theme.error : style.color}>
+                  {row.text}
+                  {row.streaming ? <Text color={theme.muted}>▍</Text> : null}
                 </Text>
               </Box>
             </Box>
           </Box>
         );
       })}
-      {!atBottom && hiddenBelow === 0 ? (
-        <Text color={theme.muted}>↓ newer messages below (Ctrl+D)</Text>
-      ) : null}
       {hiddenBelow > 0 ? (
-        <Text color={theme.muted}>↓ {hiddenBelow} newer · Ctrl+End to follow</Text>
+        <Text color={theme.muted}>↓ {hiddenBelow} newer line{hiddenBelow === 1 ? "" : "s"} · Ctrl+E follow</Text>
+      ) : null}
+      {!atBottom && hiddenBelow === 0 ? (
+        <Text color={theme.muted}>↓ newer below · Ctrl+E follow</Text>
       ) : null}
     </Box>
   );
