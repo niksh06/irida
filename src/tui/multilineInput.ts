@@ -34,6 +34,10 @@ export function insertAt(
 }
 
 export function deleteBefore(value: string, pos: number): { value: string; cursor: number } {
+  return eraseBeforeCursor(value, pos);
+}
+
+export function eraseBeforeCursor(value: string, pos: number): { value: string; cursor: number } {
   const p = clampCursor(value, pos);
   if (p === 0) return { value, cursor: 0 };
   return { value: value.slice(0, p - 1) + value.slice(p), cursor: p - 1 };

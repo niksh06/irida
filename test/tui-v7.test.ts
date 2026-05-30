@@ -6,6 +6,7 @@ import {
   cursorLineCol,
   visibleComposerLines,
   lineColToCursor,
+  eraseBeforeCursor,
 } from "../src/tui/multilineInput.js";
 import { listContextRefs, probeContextRef } from "../src/contextRefs.js";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -13,6 +14,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 describe("multilineInput", () => {
+  it("eraseBeforeCursor removes char before cursor (Mac backspace at EOL)", () => {
+    const { value, cursor } = eraseBeforeCursor("hello", 5);
+    assert.equal(value, "hell");
+    assert.equal(cursor, 4);
+  });
+
   it("inserts and moves across lines", () => {
     let v = "a";
     let c = 1;

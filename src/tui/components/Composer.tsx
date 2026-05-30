@@ -5,7 +5,7 @@ import { listContextRefs, probeContextRef, type ContextRefProbe } from "../../co
 import {
   cursorLineCol,
   deleteBefore,
-  deleteForward,
+  eraseBeforeCursor,
   insertAt,
   lineColToCursor,
   moveCursor,
@@ -63,8 +63,9 @@ export function Composer(props: {
         apply(next, lineColToCursor(next, line, 0));
         return;
       }
-      if (input === "\x7f" || key.backspace || key.delete) {
-        const out = key.delete && !key.backspace ? deleteForward(value, cursor) : deleteBefore(value, cursor);
+      // Ink maps Mac Backspace (\x7f) to key.delete — always erase before cursor (ink-text-input parity).
+      if (key.backspace || key.delete) {
+        const out = eraseBeforeCursor(value, cursor);
         apply(out.value, out.cursor);
         return;
       }
