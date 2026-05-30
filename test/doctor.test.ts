@@ -51,7 +51,8 @@ test("doctor fails when models API rejects key", async () => {
 
 test("gatherDoctorApiChecks skips when key unset", async () => {
   await withKey(undefined, async () => {
-    assert.deepEqual(await gatherDoctorApiChecks(), []);
+    const dir = mkdtempSync(resolve(tmpdir(), "doc-nocred-"));
+    assert.deepEqual(await gatherDoctorApiChecks(dir), []);
   });
 });
 

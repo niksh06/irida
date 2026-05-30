@@ -661,8 +661,17 @@ export function App(props: TuiOptions) {
       }
       if (out.kind === "error") {
         setMessages((prev) => {
-          const next = prev.slice(0, -1);
-          return [...next, { id: nextId("err"), role: "error", text: out.message }];
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (out.partialAssistantText && last?.role === "assistant") {
+            next[next.length - 1] = {
+              ...last,
+              text: out.partialAssistantText,
+              streaming: false,
+            };
+            return [...next, { id: nextId("err"), role: "error", text: out.message }];
+          }
+          return [...prev.slice(0, -1), { id: nextId("err"), role: "error", text: out.message }];
         });
         if (out.fatal) setFatal(out.message);
       }

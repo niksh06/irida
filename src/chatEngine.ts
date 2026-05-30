@@ -28,6 +28,7 @@ import { EXIT, type ExitCode } from "./exit.js";
 import type { ActivityDetail } from "./host.js";
 import { consumeRunStream, formatSdkError, isAgentRotatableError } from "./sdkErrors.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
+import { formatRunErrorMessage } from "./runErrors.js";
 
 type ChatSdk = SdkCreateLike & SdkResumeLike;
 
@@ -61,7 +62,7 @@ export interface ChatSessionOptions {
 export type TurnOutcome =
   | { kind: "ok"; status: string; assistantText: string; stats: TurnStats }
   | { kind: "blocked"; reason: string }
-  | { kind: "error"; message: string; fatal: boolean };
+  | { kind: "error"; message: string; fatal: boolean; partialAssistantText?: string };
 
 export interface TurnStats {
   durationMs: number;
@@ -304,7 +305,13 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             last_status: lastStatus,
           });
           if (lastStatus === "error") {
-            return { kind: "error", message: "executed run failed (status=error)", fatal: false };
+            const failed = formatRunErrorMessage({ res, toolCalls, turnText });
+            return {
+              kind: "error",
+              message: failed.message,
+              fatal: false,
+              partialAssistantText: failed.partialAssistantText,
+            };
           }
           return { kind: "ok", status: lastStatus, assistantText: turnText, stats };
         } catch (e) {
