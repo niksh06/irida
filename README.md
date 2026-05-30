@@ -132,7 +132,7 @@ State (sessions + runs) is stored in `<stateDir>/state.sqlite`. No secrets are p
 ## Safety
 
 - One-shot `run` and `resume` are non-interactive: detected destructive prompts are **denied** (exit 77). Override with `--yes-i-understand`.
-- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it). **TUI scroll:** trackpad uses terminal scrollback by default; `CSAGENT_TUI_ALT=1` enables fullscreen alt-buffer with Ctrl+O / ↑↓ scroll.
+- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it). **TUI:** trackpad scroll (default), `⌃[`/`⌃]` session tabs, `/model` `/mcp` `/copy`, `/help` for all commands.
 - API keys and key-shaped tokens are redacted from logs and persisted state.
 
 > **Limitation (honest):** destructive detection is a best-effort **regex denylist**, not a sandbox or security boundary. It catches common shapes (`rm -rf`, `drop table`, force-push, fork bombs) but is trivially bypassed by obfuscation, and it does **not** police what the Cursor agent does with its own tools. Treat it as a speed-bump.

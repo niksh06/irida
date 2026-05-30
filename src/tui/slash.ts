@@ -10,6 +10,9 @@ export type SlashAction =
   | { type: "skills" }
   | { type: "doctor" }
   | { type: "tools" }
+  | { type: "model" }
+  | { type: "mcp" }
+  | { type: "copy" }
   | { type: "unknown"; command: string };
 
 export const SLASH_HELP = slashHelpLines().join("\n");
@@ -46,6 +49,14 @@ export function parseSlash(input: string): SlashAction | null {
     case "tools":
     case "activity":
       return { type: "tools" };
+    case "model":
+    case "models":
+      return { type: "model" };
+    case "mcp":
+      return { type: "mcp" };
+    case "copy":
+    case "yank":
+      return { type: "copy" };
     default:
       return { type: "unknown", command: cmd };
   }

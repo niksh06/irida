@@ -8,7 +8,7 @@ export function ToolsPanel(props: { entries: ActivityEntry[]; onClose: () => voi
     if (key.escape || key.return) props.onClose();
   });
 
-  const recent = props.entries.slice(-20).reverse();
+  const recent = props.entries.slice(-24).reverse();
 
   return (
     <Box flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={theme.border}>
@@ -19,14 +19,23 @@ export function ToolsPanel(props: { entries: ActivityEntry[]; onClose: () => voi
         <Text color={theme.muted}>No tool events yet this session.</Text>
       ) : (
         recent.map((e) => (
-          <Text key={e.id} wrap="wrap" color={theme.muted}>
-            <Text color={theme.accent}>{formatTs(e.at)}</Text> {e.label}
+          <Text key={e.id} wrap="wrap">
+            <Text color={theme.muted}>{formatTs(e.at)} </Text>
+            <Text color={kindColor(e.kind)}>[{e.kind}] </Text>
+            <Text color={theme.accent}>{e.label}</Text>
+            {e.detail ? <Text dimColor> — {e.detail}</Text> : null}
           </Text>
         ))
       )}
       <Text dimColor>Esc or Enter to close</Text>
     </Box>
   );
+}
+
+function kindColor(kind: ActivityEntry["kind"]): string {
+  if (kind === "mcp") return theme.accent;
+  if (kind === "tool") return theme.primary;
+  return theme.muted;
 }
 
 function formatTs(iso: string): string {

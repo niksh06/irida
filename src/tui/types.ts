@@ -15,12 +15,14 @@ export interface SessionMeta {
   connectMode?: string;
 }
 
-export type Overlay = null | "help" | "sessions" | "skills" | "doctor" | "tools";
+export type Overlay = null | "help" | "sessions" | "skills" | "doctor" | "tools" | "model" | "mcp";
 
 export interface ActivityEntry {
   id: string;
   at: string;
   label: string;
+  kind: "tool" | "mcp" | "other";
+  detail?: string;
 }
 
 export interface ConfirmState {

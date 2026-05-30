@@ -13,6 +13,9 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { cmd: "skills", desc: "List local skills" },
   { cmd: "doctor", desc: "Environment checks" },
   { cmd: "tools", desc: "Tool / MCP activity log" },
+  { cmd: "model", desc: "Pick SDK model" },
+  { cmd: "mcp", desc: "Show MCP server config" },
+  { cmd: "copy", desc: "Copy last reply (OSC52)" },
   { cmd: "exit", desc: "Quit TUI" },
 ];
 
@@ -22,7 +25,7 @@ export function slashHelpLines(): string[] {
     const usage = c.args ? `/${c.cmd} ${c.args}` : `/${c.cmd}`;
     return `${usage.padEnd(18)} — ${c.desc}`;
   });
-  return [...rows, "", "Tab completes /commands · trackpad scroll (default) · CSAGENT_TUI_ALT=1 for fullscreen"];
+  return [...rows, "", "Tab · /commands · ⌃[ ⌃] session tabs · trackpad scroll · CSAGENT_TUI_ALT=1 fullscreen"];
 }
 
 /** Match slash command prefixes for autocomplete (first token only). */

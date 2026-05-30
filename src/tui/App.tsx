@@ -12,7 +12,13 @@ import { ActivityBar } from "./components/ActivityBar.js";
 import { SlashSuggest } from "./components/SlashSuggest.js";
 import { DoctorPanel } from "./components/DoctorPanel.js";
 import { SkillsPanel } from "./components/SkillsPanel.js";
+import { SessionTabBar } from "./components/SessionTabBar.js";
+import { ModelPicker } from "./components/ModelPicker.js";
+import { McpPanel } from "./components/McpPanel.js";
 import { ToolsPanel } from "./components/ToolsPanel.js";
+import { listPickerModels } from "./models.js";
+import { listMcpEntries } from "./mcpView.js";
+import { lastAssistantText, osc52Copy } from "./clipboard.js";
 import { parseSlash } from "./slash.js";
 import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
 import { estimateVisibleLines, maxScrollOffset, messagesToRows, runsToMessages, viewportRows } from "./transcript.js";
@@ -27,10 +33,19 @@ function nextId(prefix: string): string {
 }
 
 let actSeq = 0;
-function pushActivity(setter: React.Dispatch<React.SetStateAction<ActivityEntry[]>>, label: string) {
+function pushActivity(
+  setter: React.Dispatch<React.SetStateAction<ActivityEntry[]>>,
+  entry: Pick<ActivityEntry, "label" | "kind" | "detail">
+) {
   setter((prev) => [
     ...prev.slice(-99),
-    { id: `act-${++actSeq}`, at: new Date().toISOString(), label },
+    {
+      id: `act-${++actSeq}`,
+      at: new Date().toISOString(),
+      kind: entry.kind,
+      label: entry.label,
+      detail: entry.detail,
+    },
   ]);
 }
 
@@ -67,6 +82,11 @@ export function App(props: TuiOptions) {
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [pickerSessions, setPickerSessions] = useState<SessionRecord[]>([]);
   const [pickerIndex, setPickerIndex] = useState(0);
+  const [recentSessions, setRecentSessions] = useState<SessionRecord[]>([]);
+  const [modelOverride, setModelOverride] = useState<string | undefined>(undefined);
+  const [modelPickerIndex, setModelPickerIndex] = useState(0);
+  const pickerModels = useMemo(() => listPickerModels(dir), [dir]);
+  const mcpView = useMemo(() => listMcpEntries(dir), [dir]);
 
   const slashSuggestions = useMemo(() => filterSlashSuggestions(input), [input]);
 
@@ -76,10 +96,13 @@ export function App(props: TuiOptions) {
       setConfirm({ reason, resolve });
     });
 
-  const noteActivity = useCallback((label: string) => {
-    setActivity(label);
-    pushActivity(setActivityLog, label);
-  }, []);
+  const noteActivity = useCallback(
+    (entry: { label: string; kind: "tool" | "mcp" | "other"; detail?: string }) => {
+      setActivity(entry.label);
+      pushActivity(setActivityLog, entry);
+    },
+    []
+  );
 
   const patchStreaming = useCallback((delta: string) => {
     setMessages((prev) => {
@@ -117,11 +140,12 @@ export function App(props: TuiOptions) {
         dir,
         skills: props.skills,
         yesIUnderstand: props.yesIUnderstand,
+        model: modelOverride,
         resumeSessionId,
         interactive: true,
         confirm: (reason) => confirmRef.current(reason),
         onAssistantDelta: (d) => patchStreaming(d),
-        onActivity: (label) => noteActivity(label),
+        onActivity: (entry) => noteActivity(entry),
         onLog: () => {},
       });
 
@@ -166,9 +190,10 @@ export function App(props: TuiOptions) {
         },
         ...history,
       ]);
+      setRecentSessions(listStoredSessions(dir));
       return opened;
     },
-    [dir, noteActivity, patchStreaming, props.skills, props.yesIUnderstand]
+    [dir, modelOverride, noteActivity, patchStreaming, props.skills, props.yesIUnderstand]
   );
 
   useEffect(() => {
@@ -233,12 +258,36 @@ export function App(props: TuiOptions) {
     async (record: SessionRecord) => {
       setOverlay(null);
       setBusy(true);
-      pushMessage({ role: "system", text: `Switching to ${record.id.slice(0, 12)}…` });
       const out = await bootSession(record.id);
       setBusy(false);
       if (out && !out.ok) {
         pushMessage({ role: "error", text: out.message });
       }
+    },
+    [bootSession, pushMessage]
+  );
+
+  const cycleSessionTab = useCallback(
+    (delta: number) => {
+      if (recentSessions.length < 2 || busy) return;
+      const cur = meta?.sessionId;
+      let idx = recentSessions.findIndex((s) => s.id === cur);
+      if (idx < 0) idx = 0;
+      const next = (idx + delta + recentSessions.length) % recentSessions.length;
+      void switchToSession(recentSessions[next]!);
+    },
+    [recentSessions, meta?.sessionId, busy, switchToSession]
+  );
+
+  const applyModel = useCallback(
+    async (model: string) => {
+      setOverlay(null);
+      setModelOverride(model);
+      setBusy(true);
+      pushMessage({ role: "system", text: `Model → ${model} (restarting session)` });
+      const out = await bootSession();
+      setBusy(false);
+      if (out && !out.ok) pushMessage({ role: "error", text: out.message });
     },
     [bootSession, pushMessage]
   );
@@ -252,6 +301,16 @@ export function App(props: TuiOptions) {
       if (key.ctrl && inputKey === "o") {
         setScrollMode((m) => !m);
         return;
+      }
+      if (!overlay && !confirm && !busy && input === "") {
+        if (key.ctrl && inputKey === "[") {
+          cycleSessionTab(-1);
+          return;
+        }
+        if (key.ctrl && inputKey === "]") {
+          cycleSessionTab(1);
+          return;
+        }
       }
     },
     { isActive: !overlay && !confirm && !exiting }
@@ -319,6 +378,26 @@ export function App(props: TuiOptions) {
         case "tools":
           setOverlay("tools");
           return;
+        case "model":
+          setModelPickerIndex(Math.max(0, pickerModels.indexOf(meta?.model ?? pickerModels[0] ?? "")));
+          setOverlay("model");
+          return;
+        case "mcp":
+          setOverlay("mcp");
+          return;
+        case "copy": {
+          const text = lastAssistantText(messages);
+          if (!text) {
+            pushMessage({ role: "error", text: "No assistant reply to copy" });
+            return;
+          }
+          if (osc52Copy(text)) {
+            pushMessage({ role: "system", text: `Copied ${text.length} chars to clipboard (OSC52)` });
+          } else {
+            pushMessage({ role: "error", text: "Clipboard copy failed (terminal may not support OSC52)" });
+          }
+          return;
+        }
         case "new":
           setBusy(true);
           {
@@ -355,7 +434,7 @@ export function App(props: TuiOptions) {
     scrollToBottom();
     setScrollMode(false);
     setBusy(true);
-    noteActivity("thinking…");
+    noteActivity({ label: "thinking…", kind: "other" });
 
     const out = await session.sendTurn(text);
     finishStreaming();
@@ -395,6 +474,7 @@ export function App(props: TuiOptions) {
     <Box flexDirection="column" width="100%">
       <Box flexDirection="column" marginBottom={0}>
         <Text color={theme.primary}>{banner.trimEnd()}</Text>
+        <SessionTabBar sessions={recentSessions} activeId={meta?.sessionId ?? null} width={cols} />
       </Box>
 
       <Box
@@ -437,6 +517,24 @@ export function App(props: TuiOptions) {
         {overlay === "doctor" ? <DoctorPanel dir={dir} onClose={() => setOverlay(null)} /> : null}
         {overlay === "tools" ? (
           <ToolsPanel entries={activityLog} onClose={() => setOverlay(null)} />
+        ) : null}
+        {overlay === "model" ? (
+          <ModelPicker
+            models={pickerModels}
+            current={meta?.model ?? pickerModels[0] ?? ""}
+            index={modelPickerIndex}
+            onMove={(d) =>
+              setModelPickerIndex((i) => {
+                if (pickerModels.length === 0) return 0;
+                return (i + d + pickerModels.length) % pickerModels.length;
+              })
+            }
+            onSelect={(m) => void applyModel(m)}
+            onCancel={() => setOverlay(null)}
+          />
+        ) : null}
+        {overlay === "mcp" ? (
+          <McpPanel entries={mcpView.entries} errors={mcpView.errors} onClose={() => setOverlay(null)} />
         ) : null}
       </Box>
 
