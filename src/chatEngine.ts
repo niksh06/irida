@@ -22,6 +22,7 @@ import { connectAgentForSession, type ConnectMode } from "./sessionConnect.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
+import type { ActivityDetail } from "./host.js";
 
 type ChatSdk = SdkCreateLike & SdkResumeLike;
 
@@ -38,7 +39,7 @@ export interface ChatSessionOptions {
   resumeSessionId?: string;
   onLog?: (line: string) => void;
   onAssistantDelta?: (delta: string) => void;
-  onActivity?: (entry: { label: string; kind: "tool" | "mcp" | "other"; detail?: string }) => void;
+  onActivity?: (entry: ActivityDetail) => void;
 }
 
 export type TurnOutcome =

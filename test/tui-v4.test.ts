@@ -4,7 +4,7 @@ import { parseSlash } from "../src/tui/slash.js";
 import { listPickerModels } from "../src/tui/models.js";
 import { listMcpEntries } from "../src/tui/mcpView.js";
 import { lastAssistantText } from "../src/tui/clipboard.js";
-import { eventActivityDetail } from "../src/host.js";
+import { eventActivityDetail } from "../src/toolFormat.js";
 
 describe("tui v4 slash", () => {
   it("parses model mcp copy", () => {
@@ -40,9 +40,14 @@ describe("tui v4 clipboard", () => {
 });
 
 describe("eventActivityDetail", () => {
-  it("labels tool calls with kind", () => {
-    const d = eventActivityDetail({ type: "tool_call", name: "read_file", server: "fs" });
-    assert.equal(d?.kind, "mcp");
-    assert.match(d?.label ?? "", /read_file/);
+  it("labels tool calls with full command", () => {
+    const d = eventActivityDetail({
+      type: "tool_call",
+      name: "shell",
+      status: "running",
+      args: { command: "ls -la" },
+    });
+    assert.equal(d?.command, "ls -la");
+    assert.equal(d?.toolName, "shell");
   });
 });

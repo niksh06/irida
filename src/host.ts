@@ -76,56 +76,15 @@ export function eventText(ev: unknown): string {
 export interface ActivityDetail {
   label: string;
   kind: "tool" | "mcp" | "other";
+  toolName?: string;
+  command?: string;
+  status?: "running" | "completed" | "error";
+  phase?: "call" | "result";
+  callId?: string;
   detail?: string;
 }
 
-/** Best-effort label for tool / activity stream events. */
-export function eventActivity(ev: unknown): string | null {
-  return eventActivityDetail(ev)?.label ?? null;
-}
-
-export function eventActivityDetail(ev: unknown): ActivityDetail | null {
-  const e = ev as {
-    type?: string;
-    name?: string;
-    tool?: string;
-    toolName?: string;
-    server?: string;
-    mcpServer?: string;
-    input?: unknown;
-    message?: { toolName?: string; name?: string; server?: string };
-  };
-  const t = e?.type ?? "";
-  const name = e.name ?? e.tool ?? e.toolName ?? e.message?.toolName ?? e.message?.name;
-  const server = e.server ?? e.mcpServer ?? e.message?.server;
-
-  if (t === "tool_call" || t === "tool_use") {
-    const label = name ? `call: ${name}` : "tool call";
-    const detail = server ? `mcp:${server}` : summarizeInput(e.input);
-    return { label, kind: server ? "mcp" : "tool", detail };
-  }
-  if (t === "tool_result" || t === "tool") {
-    const label = name ? `result: ${name}` : "tool result";
-    return { label, kind: server ? "mcp" : "tool", detail: server ? `mcp:${server}` : undefined };
-  }
-  if (t.includes("tool")) {
-    return { label: name ? `${t}: ${name}` : t, kind: "tool" };
-  }
-  if (t.includes("mcp") || server) {
-    return { label: name ?? t, kind: "mcp", detail: server ?? undefined };
-  }
-  return null;
-}
-
-function summarizeInput(input: unknown): string | undefined {
-  if (input == null) return undefined;
-  if (typeof input === "string") return input.slice(0, 80);
-  try {
-    return JSON.stringify(input).slice(0, 80);
-  } catch {
-    return undefined;
-  }
-}
+export { parseToolStreamEvent, eventActivity, eventActivityDetail } from "./toolFormat.js";
 
 export async function createSession(
   sdk: SdkCreateLike,
