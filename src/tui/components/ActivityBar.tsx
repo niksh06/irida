@@ -12,13 +12,24 @@ export function ActivityBar(props: {
   const show = props.busy || props.label || last;
   if (!show) return null;
 
+  const active = last?.phase === "call" && last.status === "running" ? last : null;
+  const headline = active?.command ?? props.label ?? last?.command ?? last?.label ?? "thinking…";
+
   return (
     <Box flexDirection="column" paddingX={1} marginTop={0}>
       <Text color={theme.muted}>
         {props.busy ? "◌ " : "· "}
-        <Text color={theme.accent}>{props.label ?? last?.label ?? "thinking…"}</Text>
+        {active ? (
+          <Text color={theme.warn}>
+            {active.toolName ?? active.label}
+            <Text color={theme.muted}> → </Text>
+          </Text>
+        ) : null}
+        <Text color={theme.accent} wrap="wrap">
+          {headline}
+        </Text>
         {props.recent.length > 1 ? (
-          <Text dimColor>{`  (+${props.recent.length - 1} events · /tools)`}</Text>
+          <Text dimColor>{`  (+${props.recent.length - 1} · /tools)`}</Text>
         ) : null}
       </Text>
     </Box>

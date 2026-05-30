@@ -9,6 +9,7 @@ import { StatusBar } from "./components/StatusBar.js";
 import { HelpPanel } from "./components/HelpPanel.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { ActivityBar } from "./components/ActivityBar.js";
+import { ToolCallBanner } from "./components/ToolCallBanner.js";
 import { SlashSuggest } from "./components/SlashSuggest.js";
 import { DoctorPanel } from "./components/DoctorPanel.js";
 import { SkillsPanel } from "./components/SkillsPanel.js";
@@ -24,6 +25,7 @@ import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
 import { estimateVisibleLines, maxScrollOffset, messagesToRows, runsToMessages, viewportRows } from "./transcript.js";
 import { listStoredSessions, loadSessionRuns } from "./loadSessions.js";
 import { useAltScreen } from "./terminal.js";
+import type { ActivityDetail } from "../host.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta } from "./types.js";
 import type { SessionRecord } from "../store.js";
 
@@ -35,18 +37,34 @@ function nextId(prefix: string): string {
 let actSeq = 0;
 function pushActivity(
   setter: React.Dispatch<React.SetStateAction<ActivityEntry[]>>,
-  entry: Pick<ActivityEntry, "label" | "kind" | "detail">
+  entry: Omit<ActivityEntry, "id" | "at">
 ) {
-  setter((prev) => [
-    ...prev.slice(-99),
-    {
-      id: `act-${++actSeq}`,
-      at: new Date().toISOString(),
-      kind: entry.kind,
-      label: entry.label,
-      detail: entry.detail,
-    },
-  ]);
+  setter((prev) => {
+    if (entry.callId && entry.phase === "result") {
+      const idx = prev.findIndex((x) => x.callId === entry.callId && x.phase === "call");
+      if (idx >= 0) {
+        const next = [...prev];
+        const cur = next[idx]!;
+        next[idx] = {
+          ...cur,
+          ...entry,
+          id: cur.id,
+          at: cur.at,
+          label: entry.label || cur.label,
+          command: entry.command || cur.command,
+        };
+        return next;
+      }
+    }
+    return [
+      ...prev.slice(-99),
+      {
+        id: `act-${++actSeq}`,
+        at: new Date().toISOString(),
+        ...entry,
+      },
+    ];
+  });
 }
 
 export interface TuiOptions {
@@ -96,13 +114,19 @@ export function App(props: TuiOptions) {
       setConfirm({ reason, resolve });
     });
 
-  const noteActivity = useCallback(
-    (entry: { label: string; kind: "tool" | "mcp" | "other"; detail?: string }) => {
-      setActivity(entry.label);
-      pushActivity(setActivityLog, entry);
-    },
-    []
-  );
+  const noteActivity = useCallback((entry: ActivityDetail) => {
+    setActivity(entry.command ?? entry.label);
+    pushActivity(setActivityLog, {
+      label: entry.label,
+      kind: entry.kind,
+      toolName: entry.toolName,
+      command: entry.command,
+      status: entry.status,
+      phase: entry.phase,
+      callId: entry.callId,
+      detail: entry.detail,
+    });
+  }, []);
 
   const patchStreaming = useCallback((delta: string) => {
     setMessages((prev) => {
@@ -434,7 +458,7 @@ export function App(props: TuiOptions) {
     scrollToBottom();
     setScrollMode(false);
     setBusy(true);
-    noteActivity({ label: "thinking…", kind: "other" });
+    noteActivity({ label: "thinking…", kind: "other", command: "waiting for model", phase: "call" });
 
     const out = await session.sendTurn(text);
     finishStreaming();
@@ -494,6 +518,7 @@ export function App(props: TuiOptions) {
           scrollMode={altScreen && scrollMode}
           nativeScroll={!altScreen}
         />
+        <ToolCallBanner entry={activityLog[activityLog.length - 1] ?? null} />
         <ActivityBar label={activity} busy={busy} recent={activityLog} />
         {confirm ? (
           <ConfirmDialog state={confirm} onDone={() => setConfirm(null)} />

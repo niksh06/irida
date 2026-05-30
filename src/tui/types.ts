@@ -22,6 +22,11 @@ export interface ActivityEntry {
   at: string;
   label: string;
   kind: "tool" | "mcp" | "other";
+  toolName?: string;
+  command?: string;
+  status?: "running" | "completed" | "error";
+  phase?: "call" | "result";
+  callId?: string;
   detail?: string;
 }
 
