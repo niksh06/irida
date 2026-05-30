@@ -2,7 +2,7 @@
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
-> MVP is **local-only**. No cloud runs, messaging gateway, or cron yet. **Ink TUI** is available via `csagent tui` (see `docs/issues/020-tui.md`).
+> MVP is **local-only**. No cloud runs or messaging gateway yet. **Cron** jobs via `csagent cron` (OS scheduler calls `cron tick`). **Ink TUI** is available via `csagent tui` (see `docs/issues/020-tui.md`).
 
 ## Requirements
 
@@ -106,6 +106,39 @@ EOF
 ```
 
 In chat/TUI use `@memory:tparser` in the prompt, or `/memory` to list. Content is injected as context; secrets are redacted on save.
+
+### Cron (scheduled jobs)
+
+Jobs live in `.agent/cron.jobs.json` (five-field cron, local time):
+
+```json
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "nightly-summary",
+      "cron": "0 9 * * *",
+      "prompt": "Summarize open issues @memory:project",
+      "skills": ["review"],
+      "yesIUnderstand": false
+    }
+  ]
+}
+```
+
+```bash
+csagent cron list
+csagent cron run nightly-summary
+csagent cron tick    # run all due jobs — call from system cron
+```
+
+Example crontab (every 5 minutes):
+
+```cron
+*/5 * * * * cd /path/to/project && csagent cron tick >> /tmp/csagent-cron.log 2>&1
+```
+
+Optional `sessionId` resumes an existing `sess_` and appends one turn. Destructive prompts are denied unless the job sets `"yesIUnderstand": true`. `csagent doctor` validates the jobs file when present.
 
 List or search installed skills:
 
