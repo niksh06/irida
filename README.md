@@ -7,9 +7,13 @@ Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/s
 ## Requirements
 
 - Node.js **>= 20** (uses built-in `node:sqlite`, `node --test`).
-- A Cursor API key in the environment:
+- A Cursor API key — **either** save locally **or** export per shell:
 
 ```bash
+# Recommended: once per project (stored in .agent/credentials.json, mode 600)
+printf '%s' "cursor_..." | csagent auth login --stdin
+
+# Or per-shell / CI override:
 export CURSOR_API_KEY="cursor_..."   # Dashboard → Integrations
 ```
 
@@ -114,7 +118,16 @@ Configured in `agent.config.json` and passed inline to every SDK call (and on re
 
 ## Configuration
 
-Project-local `agent.config.json` (all fields optional; defaults shown). **Secrets never go here** — `CURSOR_API_KEY` comes from the environment.
+Project-local `agent.config.json` (all fields optional; defaults shown). **Secrets never go here.**
+
+**API key** (pick one):
+
+| Method | Use when |
+|--------|----------|
+| `csagent auth login --stdin` | Daily local use — writes `.agent/credentials.json` (mode `600`, gitignored) |
+| `export CURSOR_API_KEY=…` | CI, one-off runs, overrides file |
+
+Environment wins over the file if both are set.
 
 ```json
 {
