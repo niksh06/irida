@@ -1,18 +1,22 @@
 /**
- * Compose user prompt: context refs, then optional skills (issue 014 + skills).
+ * Compose user prompt: memory, context refs, then optional skills (issue 014 + 036).
  */
 import { expandContextRefs, ContextRefError } from "./contextRefs.js";
+import { expandMemoryRefs, MemoryError } from "./memory.js";
 import { buildPrompt } from "./promptBuilder.js";
 import type { Skill } from "./skills.js";
 
-export { ContextRefError };
+export { ContextRefError, MemoryError };
 
 export function composePrompt(args: {
   userPrompt: string;
   cwd: string;
+  dir?: string;
   skills?: Skill[];
 }): string {
-  const withRefs = expandContextRefs(args.userPrompt, args.cwd);
-  if (args.skills && args.skills.length) return buildPrompt(withRefs, args.skills);
-  return withRefs;
+  const dir = args.dir ?? args.cwd;
+  let text = expandMemoryRefs(args.userPrompt, dir);
+  text = expandContextRefs(text, args.cwd);
+  if (args.skills && args.skills.length) return buildPrompt(text, args.skills);
+  return text;
 }

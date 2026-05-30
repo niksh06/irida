@@ -8,6 +8,7 @@ export type SlashAction =
   | { type: "resume"; sessionId: string }
   | { type: "new" }
   | { type: "skills" }
+  | { type: "memory" }
   | { type: "doctor" }
   | { type: "tools" }
   | { type: "model" }
@@ -46,6 +47,9 @@ export function parseSlash(input: string): SlashAction | null {
     case "skills":
     case "skill":
       return { type: "skills" };
+    case "memory":
+    case "mem":
+      return { type: "memory" };
     case "doctor":
       return { type: "doctor" };
     case "tools":

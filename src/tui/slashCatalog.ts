@@ -11,6 +11,7 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { cmd: "resume", desc: "Switch session by id", args: "<id>" },
   { cmd: "new", desc: "Start a fresh chat session" },
   { cmd: "skills", desc: "List local skills" },
+  { cmd: "memory", desc: "List durable memories" },
   { cmd: "doctor", desc: "Environment checks" },
   { cmd: "tools", desc: "Tool / MCP activity log" },
   { cmd: "model", desc: "Pick SDK model" },
@@ -27,7 +28,7 @@ export function slashHelpLines(): string[] {
     const usage = c.args ? `/${c.cmd} ${c.args}` : `/${c.cmd}`;
     return `${usage.padEnd(18)} — ${c.desc}`;
   });
-  return [...rows, "", "trackpad scroll · /rename · Ctrl+T thinking · @file:<Tab> · Ctrl+O scroll"];
+  return [...rows, "", "trackpad scroll · @memory: · /rename · Ctrl+T · @file:<Tab> · Ctrl+O scroll"];
 }
 
 /** Match slash command prefixes for autocomplete (first token only). */

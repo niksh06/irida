@@ -15,6 +15,7 @@ import { ToolCallBanner } from "./components/ToolCallBanner.js";
 import { SlashSuggest } from "./components/SlashSuggest.js";
 import { DoctorPanel } from "./components/DoctorPanel.js";
 import { SkillsPanel } from "./components/SkillsPanel.js";
+import { MemoryPanel } from "./components/MemoryPanel.js";
 import { SessionTabBar } from "./components/SessionTabBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { McpPanel } from "./components/McpPanel.js";
@@ -545,6 +546,9 @@ export function App(props: TuiOptions) {
         case "skills":
           openOverlay("skills");
           return;
+        case "memory":
+          openOverlay("memory");
+          return;
         case "doctor":
           openOverlay("doctor");
           return;
@@ -736,6 +740,7 @@ export function App(props: TuiOptions) {
               />
             ) : null}
             {overlay === "skills" ? <SkillsPanel dir={dir} onClose={closeOverlay} /> : null}
+            {overlay === "memory" ? <MemoryPanel dir={dir} onClose={closeOverlay} /> : null}
             {overlay === "doctor" ? <DoctorPanel dir={dir} onClose={closeOverlay} /> : null}
             {overlay === "tools" ? (
               <ToolsPanel entries={activityLog} onClose={closeOverlay} />

@@ -15,7 +15,7 @@ export interface SessionMeta {
   connectMode?: string;
 }
 
-export type Overlay = null | "help" | "sessions" | "skills" | "doctor" | "tools" | "model" | "mcp";
+export type Overlay = null | "help" | "sessions" | "skills" | "memory" | "doctor" | "tools" | "model" | "mcp";
 
 export interface ActivityEntry {
   id: string;

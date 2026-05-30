@@ -8,7 +8,7 @@ import { runOneShot, StartupError, type SdkLike } from "./host.js";
 import { Store } from "./store.js";
 import { safetyGate } from "./safety.js";
 import { loadSkills, SkillError } from "./skills.js";
-import { composePrompt, ContextRefError } from "./composePrompt.js";
+import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -65,7 +65,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     const skills = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
     finalPrompt = composePrompt({ userPrompt: prompt, cwd: cfg.cwd, skills });
   } catch (e) {
-    if (e instanceof ContextRefError || e instanceof SkillError) {
+    if (e instanceof ContextRefError || e instanceof MemoryError || e instanceof SkillError) {
       console.error("run: " + e.message);
       return EXIT.usage;
     }

@@ -12,6 +12,7 @@ import { cmdResume } from "./resume.js";
 import { cmdSkills } from "./skills_cmd.js";
 import { cmdTui } from "./tui_cmd.js";
 import { cmdAuth } from "./auth_cmd.js";
+import { cmdMemory } from "./memory_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -27,6 +28,7 @@ Usage:
   csagent config              print non-secret config
   csagent auth login --stdin  save API key to .agent/credentials.json (600)
   csagent auth status         key configured? (never prints secret)
+  csagent memory list         durable notes (.agent/memory/)
   csagent skills list         list local Markdown skills
   csagent skills search <q>   search skills by name/description/tags
 
@@ -86,6 +88,8 @@ async function main(argv: string[]): Promise<number> {
     }
     case "auth":
       return cmdAuth(rest);
+    case "memory":
+      return cmdMemory(rest);
     case undefined:
     case "-h":
     case "--help":

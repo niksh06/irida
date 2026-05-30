@@ -20,7 +20,7 @@ import {
 import { Store } from "./store.js";
 import { safetyGate, type Confirmer } from "./safety.js";
 import { loadSkills, SkillError, type Skill } from "./skills.js";
-import { composePrompt, ContextRefError } from "./composePrompt.js";
+import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
 import { connectAgentForSession, replayPreamble, type ConnectMode } from "./sessionConnect.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
@@ -236,6 +236,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         });
       } catch (e) {
         if (e instanceof ContextRefError) return { kind: "error", message: e.message, fatal: false };
+        if (e instanceof MemoryError) return { kind: "error", message: e.message, fatal: false };
         throw e;
       }
       if (firstTurn && replayPrefix) {
