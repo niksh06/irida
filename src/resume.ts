@@ -21,6 +21,7 @@ import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { connectAgentForSession } from "./sessionConnect.js";
+import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 
 type ResumeSdk = SdkResumeLike & SdkCreateLike;
 
@@ -54,9 +55,9 @@ export async function cmdResume(
     console.error('resume: a prompt is required, e.g. cursor-agent resume <id> "continue"');
     return EXIT.usage;
   }
-  const apiKey = (process.env.CURSOR_API_KEY ?? "").trim();
+  const { key: apiKey } = resolveApiKey(dir);
   if (!apiKey) {
-    console.error("resume: CURSOR_API_KEY is not set (export it in your environment)");
+    console.error(`resume: ${API_KEY_HELP}`);
     return EXIT.config;
   }
 

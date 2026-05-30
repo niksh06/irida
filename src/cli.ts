@@ -11,6 +11,7 @@ import { cmdSessions } from "./sessions_cmd.js";
 import { cmdResume } from "./resume.js";
 import { cmdSkills } from "./skills_cmd.js";
 import { cmdTui } from "./tui_cmd.js";
+import { cmdAuth } from "./auth_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -24,13 +25,15 @@ Usage:
   csagent sessions            list stored sessions
   csagent resume <id> "<p>"   continue a stored session (Agent.resume)
   csagent config              print non-secret config
+  csagent auth login --stdin  save API key to .agent/credentials.json (600)
+  csagent auth status         key configured? (never prints secret)
   csagent skills list         list local Markdown skills
   csagent skills search <q>   search skills by name/description/tags
 
 Note: bare \`cursor-agent\` in PATH is Cursor's official CLI (different tool).
-Use \`csagent\`, \`npm run doctor\`, or \`npm run dev -- doctor\` for this project.
+Use \`csagent\`, \`npm run doctor\`, or \`npm run dev -- …\` for this project.
 
-Secrets: set CURSOR_API_KEY in the environment (never in config).
+Secrets: \`csagent auth login --stdin\` (local file) or CURSOR_API_KEY in the environment (CI override). Never in agent.config.json.
 `;
 
 /** Pull `--skill <name>` (repeatable) and `--yes-i-understand` flags; return the rest. */
@@ -81,6 +84,8 @@ async function main(argv: string[]): Promise<number> {
         return EXIT.config;
       }
     }
+    case "auth":
+      return cmdAuth(rest);
     case undefined:
     case "-h":
     case "--help":

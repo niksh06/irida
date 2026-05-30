@@ -1,4 +1,5 @@
 import { loadConfig } from "../config.js";
+import { resolveApiKey } from "../credentials.js";
 
 /** Default model ids when SDK list is unavailable (override via CSAGENT_MODELS). */
 export const DEFAULT_MODELS = ["composer-2.5", "composer-2", "claude-4-sonnet", "gpt-5.4"];
@@ -42,9 +43,10 @@ export async function listPickerModelsFromSdk(
   apiKey?: string
 ): Promise<ModelListResult> {
   const fallback = listPickerModelsFallback(dir);
-  const key = (apiKey ?? process.env.CURSOR_API_KEY ?? "").trim();
+  const resolved = resolveApiKey(dir);
+  const key = (apiKey ?? resolved.key).trim();
   if (!key) {
-    return { models: fallback, source: "fallback", error: "CURSOR_API_KEY not set" };
+    return { models: fallback, source: "fallback", error: "API key not configured" };
   }
 
   try {

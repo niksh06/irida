@@ -27,6 +27,7 @@ import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import type { ActivityDetail } from "./host.js";
 import { consumeRunStream, formatSdkError, isAgentRotatableError } from "./sdkErrors.js";
+import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 
 type ChatSdk = SdkCreateLike & SdkResumeLike;
 
@@ -100,9 +101,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   const interactive = opts.interactive ?? true;
   const log = opts.onLog ?? ((s: string) => console.error(s));
 
-  const apiKey = (process.env.CURSOR_API_KEY ?? "").trim();
+  const { key: apiKey } = resolveApiKey(dir);
   if (!apiKey) {
-    return { ok: false, code: EXIT.config, message: "CURSOR_API_KEY is not set (export it in your environment)" };
+    return { ok: false, code: EXIT.config, message: API_KEY_HELP };
   }
 
   let cfg: AgentConfig;

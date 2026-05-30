@@ -4,6 +4,7 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { CONFIG_FILE, ConfigError, loadConfig, validateMcpServers } from "./config.js";
+import { resolveApiKey, apiKeySourceLabel } from "./credentials.js";
 
 export interface DoctorCheck {
   name: string;
@@ -14,11 +15,11 @@ export interface DoctorCheck {
 export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   const checks: DoctorCheck[] = [];
 
-  const key = (process.env.CURSOR_API_KEY ?? "").trim();
+  const resolved = resolveApiKey(dir);
   checks.push({
     name: "CURSOR_API_KEY",
-    ok: key.length > 0,
-    detail: key.length > 0 ? "set" : "missing — export CURSOR_API_KEY=...",
+    ok: resolved.key.length > 0,
+    detail: apiKeySourceLabel(resolved.source, dir),
   });
 
   const major = Number(process.versions.node.split(".")[0]);
@@ -77,7 +78,8 @@ export async function gatherDoctorApiChecks(
   deps?: { listModels?: ModelsListFn }
 ): Promise<DoctorCheck[]> {
   void dir;
-  const key = (process.env.CURSOR_API_KEY ?? "").trim();
+  const resolved = resolveApiKey(dir);
+  const key = resolved.key;
   if (!key) return [];
 
   const listModels =

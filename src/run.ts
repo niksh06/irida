@@ -12,6 +12,7 @@ import { composePrompt, ContextRefError } from "./composePrompt.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
+import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 
 export interface RunOptions {
   sdk?: SdkLike;
@@ -33,9 +34,9 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     console.error('run: a prompt is required, e.g. cursor-agent run "summarize this repo"');
     return EXIT.usage;
   }
-  const apiKey = (process.env.CURSOR_API_KEY ?? "").trim();
+  const { key: apiKey } = resolveApiKey(dir);
   if (!apiKey) {
-    console.error("run: CURSOR_API_KEY is not set (export it in your environment)");
+    console.error(`run: ${API_KEY_HELP}`);
     return EXIT.config;
   }
 
