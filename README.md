@@ -151,7 +151,17 @@ BSD `sysexits(3)` convention (so callers/CI can branch on failure class):
 | `77` | EX_NOPERM | unsafe destructive prompt denied/declined |
 | `78` | EX_CONFIG | missing `CURSOR_API_KEY`, invalid config, cloud not allowed |
 
-`doctor` is a diagnostic: `0` = all checks pass, `1` = some failed.
+`doctor` is a diagnostic: `0` = all checks pass, `1` = some failed. When `CURSOR_API_KEY` is set, doctor also calls `Cursor.models.list()` to catch invalid keys before chat.
+
+### Auth vs session drop
+
+Three layers are easy to confuse:
+
+1. **`CURSOR_API_KEY`** — API access (refresh in Cursor → Integrations if doctor reports auth failure).
+2. **`sess_…`** — csagent conversation (SQLite transcript); survives SDK agent rotation.
+3. **`sdk_agent_id`** — ephemeral Cursor SDK handle; csagent may replace it mid-session and retry your turn once (system line in TUI).
+
+`ERROR_NOT_LOGGED_IN` / code 16 is **auth** — rotating the SDK agent will not help; fix the key or Cursor login. Other mid-turn SDK failures may trigger silent reinit + transcript replay.
 
 ## Develop
 
