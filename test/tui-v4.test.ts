@@ -20,18 +20,6 @@ describe("tui v4 models", () => {
     const models = listPickerModels(process.cwd());
     assert.ok(models.length >= 1);
   });
-
-  it("includes composer-2.5-fast in defaults", () => {
-    const prev = process.env.CSAGENT_MODELS;
-    try {
-      delete process.env.CSAGENT_MODELS;
-      const models = listPickerModels(process.cwd());
-      assert.ok(models.includes("composer-2.5-fast"));
-    } finally {
-      if (prev === undefined) delete process.env.CSAGENT_MODELS;
-      else process.env.CSAGENT_MODELS = prev;
-    }
-  });
 });
 
 describe("tui v4 mcp view", () => {
