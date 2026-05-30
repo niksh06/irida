@@ -94,6 +94,19 @@ npm run dev -- run "what lives in @dir:src?"
 
 Paths are relative to project cwd; traversal outside the workspace is blocked.
 
+### Memory (`@memory`)
+
+Durable notes in `.agent/memory/` (survive agent rotation and restarts):
+
+```bash
+csagent memory add tparser --stdin <<'EOF'
+# TParser
+XSS alerts: Reports/analysis/digest_qa_*.md
+EOF
+```
+
+In chat/TUI use `@memory:tparser` in the prompt, or `/memory` to list. Content is injected as context; secrets are redacted on save.
+
 List or search installed skills:
 
 ```bash
