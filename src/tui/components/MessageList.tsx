@@ -17,14 +17,22 @@ export function MessageList(props: {
   hiddenBelow?: number;
   atBottom?: boolean;
   scrollMode?: boolean;
+  nativeScroll?: boolean;
 }) {
-  const { rows, hiddenAbove = 0, hiddenBelow = 0, atBottom = true, scrollMode = false } = props;
+  const {
+    rows,
+    hiddenAbove = 0,
+    hiddenBelow = 0,
+    atBottom = true,
+    scrollMode = false,
+    nativeScroll = false,
+  } = props;
 
   if (rows.length === 0 && hiddenAbove === 0) {
     return (
       <Box flexDirection="column" paddingX={1} paddingY={1}>
         <Text color={theme.muted}>
-          Type a message. /help · Ctrl+O scroll mode · Ctrl+C quit
+          Type a message. /help · {nativeScroll ? "trackpad scroll" : "Ctrl+O scroll"} · Ctrl+C quit
         </Text>
       </Box>
     );

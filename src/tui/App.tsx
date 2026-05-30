@@ -17,6 +17,7 @@ import { parseSlash } from "./slash.js";
 import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
 import { estimateVisibleLines, maxScrollOffset, messagesToRows, runsToMessages, viewportRows } from "./transcript.js";
 import { listStoredSessions, loadSessionRuns } from "./loadSessions.js";
+import { useAltScreen } from "./terminal.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta } from "./types.js";
 import type { SessionRecord } from "../store.js";
 
@@ -45,6 +46,7 @@ export function App(props: TuiOptions) {
   const cols = stdout?.columns ?? 80;
   const rows = stdout?.rows ?? 24;
   const dir = props.dir ?? process.cwd();
+  const altScreen = useAltScreen();
 
   const sessionRef = useRef<ChatSession | null>(null);
   const bootGen = useRef(0);
@@ -185,6 +187,13 @@ export function App(props: TuiOptions) {
     () => viewportRows(allRows, visibleLines, scrollLineOffset),
     [allRows, visibleLines, scrollLineOffset]
   );
+  const displayRows = altScreen ? viewport.visible : allRows;
+  const displayHiddenAbove = altScreen ? viewport.hiddenAbove : 0;
+  const displayHiddenBelow = altScreen ? viewport.hiddenBelow : 0;
+  const displayAtBottom = altScreen ? viewport.atBottom : true;
+
+  const scrollKeysActive =
+    altScreen && !overlay && !confirm && !exiting && (scrollMode || input === "" || busy);
 
   const scrollUp = useCallback(
     (lines = 1) => {
@@ -256,12 +265,6 @@ export function App(props: TuiOptions) {
         const matches = filterSlashSuggestions(input);
         if (matches.length === 1) setInput(matches[0]!);
         else if (matches.length > 1) setInput(commonSlashPrefix(matches));
-        return;
-      }
-
-      if (!input && key.upArrow && maxScroll > 0) {
-        setScrollMode(true);
-        scrollUp(1);
       }
     },
     { isActive: !scrollMode && !overlay && !confirm && !exiting }
@@ -269,7 +272,7 @@ export function App(props: TuiOptions) {
 
   useInput(
     (inputKey, key) => {
-      if (overlay || confirm || exiting) return;
+      if (!scrollKeysActive) return;
 
       if (key.upArrow) scrollUp(1);
       else if (key.downArrow) scrollDown(1);
@@ -278,9 +281,9 @@ export function App(props: TuiOptions) {
       else if (key.ctrl && inputKey === "u") scrollUp(3);
       else if (key.ctrl && inputKey === "d") scrollDown(3);
       else if (key.ctrl && inputKey === "e") scrollToBottom();
-      else if (key.return || key.escape) setScrollMode(false);
+      else if (scrollMode && (key.return || key.escape)) setScrollMode(false);
     },
-    { isActive: scrollMode && !overlay && !confirm && !exiting }
+    { isActive: scrollKeysActive }
   );
 
   const handleSubmit = async (raw: string) => {
@@ -375,14 +378,18 @@ export function App(props: TuiOptions) {
     }
   };
 
-  const composerDisabled = Boolean(busy || fatal || confirm || exiting || overlay || !meta || scrollMode);
-  const scrollHint = scrollMode
-    ? `scroll +${scrollLineOffset}L`
-    : scrollLineOffset > 0
-      ? `+${scrollLineOffset}L · Ctrl+O`
-      : viewport.hiddenAbove > 0
-        ? "Ctrl+O scroll"
-        : null;
+  const composerDisabled = Boolean(
+    busy || fatal || confirm || exiting || overlay || !meta || (altScreen && scrollMode)
+  );
+  const scrollHint = !altScreen
+    ? null
+    : scrollMode
+      ? `scroll +${scrollLineOffset}L`
+      : scrollLineOffset > 0
+        ? `+${scrollLineOffset}L · Ctrl+O`
+        : displayHiddenAbove > 0
+          ? "Ctrl+O scroll"
+          : null;
 
   return (
     <Box flexDirection="column" width="100%">
@@ -399,12 +406,13 @@ export function App(props: TuiOptions) {
         minHeight={8}
       >
         <MessageList
-          rows={viewport.visible}
+          rows={displayRows}
           width={cols}
-          hiddenAbove={viewport.hiddenAbove}
-          hiddenBelow={viewport.hiddenBelow}
-          atBottom={viewport.atBottom}
-          scrollMode={scrollMode}
+          hiddenAbove={displayHiddenAbove}
+          hiddenBelow={displayHiddenBelow}
+          atBottom={displayAtBottom}
+          scrollMode={altScreen && scrollMode}
+          nativeScroll={!altScreen}
         />
         <ActivityBar label={activity} busy={busy} recent={activityLog} />
         {confirm ? (
@@ -439,9 +447,17 @@ export function App(props: TuiOptions) {
         onChange={setInput}
         onSubmit={(v) => void handleSubmit(v)}
         disabled={composerDisabled}
-        scrollMode={scrollMode}
+        scrollMode={altScreen && scrollMode}
         placeholder={
-          fatal ? "session failed" : overlay ? "close overlay first" : busy ? "agent is thinking…" : undefined
+          fatal
+            ? "session failed"
+            : overlay
+              ? "close overlay first"
+              : busy
+                ? "agent is thinking…"
+                : altScreen
+                  ? undefined
+                  : "trackpad scroll · /help"
         }
       />
 

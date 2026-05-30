@@ -22,7 +22,7 @@ export function slashHelpLines(): string[] {
     const usage = c.args ? `/${c.cmd} ${c.args}` : `/${c.cmd}`;
     return `${usage.padEnd(18)} — ${c.desc}`;
   });
-  return [...rows, "", "Tab completes /commands · Ctrl+O scroll · ↑↓ lines · Ctrl+E follow"];
+  return [...rows, "", "Tab completes /commands · trackpad scroll (default) · CSAGENT_TUI_ALT=1 for fullscreen"];
 }
 
 /** Match slash command prefixes for autocomplete (first token only). */
