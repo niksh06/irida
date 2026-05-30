@@ -2,7 +2,7 @@
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
-> MVP is **local-only**. No cloud runs or messaging gateway yet. **Cron** jobs via `csagent cron` (OS scheduler calls `cron tick`). **Ink TUI** is available via `csagent tui` (see `docs/issues/020-tui.md`).
+> MVP is **local-only**. No cloud runs yet. **Cron** via `csagent cron`; **Gateway** webhook bridge via `csagent gateway run`. **Ink TUI** via `csagent tui` (see `docs/issues/020-tui.md`).
 
 ## Requirements
 
@@ -139,6 +139,32 @@ Example crontab (every 5 minutes):
 ```
 
 Optional `sessionId` resumes an existing `sess_` and appends one turn. Destructive prompts are denied unless the job sets `"yesIUnderstand": true`. `csagent doctor` validates the jobs file when present.
+
+### Gateway (webhook → chat)
+
+Bridge external messages into csagent sessions. Config: `.agent/gateway.json`; secret via env `GATEWAY_WEBHOOK_SECRET`.
+
+```json
+{
+  "version": 1,
+  "adapter": "webhook",
+  "listen": { "host": "127.0.0.1", "port": 18789 },
+  "webhook": { "path": "/hook", "secretEnv": "GATEWAY_WEBHOOK_SECRET" },
+  "allowedChatIds": ["u1"],
+  "maxMessageLength": 8000
+}
+```
+
+```bash
+export GATEWAY_WEBHOOK_SECRET=your-shared-secret
+csagent gateway run
+curl -X POST http://127.0.0.1:18789/hook \
+  -H 'Content-Type: application/json' \
+  -H "X-Gateway-Secret: $GATEWAY_WEBHOOK_SECRET" \
+  -d '{"chatId":"u1","text":"hello"}'
+```
+
+Each `chatId` maps to a stable `sess_` (visible in `csagent sessions` / TUI). Unknown chat IDs are denied until listed in `allowedChatIds`. SIGINT closes open SDK agents cleanly.
 
 List or search installed skills:
 
