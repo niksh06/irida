@@ -9,15 +9,28 @@ import { StatusBar } from "./components/StatusBar.js";
 import { HelpPanel } from "./components/HelpPanel.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { ActivityBar } from "./components/ActivityBar.js";
+import { SlashSuggest } from "./components/SlashSuggest.js";
+import { DoctorPanel } from "./components/DoctorPanel.js";
+import { SkillsPanel } from "./components/SkillsPanel.js";
+import { ToolsPanel } from "./components/ToolsPanel.js";
 import { parseSlash } from "./slash.js";
+import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
 import { estimateVisibleMessages, runsToMessages, viewportMessages } from "./transcript.js";
 import { listStoredSessions, loadSessionRuns } from "./loadSessions.js";
-import type { ChatMessage, ConfirmState, Overlay, SessionMeta } from "./types.js";
+import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta } from "./types.js";
 import type { SessionRecord } from "../store.js";
 
 let msgSeq = 0;
 function nextId(prefix: string): string {
   return `${prefix}-${++msgSeq}`;
+}
+
+let actSeq = 0;
+function pushActivity(setter: React.Dispatch<React.SetStateAction<ActivityEntry[]>>, label: string) {
+  setter((prev) => [
+    ...prev.slice(-99),
+    { id: `act-${++actSeq}`, at: new Date().toISOString(), label },
+  ]);
 }
 
 export interface TuiOptions {
@@ -48,14 +61,22 @@ export function App(props: TuiOptions) {
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [activity, setActivity] = useState<string | null>(null);
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [pickerSessions, setPickerSessions] = useState<SessionRecord[]>([]);
   const [pickerIndex, setPickerIndex] = useState(0);
+
+  const slashSuggestions = useMemo(() => filterSlashSuggestions(input), [input]);
 
   const confirmRef = useRef<(reason: string) => Promise<boolean>>(async () => false);
   confirmRef.current = (reason) =>
     new Promise((resolve) => {
       setConfirm({ reason, resolve });
     });
+
+  const noteActivity = useCallback((label: string) => {
+    setActivity(label);
+    pushActivity(setActivityLog, label);
+  }, []);
 
   const patchStreaming = useCallback((delta: string) => {
     setMessages((prev) => {
@@ -97,7 +118,7 @@ export function App(props: TuiOptions) {
         interactive: true,
         confirm: (reason) => confirmRef.current(reason),
         onAssistantDelta: (d) => patchStreaming(d),
-        onActivity: (label) => setActivity(label),
+        onActivity: (label) => noteActivity(label),
         onLog: () => {},
       });
 
@@ -124,6 +145,7 @@ export function App(props: TuiOptions) {
       });
       setFatal(null);
       setScrollOffset(0);
+      setActivityLog([]);
 
       const history = resumeSessionId ? runsToMessages(loadSessionRuns(dir, resumeSessionId)) : [];
       const modeNote =
@@ -142,7 +164,7 @@ export function App(props: TuiOptions) {
       ]);
       return opened;
     },
-    [dir, patchStreaming, props.skills, props.yesIUnderstand]
+    [dir, noteActivity, patchStreaming, props.skills, props.yesIUnderstand]
   );
 
   useEffect(() => {
@@ -192,22 +214,29 @@ export function App(props: TuiOptions) {
     [bootSession, pushMessage]
   );
 
-  useInput((input, key) => {
-    if (key.ctrl && input === "c") {
+  useInput((inputKey, key) => {
+    if (key.ctrl && inputKey === "c") {
       void shutdown();
       return;
     }
     if (overlay || confirm || busy || exiting) return;
 
-    if (key.ctrl && input === "u") {
+    if (key.tab && input.startsWith("/")) {
+      const matches = filterSlashSuggestions(input);
+      if (matches.length === 1) setInput(matches[0]!);
+      else if (matches.length > 1) setInput(commonSlashPrefix(matches));
+      return;
+    }
+
+    if (key.ctrl && inputKey === "u") {
       setScrollOffset((o) => Math.min(messages.length, o + 2));
       return;
     }
-    if (key.ctrl && input === "d") {
+    if (key.ctrl && inputKey === "d") {
       setScrollOffset((o) => Math.max(0, o - 2));
       return;
     }
-    if (key.ctrl && input === "e") {
+    if (key.ctrl && inputKey === "e") {
       setScrollOffset(0);
     }
   });
@@ -234,6 +263,23 @@ export function App(props: TuiOptions) {
           return;
         case "sessions":
           openSessionsOverlay();
+          return;
+        case "skills":
+          setOverlay("skills");
+          return;
+        case "doctor":
+          setOverlay("doctor");
+          return;
+        case "tools":
+          setOverlay("tools");
+          return;
+        case "new":
+          setBusy(true);
+          {
+            const out = await bootSession();
+            if (out && !out.ok) pushMessage({ role: "error", text: out.message });
+          }
+          setBusy(false);
           return;
         case "resume":
           setBusy(true);
@@ -262,7 +308,7 @@ export function App(props: TuiOptions) {
     pushMessage({ role: "assistant", text: "", streaming: true });
     setScrollOffset(0);
     setBusy(true);
-    setActivity("thinking…");
+    noteActivity("thinking…");
 
     const out = await session.sendTurn(text);
     finishStreaming();
@@ -310,7 +356,7 @@ export function App(props: TuiOptions) {
           hiddenBelow={viewport.hiddenBelow}
           atBottom={viewport.atBottom}
         />
-        <ActivityBar label={activity} busy={busy} />
+        <ActivityBar label={activity} busy={busy} recent={activityLog} />
         {confirm ? (
           <ConfirmDialog state={confirm} onDone={() => setConfirm(null)} />
         ) : null}
@@ -329,7 +375,14 @@ export function App(props: TuiOptions) {
             onCancel={() => setOverlay(null)}
           />
         ) : null}
+        {overlay === "skills" ? <SkillsPanel dir={dir} onClose={() => setOverlay(null)} /> : null}
+        {overlay === "doctor" ? <DoctorPanel dir={dir} onClose={() => setOverlay(null)} /> : null}
+        {overlay === "tools" ? (
+          <ToolsPanel entries={activityLog} onClose={() => setOverlay(null)} />
+        ) : null}
       </Box>
+
+      <SlashSuggest input={input} suggestions={slashSuggestions} />
 
       <Composer
         value={input}

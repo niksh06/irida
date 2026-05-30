@@ -15,7 +15,13 @@ export interface SessionMeta {
   connectMode?: string;
 }
 
-export type Overlay = null | "help" | "sessions";
+export type Overlay = null | "help" | "sessions" | "skills" | "doctor" | "tools";
+
+export interface ActivityEntry {
+  id: string;
+  at: string;
+  label: string;
+}
 
 export interface ConfirmState {
   reason: string;

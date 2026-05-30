@@ -1,20 +1,18 @@
+import { slashHelpLines } from "./slashCatalog.js";
+
 export type SlashAction =
   | { type: "exit" }
   | { type: "clear" }
   | { type: "help" }
   | { type: "sessions" }
   | { type: "resume"; sessionId: string }
+  | { type: "new" }
+  | { type: "skills" }
+  | { type: "doctor" }
+  | { type: "tools" }
   | { type: "unknown"; command: string };
 
-export const SLASH_HELP = [
-  "/help       — this panel",
-  "/clear      — clear transcript",
-  "/sessions   — pick a stored session",
-  "/resume <id>— switch to session by id",
-  "/exit       — quit (also exit, quit, :q)",
-  "",
-  "Scroll: Ctrl+U up · Ctrl+D down · Ctrl+E follow latest",
-].join("\n");
+export const SLASH_HELP = slashHelpLines().join("\n");
 
 export function parseSlash(input: string): SlashAction | null {
   const t = input.trim();
@@ -37,6 +35,17 @@ export function parseSlash(input: string): SlashAction | null {
     case "resume":
       if (!arg) return { type: "unknown", command: "/resume requires a session id" };
       return { type: "resume", sessionId: arg };
+    case "new":
+    case "fresh":
+      return { type: "new" };
+    case "skills":
+    case "skill":
+      return { type: "skills" };
+    case "doctor":
+      return { type: "doctor" };
+    case "tools":
+    case "activity":
+      return { type: "tools" };
     default:
       return { type: "unknown", command: cmd };
   }

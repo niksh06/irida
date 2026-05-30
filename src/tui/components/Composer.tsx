@@ -33,7 +33,7 @@ export function Composer(props: {
             value={value}
             onChange={onChange}
             onSubmit={onSubmit}
-            placeholder={placeholder ?? "Message… (/exit to quit)"}
+            placeholder={placeholder ?? "Message… (/help · Tab completes /)"}
           />
         )}
       </Box>
