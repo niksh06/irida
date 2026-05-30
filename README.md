@@ -17,8 +17,17 @@ export CURSOR_API_KEY="cursor_..."   # Dashboard → Integrations
 
 ```bash
 npm install
-npm run build      # compile to dist/  (or use npm run dev for ts directly)
+npm run build      # compile to dist/ (also runs on npm install via prepare)
 ```
+
+For a global **`csagent`** command, link after build:
+
+```bash
+npm link
+csagent tui        # launcher rebuilds dist automatically if src/ changed
+```
+
+Dev without linking: **`npm run tui`** or **`npm run dev -- tui`** always use current `src/`.
 
 ## Commands
 
@@ -123,7 +132,7 @@ State (sessions + runs) is stored in `<stateDir>/state.sqlite`. No secrets are p
 ## Safety
 
 - One-shot `run` and `resume` are non-interactive: detected destructive prompts are **denied** (exit 77). Override with `--yes-i-understand`.
-- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it). In TUI: `/help`, `/sessions`, `/clear`, scroll with Ctrl+U/D/E.
+- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it). In TUI: `/help`, `/sessions`, `/skills`, `/doctor`, `/tools`, `/new`; Tab completes `/` commands; scroll with Ctrl+U/D/E.
 - API keys and key-shaped tokens are redacted from logs and persisted state.
 
 > **Limitation (honest):** destructive detection is a best-effort **regex denylist**, not a sandbox or security boundary. It catches common shapes (`rm -rf`, `drop table`, force-push, fork bombs) but is trivially bypassed by obfuscation, and it does **not** police what the Cursor agent does with its own tools. Treat it as a speed-bump.
