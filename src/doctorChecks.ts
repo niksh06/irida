@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { CONFIG_FILE, ConfigError, loadConfig, validateMcpServers } from "./config.js";
 import { resolveApiKey, apiKeySourceLabel } from "./credentials.js";
 import { validateCronJobsFile, cronJobsPath } from "./cronJobs.js";
+import { validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
 
 export interface DoctorCheck {
   name: string;
@@ -71,6 +72,16 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
       name: "cron jobs",
       ok: cronErrs.length === 0,
       detail: cronErrs.length ? cronErrs.join("; ") : "cron.jobs.json valid",
+    });
+  }
+
+  const gwPath = gatewayConfigPath(dir);
+  if (existsSync(gwPath)) {
+    const gwErrs = validateGatewayConfig(dir);
+    checks.push({
+      name: "gateway",
+      ok: gwErrs.length === 0,
+      detail: gwErrs.length ? gwErrs.join("; ") : "gateway.json valid",
     });
   }
 

@@ -14,6 +14,7 @@ import { cmdTui } from "./tui_cmd.js";
 import { cmdAuth } from "./auth_cmd.js";
 import { cmdMemory } from "./memory_cmd.js";
 import { cmdCron } from "./cron_cmd.js";
+import { cmdGateway } from "./gateway_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -31,6 +32,7 @@ Usage:
   csagent auth status         key configured? (never prints secret)
   csagent memory list         durable notes (.agent/memory/)
   csagent cron list           scheduled jobs (.agent/cron.jobs.json)
+  csagent gateway run         messaging bridge (webhook → chat)
   csagent skills list         list local Markdown skills
   csagent skills search <q>   search skills by name/description/tags
 
@@ -94,6 +96,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdMemory(rest);
     case "cron":
       return cmdCron(rest);
+    case "gateway":
+      return cmdGateway(rest);
     case undefined:
     case "-h":
     case "--help":

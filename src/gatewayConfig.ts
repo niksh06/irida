@@ -1,0 +1,119 @@
+/**
+ * Gateway config under .agent/gateway.json (issue 037).
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { loadConfig } from "./config.js";
+
+export const GATEWAY_FILE = "gateway.json";
+
+export interface GatewayConfig {
+  version: number;
+  adapter: "webhook" | "telegram";
+  host: string;
+  port: number;
+  webhookPath: string;
+  /** Env var name holding shared webhook secret. */
+  secretEnv: string;
+  allowedChatIds: string[];
+  maxMessageLength: number;
+  skills: string[];
+  yesIUnderstand?: boolean;
+}
+
+export class GatewayConfigError extends Error {}
+
+export function gatewayConfigPath(dir: string = process.cwd()): string {
+  const cfg = loadConfig(dir);
+  return resolve(dir, cfg.stateDir, GATEWAY_FILE);
+}
+
+function resolveSecret(envName: string): string {
+  const name = envName.trim() || "GATEWAY_WEBHOOK_SECRET";
+  return (process.env[name] ?? "").trim();
+}
+
+export function loadGatewayConfig(dir: string = process.cwd()): GatewayConfig {
+  const path = gatewayConfigPath(dir);
+  if (!existsSync(path)) {
+    throw new GatewayConfigError(
+      `missing ${GATEWAY_FILE} — create .agent/gateway.json (see: csagent gateway help)`
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (e) {
+    throw new GatewayConfigError(`cannot parse ${GATEWAY_FILE}: ${(e as Error).message}`);
+  }
+  if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new GatewayConfigError(`${GATEWAY_FILE} must be a JSON object`);
+  }
+  const o = parsed as Record<string, unknown>;
+  const adapterRaw = typeof o.adapter === "string" ? o.adapter.trim() : "webhook";
+  if (adapterRaw !== "webhook" && adapterRaw !== "telegram") {
+    throw new GatewayConfigError(`adapter must be 'webhook' or 'telegram', got '${adapterRaw}'`);
+  }
+  const listen =
+    o.listen && typeof o.listen === "object" && !Array.isArray(o.listen)
+      ? (o.listen as Record<string, unknown>)
+      : {};
+  const webhook =
+    o.webhook && typeof o.webhook === "object" && !Array.isArray(o.webhook)
+      ? (o.webhook as Record<string, unknown>)
+      : {};
+  const host = typeof listen.host === "string" && listen.host.trim() ? listen.host.trim() : "127.0.0.1";
+  const port = typeof listen.port === "number" && listen.port > 0 ? listen.port : 18789;
+  const webhookPath =
+    typeof webhook.path === "string" && webhook.path.trim() ? webhook.path.trim() : "/hook";
+  const secretEnv =
+    typeof webhook.secretEnv === "string" && webhook.secretEnv.trim()
+      ? webhook.secretEnv.trim()
+      : "GATEWAY_WEBHOOK_SECRET";
+  const allowedChatIds = Array.isArray(o.allowedChatIds)
+    ? o.allowedChatIds
+        .filter((id): id is string => typeof id === "string" && id.trim() !== "")
+        .map((id) => id.trim())
+    : [];
+  const maxMessageLength =
+    typeof o.maxMessageLength === "number" && o.maxMessageLength > 0 ? o.maxMessageLength : 8000;
+  const skills = Array.isArray(o.skills)
+    ? o.skills.filter((s): s is string => typeof s === "string" && s.trim() !== "").map((s) => s.trim())
+    : [];
+  return {
+    version: 1,
+    adapter: adapterRaw,
+    host,
+    port,
+    webhookPath,
+    secretEnv,
+    allowedChatIds,
+    maxMessageLength,
+    skills,
+    yesIUnderstand: o.yesIUnderstand === true,
+  };
+}
+
+export function gatewayWebhookSecret(cfg: GatewayConfig): string {
+  return resolveSecret(cfg.secretEnv);
+}
+
+export function validateGatewayConfig(dir: string = process.cwd()): string[] {
+  try {
+    const cfg = loadGatewayConfig(dir);
+    if (cfg.adapter === "webhook" && !gatewayWebhookSecret(cfg)) {
+      return [`webhook secret env ${cfg.secretEnv} is unset`];
+    }
+    if (cfg.allowedChatIds.length === 0) {
+      return ["allowedChatIds is empty — gateway denies all peers until configured"];
+    }
+    return [];
+  } catch (e) {
+    return [e instanceof GatewayConfigError ? e.message : String(e)];
+  }
+}
+
+export function isChatAllowed(cfg: GatewayConfig, chatId: string): boolean {
+  if (cfg.allowedChatIds.length === 0) return false;
+  return cfg.allowedChatIds.includes(chatId);
+}
