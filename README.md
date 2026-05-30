@@ -129,6 +129,8 @@ Project-local `agent.config.json` (all fields optional; defaults shown). **Secre
 
 State (sessions + runs) is stored in `<stateDir>/state.sqlite`. No secrets are persisted; prompt previews are redacted.
 
+**TUI model picker** (`/model`): defaults include `composer-2.5`, `composer-2.5-fast`, `composer-2`, and others. Override the list with `CSAGENT_MODELS=composer-2.5,composer-2.5-fast,...`. The config `model` field is always included in the picker.
+
 ## Safety
 
 - One-shot `run` and `resume` are non-interactive: detected destructive prompts are **denied** (exit 77). Override with `--yes-i-understand`.
