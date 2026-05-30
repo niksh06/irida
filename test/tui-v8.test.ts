@@ -45,6 +45,19 @@ describe("tui v8 virtual scroll", () => {
       true
     );
     assert.equal(
+      useNativeTrackpadScroll({ altScreen: false, scrollLineOffset: 0, scrollMode: false, overlay: true }),
+      false
+    );
+    assert.equal(
+      useNativeTrackpadScroll({
+        altScreen: false,
+        scrollLineOffset: 0,
+        scrollMode: false,
+        holdNativeScroll: true,
+      }),
+      false
+    );
+    assert.equal(
       useNativeTrackpadScroll({ altScreen: false, scrollLineOffset: 5, scrollMode: false }),
       false
     );

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { openChatSession, type ChatSession } from "../chatEngine.js";
+import { formatSdkError } from "../sdkErrors.js";
 import { banner, theme } from "./theme.js";
 import { Composer } from "./components/Composer.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
@@ -111,6 +112,7 @@ export function App(props: TuiOptions) {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [exiting, setExiting] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [holdNativeScroll, setHoldNativeScroll] = useState(false);
   const [scrollMode, setScrollMode] = useState(false);
   const [scrollLineOffset, setScrollLineOffset] = useState(0);
   const [activity, setActivity] = useState<string | null>(null);
@@ -206,6 +208,19 @@ export function App(props: TuiOptions) {
     setMessages((prev) => [...prev, { ...msg, id: nextId(msg.role) }]);
   }, []);
 
+  const resetTurnRetry = useCallback(() => {
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === "assistant" && last.streaming) {
+        next[next.length - 1] = { ...last, text: "" };
+      }
+      return next;
+    });
+    setThinkingText("");
+    setActivityLog([]);
+  }, []);
+
   const bootSession = useCallback(
     async (resumeSessionId?: string) => {
       const gen = ++bootGen.current;
@@ -223,6 +238,18 @@ export function App(props: TuiOptions) {
         onAssistantDelta: (d) => patchStreaming(d),
         onThinkingDelta: (d) => patchThinking(d),
         onActivity: (entry) => noteActivity(entry),
+        onTurnRetry: resetTurnRetry,
+        onAgentRotated: (info) => {
+          const from = info.previousAgentId?.slice(0, 6) ?? "-";
+          const to = info.newAgentId?.slice(0, 6) ?? "-";
+          const replay =
+            info.replayTurns > 0 ? `replay ${info.replayTurns} turns · ` : "";
+          pushMessage({
+            role: "system",
+            text: `· SDK agent reinitialized · ${replay}agent ${from}… → ${to}…`,
+          });
+          setMeta((m) => (m ? { ...m, agentId: info.newAgentId } : m));
+        },
         onLog: () => {},
       });
 
@@ -273,7 +300,7 @@ export function App(props: TuiOptions) {
       setRecentSessions(listStoredSessions(dir));
       return opened;
     },
-    [dir, modelOverride, noteActivity, patchStreaming, patchThinking, props.skills, props.yesIUnderstand]
+    [dir, modelOverride, noteActivity, patchStreaming, patchThinking, props.skills, props.yesIUnderstand, pushMessage, resetTurnRetry]
   );
 
   useEffect(() => {
@@ -300,6 +327,8 @@ export function App(props: TuiOptions) {
     altScreen,
     scrollLineOffset,
     scrollMode,
+    overlay: overlay != null,
+    holdNativeScroll,
   });
   const displayRows = nativeTrackpadScroll ? allRows : viewport.visible;
   const displayHiddenAbove = nativeTrackpadScroll ? 0 : viewport.hiddenAbove;
@@ -317,12 +346,14 @@ export function App(props: TuiOptions) {
 
   const scrollUp = useCallback(
     (lines = 1) => {
+      setHoldNativeScroll(false);
       setScrollLineOffset((o) => Math.min(maxScroll, o + lines));
     },
     [maxScroll]
   );
   const scrollDown = useCallback(
     (lines = 1) => {
+      setHoldNativeScroll(false);
       setScrollLineOffset((o) => Math.max(0, o - lines));
     },
     []
@@ -344,18 +375,33 @@ export function App(props: TuiOptions) {
     exit();
   }, [exit, exiting]);
 
+  const openOverlay = useCallback((kind: NonNullable<Overlay>) => {
+    setHoldNativeScroll(true);
+    setOverlay(kind);
+  }, []);
+
+  const finishOverlay = useCallback(() => {
+    setOverlay(null);
+    setScrollLineOffset(0);
+    setScrollMode(false);
+    setHoldNativeScroll(true);
+  }, []);
+
   const openSessionsOverlay = useCallback(() => {
     try {
+      setInput("");
       setPickerSessions(listStoredSessions(dir));
-      setOverlay("sessions");
+      openOverlay("sessions");
     } catch (e) {
       pushMessage({ role: "error", text: String(e) });
     }
-  }, [dir, pushMessage]);
+  }, [dir, openOverlay, pushMessage]);
+
+  const closeOverlay = finishOverlay;
 
   const switchToSession = useCallback(
     async (record: SessionRecord) => {
-      setOverlay(null);
+      finishOverlay();
       setBusy(true);
       const out = await bootSession(record.id);
       setBusy(false);
@@ -363,7 +409,7 @@ export function App(props: TuiOptions) {
         pushMessage({ role: "error", text: out.message });
       }
     },
-    [bootSession, pushMessage]
+    [bootSession, finishOverlay, pushMessage]
   );
 
   const cycleSessionTab = useCallback(
@@ -380,7 +426,7 @@ export function App(props: TuiOptions) {
 
   const applyModel = useCallback(
     async (model: string) => {
-      setOverlay(null);
+      finishOverlay();
       setModelOverride(model);
       setBusy(true);
       pushMessage({ role: "system", text: `Model → ${model} (restarting session)` });
@@ -388,7 +434,7 @@ export function App(props: TuiOptions) {
       setBusy(false);
       if (out && !out.ok) pushMessage({ role: "error", text: out.message });
     },
-    [bootSession, pushMessage]
+    [bootSession, finishOverlay, pushMessage]
   );
 
   useInput(
@@ -398,6 +444,7 @@ export function App(props: TuiOptions) {
         return;
       }
       if (key.ctrl && inputKey === "o") {
+        setHoldNativeScroll(false);
         setScrollMode((m) => !m);
         return;
       }
@@ -480,29 +527,29 @@ export function App(props: TuiOptions) {
           setScrollMode(false);
           return;
         case "help":
-          setOverlay("help");
+          openOverlay("help");
           return;
         case "sessions":
           openSessionsOverlay();
           return;
         case "skills":
-          setOverlay("skills");
+          openOverlay("skills");
           return;
         case "doctor":
-          setOverlay("doctor");
+          openOverlay("doctor");
           return;
         case "tools":
-          setOverlay("tools");
+          openOverlay("tools");
           return;
         case "model": {
           const r = await refreshPickerModels();
           const current = meta?.model ?? r.models[0] ?? "";
           setModelPickerIndex(Math.max(0, r.models.indexOf(current)));
-          setOverlay("model");
+          openOverlay("model");
           return;
         }
         case "mcp":
-          setOverlay("mcp");
+          openOverlay("mcp");
           return;
         case "copy": {
           const text = lastAssistantText(messages);
@@ -577,6 +624,7 @@ export function App(props: TuiOptions) {
     const session = sessionRef.current;
     if (!session) return;
 
+    setHoldNativeScroll(false);
     pushMessage({ role: "user", text });
     pushMessage({ role: "assistant", text: "", streaming: true });
     scrollToBottom();
@@ -588,28 +636,39 @@ export function App(props: TuiOptions) {
     setThinkingExpanded(false);
     noteActivity({ label: "thinking…", kind: "other", command: "waiting for model", phase: "call" });
 
-    const out = await session.sendTurn(text);
-    finishStreaming();
-    setBusy(false);
-    setTurnStartedAt(null);
-    setActivity(null);
-    setThinkingExpanded(false);
+    try {
+      const out = await session.sendTurn(text);
+      finishStreaming();
 
-    if (out.kind === "ok") setLastTurnStats(out.stats);
+      if (out.kind === "ok") setLastTurnStats(out.stats);
 
-    if (out.kind === "blocked") {
+      if (out.kind === "blocked") {
+        setMessages((prev) => {
+          const next = prev.slice(0, -1);
+          return [...next, { id: nextId("err"), role: "error", text: `Blocked: ${out.reason}` }];
+        });
+        return;
+      }
+      if (out.kind === "error") {
+        setMessages((prev) => {
+          const next = prev.slice(0, -1);
+          return [...next, { id: nextId("err"), role: "error", text: out.message }];
+        });
+        if (out.fatal) setFatal(out.message);
+      }
+    } catch (e) {
+      finishStreaming();
+      const formatted = formatSdkError(e);
       setMessages((prev) => {
         const next = prev.slice(0, -1);
-        return [...next, { id: nextId("err"), role: "error", text: `Blocked: ${out.reason}` }];
+        return [...next, { id: nextId("err"), role: "error", text: formatted.message }];
       });
-      return;
-    }
-    if (out.kind === "error") {
-      setMessages((prev) => {
-        const next = prev.slice(0, -1);
-        return [...next, { id: nextId("err"), role: "error", text: out.message }];
-      });
-      if (out.fatal) setFatal(out.message);
+      if (!formatted.recoverable) setFatal(formatted.message);
+    } finally {
+      setBusy(false);
+      setTurnStartedAt(null);
+      setActivity(null);
+      setThinkingExpanded(false);
     }
   };
 
@@ -647,59 +706,66 @@ export function App(props: TuiOptions) {
         paddingY={0}
         minHeight={8}
       >
-        <MessageList
-          rows={displayRows}
-          width={cols}
-          hiddenAbove={displayHiddenAbove}
-          hiddenBelow={displayHiddenBelow}
-          atBottom={displayAtBottom}
-          scrollMode={scrollMode}
-          nativeScroll={nativeTrackpadScroll}
-          totalLines={allRows.length}
-        />
-        <ToolCallBanner entry={activityLog[activityLog.length - 1] ?? null} />
-        <ThinkingBar text={thinkingText} expanded={thinkingExpanded} />
-        <ActivityBar
-          label={activity}
-          busy={busy}
-          recent={activityLog}
-          bannerActive={activityLog[activityLog.length - 1]?.phase === "call"}
-        />
+        {overlay ? (
+          <>
+            {overlay === "help" ? <HelpPanel onClose={closeOverlay} /> : null}
+            {overlay === "sessions" ? (
+              <SessionPicker
+                sessions={pickerSessions}
+                onSelect={(s) => void switchToSession(s)}
+                onCancel={closeOverlay}
+              />
+            ) : null}
+            {overlay === "skills" ? <SkillsPanel dir={dir} onClose={closeOverlay} /> : null}
+            {overlay === "doctor" ? <DoctorPanel dir={dir} onClose={closeOverlay} /> : null}
+            {overlay === "tools" ? (
+              <ToolsPanel entries={activityLog} onClose={closeOverlay} />
+            ) : null}
+            {overlay === "model" ? (
+              <ModelPicker
+                models={pickerModels}
+                current={meta?.model ?? pickerModels[0] ?? ""}
+                index={modelPickerIndex}
+                source={modelListSource}
+                sourceError={modelListError}
+                onMove={(d) =>
+                  setModelPickerIndex((i) => {
+                    if (pickerModels.length === 0) return 0;
+                    return (i + d + pickerModels.length) % pickerModels.length;
+                  })
+                }
+                onSelect={(m) => void applyModel(m)}
+                onCancel={closeOverlay}
+              />
+            ) : null}
+            {overlay === "mcp" ? (
+              <McpPanel entries={mcpView.entries} errors={mcpView.errors} onClose={closeOverlay} />
+            ) : null}
+          </>
+        ) : (
+          <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflow="hidden">
+            <MessageList
+              rows={displayRows}
+              width={cols}
+              hiddenAbove={displayHiddenAbove}
+              hiddenBelow={displayHiddenBelow}
+              atBottom={displayAtBottom}
+              scrollMode={scrollMode}
+              nativeScroll={nativeTrackpadScroll}
+              totalLines={allRows.length}
+            />
+            <ToolCallBanner entry={activityLog[activityLog.length - 1] ?? null} />
+            <ThinkingBar text={thinkingText} expanded={thinkingExpanded} />
+            <ActivityBar
+              label={activity}
+              busy={busy}
+              recent={activityLog}
+              bannerActive={activityLog[activityLog.length - 1]?.phase === "call"}
+            />
+          </Box>
+        )}
         {confirm ? (
           <ConfirmDialog state={confirm} onDone={() => setConfirm(null)} />
-        ) : null}
-        {overlay === "help" ? <HelpPanel onClose={() => setOverlay(null)} /> : null}
-        {overlay === "sessions" ? (
-          <SessionPicker
-            sessions={pickerSessions}
-            onSelect={(s) => void switchToSession(s)}
-            onCancel={() => setOverlay(null)}
-          />
-        ) : null}
-        {overlay === "skills" ? <SkillsPanel dir={dir} onClose={() => setOverlay(null)} /> : null}
-        {overlay === "doctor" ? <DoctorPanel dir={dir} onClose={() => setOverlay(null)} /> : null}
-        {overlay === "tools" ? (
-          <ToolsPanel entries={activityLog} onClose={() => setOverlay(null)} />
-        ) : null}
-        {overlay === "model" ? (
-          <ModelPicker
-            models={pickerModels}
-            current={meta?.model ?? pickerModels[0] ?? ""}
-            index={modelPickerIndex}
-            source={modelListSource}
-            sourceError={modelListError}
-            onMove={(d) =>
-              setModelPickerIndex((i) => {
-                if (pickerModels.length === 0) return 0;
-                return (i + d + pickerModels.length) % pickerModels.length;
-              })
-            }
-            onSelect={(m) => void applyModel(m)}
-            onCancel={() => setOverlay(null)}
-          />
-        ) : null}
-        {overlay === "mcp" ? (
-          <McpPanel entries={mcpView.entries} errors={mcpView.errors} onClose={() => setOverlay(null)} />
         ) : null}
       </Box>
 
@@ -707,7 +773,11 @@ export function App(props: TuiOptions) {
 
       <Composer
         value={input}
-        onChange={setInput}
+        onChange={(v) => {
+          if (overlay) return;
+          if (v && holdNativeScroll) setHoldNativeScroll(false);
+          setInput(v);
+        }}
         onSubmit={(v) => void handleSubmit(v)}
         disabled={composerDisabled}
         scrollMode={scrollMode}
@@ -716,12 +786,12 @@ export function App(props: TuiOptions) {
           fatal
             ? "session failed"
             : overlay
-              ? "close overlay first"
+              ? "Esc closes overlay"
               : busy
                 ? "agent is thinking…"
                 : scrollMode
                   ? "scroll mode · Enter compose"
-                  : "trackpad scroll · Ctrl+J newline · /help"
+                  : "Message… /help · Ctrl+J newline"
         }
       />
 

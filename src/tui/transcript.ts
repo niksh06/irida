@@ -168,8 +168,17 @@ export function useNativeTrackpadScroll(opts: {
   altScreen: boolean;
   scrollLineOffset: number;
   scrollMode: boolean;
+  overlay?: boolean;
+  /** After overlay closes, stay on virtual viewport until user scrolls or sends a message. */
+  holdNativeScroll?: boolean;
 }): boolean {
-  return !opts.altScreen && opts.scrollLineOffset === 0 && !opts.scrollMode;
+  return (
+    !opts.altScreen &&
+    opts.scrollLineOffset === 0 &&
+    !opts.scrollMode &&
+    !opts.overlay &&
+    !opts.holdNativeScroll
+  );
 }
 
 export function estimateVisibleLines(rows: number): number {

@@ -1,10 +1,23 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
-import { gatherDoctorChecks, doctorAllOk } from "../../doctorChecks.js";
+import { gatherDoctorChecks, gatherDoctorApiChecks, doctorAllOk } from "../../doctorChecks.js";
 
 export function DoctorPanel(props: { dir: string; onClose: () => void }) {
-  const checks = gatherDoctorChecks(props.dir);
+  const [checks, setChecks] = useState(() => gatherDoctorChecks(props.dir));
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const sync = gatherDoctorChecks(props.dir);
+      const api = await gatherDoctorApiChecks(props.dir);
+      if (!cancelled) setChecks([...sync, ...api]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.dir]);
+
   const allOk = doctorAllOk(checks);
 
   useInput((_input, key) => {

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { filterSessions, sessionDisplayTitle } from "../src/tui/sessionSearch.js";
+import { filterSessions, mergeSessionFilterInput, sessionDisplayTitle, sessionPickerWindow } from "../src/tui/sessionSearch.js";
 import {
   parseContextRefPrefix,
   applyContextRefCompletion,
@@ -33,6 +33,21 @@ describe("sessionSearch", () => {
   it("sessionDisplayTitle prefers title", () => {
     assert.equal(sessionDisplayTitle(sampleSession("sess-1", "My chat")), "My chat");
     assert.match(sessionDisplayTitle(sampleSession("sess-long-id-99", "chat session")), /sess-long/);
+  });
+
+  it("mergeSessionFilterInput supports paste", () => {
+    assert.equal(mergeSessionFilterInput("", "track", {}), "track");
+    assert.equal(mergeSessionFilterInput("ab", "cd", {}), "abcd");
+    assert.equal(mergeSessionFilterInput("abc", "", { backspace: true }), "ab");
+  });
+
+  it("sessionPickerWindow scrolls long lists", () => {
+    const items = Array.from({ length: 24 }, (_, i) => i);
+    const w = sessionPickerWindow(items, 12, 10);
+    assert.equal(w.visible.length, 10);
+    assert.equal(w.visible[0], 7);
+    assert.equal(w.hiddenAbove, 7);
+    assert.equal(w.hiddenBelow, 7);
   });
 });
 
