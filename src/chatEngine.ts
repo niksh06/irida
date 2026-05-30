@@ -7,7 +7,7 @@ import {
   createSession,
   disposeAgent,
   eventText,
-  eventActivity,
+  eventActivityDetail,
   StartupError,
   type AgentLike,
   type RunLike,
@@ -32,11 +32,13 @@ export interface ChatSessionOptions {
   yesIUnderstand?: boolean;
   confirm?: Confirmer;
   interactive?: boolean;
+  /** Override config model for this session. */
+  model?: string;
   /** Continue an existing stored session (live resume or transcript replay). */
   resumeSessionId?: string;
   onLog?: (line: string) => void;
   onAssistantDelta?: (delta: string) => void;
-  onActivity?: (label: string) => void;
+  onActivity?: (entry: { label: string; kind: "tool" | "mcp" | "other"; detail?: string }) => void;
 }
 
 export type TurnOutcome =
@@ -86,6 +88,12 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   if (cfg.runtime === "cloud" && !cfg.safety.allowCloud) {
     return { ok: false, code: EXIT.config, message: "cloud runtime requires safety.allowCloud=true (MVP is local-first)" };
   }
+
+  const activeModel = (opts.model ?? cfg.model).trim();
+  if (!activeModel) {
+    return { ok: false, code: EXIT.config, message: "model must be a non-empty string" };
+  }
+  cfg = { ...cfg, model: activeModel };
 
   let skills: Skill[] = [];
   if (opts.skills?.length) {
@@ -210,7 +218,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         let turnText = "";
         if (typeof run.stream === "function") {
           for await (const ev of run.stream()) {
-            const activity = eventActivity(ev);
+            const activity = eventActivityDetail(ev);
             if (activity) opts.onActivity?.(activity);
             const t = eventText(ev);
             if (t) {
