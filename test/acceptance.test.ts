@@ -62,9 +62,10 @@ function mockSdk(disposed: { v: boolean }): SdkLike & SdkCreateLike & SdkResumeL
   };
 }
 
-test("acceptance: doctor reflects API key presence", () => {
-  withKey(undefined, () => assert.equal(cmdDoctor(tmp()), 1));
-  withKey("k", () => assert.equal(cmdDoctor(tmp()), 0));
+test("acceptance: doctor reflects API key presence", async () => {
+  const mockList = { listModels: async () => [{ id: "composer-2.5" }] };
+  await withKey(undefined, async () => assert.equal(await cmdDoctor(tmp()), 1));
+  await withKey("k", async () => assert.equal(await cmdDoctor(tmp(), mockList), 0));
 });
 
 test("acceptance: run -> chat -> sessions -> resume flow", async () => {

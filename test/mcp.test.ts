@@ -52,20 +52,23 @@ test("run passes mcpServers and injected skill to SDK", async () => {
 });
 
 test("doctor fails on invalid mcp config", async () => {
-  await withKey("k", () => {
+  await withKey("k", async () => {
     const dir = tmp();
     writeFileSync(join(dir, "agent.config.json"), JSON.stringify({ mcpServers: { bad: {} } }));
-    return assert.equal(cmdDoctor(dir), 1);
+    assert.equal(await cmdDoctor(dir), 1);
   });
 });
 
 test("doctor passes with valid mcp config", async () => {
-  await withKey("k", () => {
+  await withKey("k", async () => {
     const dir = tmp();
     writeFileSync(
       join(dir, "agent.config.json"),
       JSON.stringify({ mcpServers: { web: { url: "http://localhost:9" } } })
     );
-    return assert.equal(cmdDoctor(dir), 0);
+    assert.equal(
+      await cmdDoctor(dir, { listModels: async () => [{ id: "composer-2.5" }] }),
+      0
+    );
   });
 });

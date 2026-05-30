@@ -50,7 +50,7 @@ async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   switch (cmd) {
     case "doctor":
-      return cmdDoctor();
+      return await cmdDoctor();
     case "run": {
       const { skills, yes, rest: r } = extractFlags(rest);
       return cmdRun(r.join(" "), { skills, yesIUnderstand: yes });

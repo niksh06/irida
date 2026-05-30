@@ -68,3 +68,41 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
 export function doctorAllOk(checks: DoctorCheck[]): boolean {
   return checks.every((c) => c.ok);
 }
+
+export type ModelsListFn = (opts: { apiKey: string }) => Promise<Array<{ id?: string }>>;
+
+/** Tier-1 Cursor API probe (models list). Skipped when key is unset. */
+export async function gatherDoctorApiChecks(
+  dir: string = process.cwd(),
+  deps?: { listModels?: ModelsListFn }
+): Promise<DoctorCheck[]> {
+  void dir;
+  const key = (process.env.CURSOR_API_KEY ?? "").trim();
+  if (!key) return [];
+
+  const listModels =
+    deps?.listModels ??
+    (async (opts: { apiKey: string }) => {
+      const { Cursor } = await import("@cursor/sdk");
+      return Cursor.models.list(opts);
+    });
+
+  try {
+    const list = await listModels({ apiKey: key });
+    const count = list.filter((m) => typeof m.id === "string" && m.id.trim()).length;
+    if (count === 0) {
+      return [{ name: "Cursor API (models)", ok: false, detail: "empty model list" }];
+    }
+    return [{ name: "Cursor API (models)", ok: true, detail: `${count} model(s) visible` }];
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const lower = msg.toLowerCase();
+    const detail =
+      lower.includes("fetch") || lower.includes("network") || lower.includes("econnrefused")
+        ? `network error — ${msg}`
+        : msg.includes("Authentication") || lower.includes("unauthenticated") || lower.includes("not logged in")
+          ? `authentication failed — refresh CURSOR_API_KEY in Cursor Integrations`
+          : msg;
+    return [{ name: "Cursor API (models)", ok: false, detail }];
+  }
+}
