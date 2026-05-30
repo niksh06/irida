@@ -115,7 +115,7 @@ export function App(props: TuiOptions) {
     });
 
   const noteActivity = useCallback((entry: ActivityDetail) => {
-    setActivity(entry.command ?? entry.label);
+    setActivity(entry.toolName ?? entry.label);
     pushActivity(setActivityLog, {
       label: entry.label,
       kind: entry.kind,
@@ -519,7 +519,12 @@ export function App(props: TuiOptions) {
           nativeScroll={!altScreen}
         />
         <ToolCallBanner entry={activityLog[activityLog.length - 1] ?? null} />
-        <ActivityBar label={activity} busy={busy} recent={activityLog} />
+        <ActivityBar
+          label={activity}
+          busy={busy}
+          recent={activityLog}
+          bannerActive={activityLog[activityLog.length - 1]?.phase === "call"}
+        />
         {confirm ? (
           <ConfirmDialog state={confirm} onDone={() => setConfirm(null)} />
         ) : null}

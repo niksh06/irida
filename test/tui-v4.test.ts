@@ -4,6 +4,7 @@ import { parseSlash } from "../src/tui/slash.js";
 import { listPickerModels } from "../src/tui/models.js";
 import { listMcpEntries } from "../src/tui/mcpView.js";
 import { lastAssistantText } from "../src/tui/clipboard.js";
+import { eventText } from "../src/host.js";
 import { eventActivityDetail } from "../src/toolFormat.js";
 
 describe("tui v4 slash", () => {
@@ -36,6 +37,15 @@ describe("tui v4 clipboard", () => {
       { role: "assistant", text: "hello" },
     ]);
     assert.equal(t, "hello");
+  });
+});
+
+describe("eventText stream filter", () => {
+  it("ignores tool_call events", () => {
+    assert.equal(
+      eventText({ type: "tool_call", name: "shell", args: { command: "rm -rf /" } }),
+      ""
+    );
   });
 });
 

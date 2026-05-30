@@ -63,6 +63,10 @@ export interface SdkCreateLike {
 /** Extract assistant text from a streamed SDK event (best-effort, shape-tolerant). */
 export function eventText(ev: unknown): string {
   const e = ev as { type?: string; message?: { content?: unknown }; text?: string };
+  const t = e?.type ?? "";
+  if (t === "tool_call" || t === "toolCall" || t === "tool_result" || t === "thinking" || t === "status") {
+    return "";
+  }
   if (e?.type === "assistant" && Array.isArray(e.message?.content)) {
     return (e.message.content as Array<{ type?: string; text?: string }>)
       .filter((b) => b.type === "text" && typeof b.text === "string")
