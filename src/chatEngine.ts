@@ -8,11 +8,13 @@ import {
   disposeAgent,
   eventText,
   eventActivityDetail,
+  parseStreamUsage,
   StartupError,
   type AgentLike,
   type RunLike,
   type SdkCreateLike,
   type SdkResumeLike,
+  type StreamUsage,
 } from "./host.js";
 import { Store } from "./store.js";
 import { safetyGate, type Confirmer } from "./safety.js";
@@ -43,9 +45,16 @@ export interface ChatSessionOptions {
 }
 
 export type TurnOutcome =
-  | { kind: "ok"; status: string; assistantText: string }
+  | { kind: "ok"; status: string; assistantText: string; stats: TurnStats }
   | { kind: "blocked"; reason: string }
   | { kind: "error"; message: string; fatal: boolean };
+
+export interface TurnStats {
+  durationMs: number;
+  toolCalls: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}
 
 export interface ChatSession {
   sessionId: string;
@@ -214,13 +223,21 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
       const runId = newId("run");
       const startedAt = nowIso();
+      const turnStartMs = Date.now();
+      let toolCalls = 0;
+      let usage: StreamUsage = {};
       try {
         const run: RunLike = await agent.send(sendMsg);
         let turnText = "";
         if (typeof run.stream === "function") {
           for await (const ev of run.stream()) {
             const activity = eventActivityDetail(ev);
-            if (activity) opts.onActivity?.(activity);
+            if (activity) {
+              if (activity.phase === "call") toolCalls++;
+              opts.onActivity?.(activity);
+            }
+            const u = parseStreamUsage(ev);
+            if (u) usage = { ...usage, ...u };
             const t = eventText(ev);
             if (t) {
               turnText += t;
@@ -230,7 +247,13 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         }
         const res = await run.wait();
         const lastStatus = String(res.status);
-        log(`[chat] runId=${res.id ?? "-"} status=${lastStatus}`);
+        const stats: TurnStats = {
+          durationMs: Date.now() - turnStartMs,
+          toolCalls,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        };
+        log(`[chat] runId=${res.id ?? "-"} status=${lastStatus} tools=${toolCalls} ${stats.durationMs}ms`);
         store.recordRun({
           id: runId,
           session_id: sessionId,
@@ -257,7 +280,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         if (lastStatus === "error") {
           return { kind: "error", message: "executed run failed (status=error)", fatal: false };
         }
-        return { kind: "ok", status: lastStatus, assistantText: turnText };
+        return { kind: "ok", status: lastStatus, assistantText: turnText, stats };
       } catch (e) {
         const errMsg = e instanceof StartupError ? redact(e.message) : redact((e as Error).message);
         return { kind: "error", message: errMsg, fatal: true };

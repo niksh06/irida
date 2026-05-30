@@ -2,7 +2,8 @@ import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import type { ActivityEntry } from "../types.js";
-import { summarizeCommandForBar, toolEventCounterLabel } from "../toolDisplay.js";
+import { summarizeCommandForBar } from "../toolDisplay.js";
+import { activityBarSummary, activityCounterLabel } from "../activityGroups.js";
 
 export function ActivityBar(props: {
   label: string | null;
@@ -16,7 +17,7 @@ export function ActivityBar(props: {
   if (!show) return null;
 
   const active = last?.phase === "call" && last.status === "running" ? last : null;
-  const counter = toolEventCounterLabel(props.recent.length);
+  const counter = activityCounterLabel(props.recent);
 
   let headline: string;
   if (props.bannerActive && active) {
@@ -26,7 +27,8 @@ export function ActivityBar(props: {
   } else if (active) {
     headline = active.toolName ?? active.label;
   } else {
-    headline = props.label ?? last?.label ?? "thinking…";
+    const grouped = activityBarSummary(props.recent, props.busy);
+    headline = grouped || props.label || last?.label || "thinking…";
   }
 
   return (

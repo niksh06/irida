@@ -28,6 +28,17 @@ export interface ActivityEntry {
   phase?: "call" | "result";
   callId?: string;
   detail?: string;
+  exitCode?: number;
+  durationMs?: number;
+  stdoutPreview?: string;
+  finishedAt?: string;
+}
+
+export interface TurnStats {
+  durationMs: number;
+  toolCalls: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export interface ConfirmState {

@@ -13,9 +13,71 @@ export interface ToolActivity {
   phase: "call" | "result";
   callId?: string;
   detail?: string;
+  exitCode?: number;
+  durationMs?: number;
+  stdoutPreview?: string;
 }
 
 export type ActivityDetail = ToolActivity;
+
+export interface ParsedToolResult {
+  exitCode?: number;
+  durationMs?: number;
+  stdoutPreview?: string;
+  detail?: string;
+}
+
+export function parseToolResult(result: unknown): ParsedToolResult {
+  if (result == null) return {};
+  if (typeof result === "string") {
+    const t = result.trim();
+    return t ? { stdoutPreview: t.slice(0, 160), detail: t.slice(0, 200) } : {};
+  }
+  if (!isRecord(result)) return {};
+
+  let exitCode: number | undefined;
+  let durationMs: number | undefined;
+  let stdoutPreview: string | undefined;
+
+  if (typeof result.duration_ms === "number") durationMs = result.duration_ms;
+  if (typeof result.durationMs === "number") durationMs = result.durationMs;
+
+  const value = isRecord(result.value) ? (result.value as Record<string, unknown>) : result;
+  if (typeof value.exitCode === "number") exitCode = value.exitCode;
+  if (typeof value.exit_code === "number") exitCode = value.exit_code;
+  if (typeof value.duration_ms === "number") durationMs = value.duration_ms;
+  if (typeof value.durationMs === "number") durationMs = value.durationMs;
+  if (typeof value.stdout === "string" && value.stdout.trim()) {
+    stdoutPreview = value.stdout.trim().slice(0, 160);
+  }
+  if (!stdoutPreview && typeof value.output === "string" && value.output.trim()) {
+    stdoutPreview = value.output.trim().slice(0, 160);
+  }
+  if (exitCode === undefined && (result.status === "error" || value.success === false)) {
+    exitCode = typeof value.exitCode === "number" ? value.exitCode : 1;
+  }
+
+  const detail = formatResultDetail({ exitCode, durationMs, stdoutPreview });
+  return { exitCode, durationMs, stdoutPreview, detail: detail || undefined };
+}
+
+export function formatResultDetail(r: {
+  exitCode?: number;
+  durationMs?: number;
+  stdoutPreview?: string;
+}): string {
+  const parts: string[] = [];
+  if (r.exitCode !== undefined) parts.push(`exit ${r.exitCode}`);
+  if (r.durationMs !== undefined) parts.push(formatDuration(r.durationMs));
+  if (r.stdoutPreview) parts.push(`stdout: ${r.stdoutPreview}`);
+  return parts.join(" · ");
+}
+
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`;
+}
 
 export function parseToolStreamEvent(ev: unknown): ToolActivity | null {
   if (ev == null || typeof ev !== "object") return null;
@@ -48,6 +110,7 @@ function fromSdkToolCall(e: Record<string, unknown>): ToolActivity | null {
   const command = formatToolInvocation(name, args);
   const phase: "call" | "result" = status === "running" ? "call" : "result";
   const callId = typeof e.call_id === "string" ? e.call_id : undefined;
+  const parsed = phase === "result" ? parseToolResult(e.result) : {};
   return {
     label: phase === "call" ? `${name}` : `${name} ✓`,
     kind: isMcpTool(name) ? "mcp" : "tool",
@@ -56,7 +119,10 @@ function fromSdkToolCall(e: Record<string, unknown>): ToolActivity | null {
     status,
     phase,
     callId,
-    detail: phase === "result" ? summarizeResult(e.result) : undefined,
+    detail: parsed.detail ?? (phase === "result" ? summarizeResult(e.result) : undefined),
+    exitCode: parsed.exitCode,
+    durationMs: parsed.durationMs,
+    stdoutPreview: parsed.stdoutPreview,
   };
 }
 
@@ -186,21 +252,8 @@ function formatConversationTool(toolType: string, args: Record<string, unknown>)
 }
 
 function summarizeResult(result: unknown): string | undefined {
-  if (result == null) return undefined;
-  if (typeof result === "string") return result.slice(0, 200);
-  if (!isRecord(result)) return undefined;
-  if (isRecord(result.value)) {
-    const v = result.value as Record<string, unknown>;
-    if (typeof v.stdout === "string" && v.stdout.trim()) {
-      return `stdout: ${v.stdout.trim().slice(0, 160)}`;
-    }
-    if (typeof v.exitCode === "number") return `exit ${v.exitCode}`;
-  }
-  try {
-    return JSON.stringify(result).slice(0, 200);
-  } catch {
-    return undefined;
-  }
+  const parsed = parseToolResult(result);
+  return parsed.detail;
 }
 
 function normalizeStatus(s: unknown): "running" | "completed" | "error" | undefined {

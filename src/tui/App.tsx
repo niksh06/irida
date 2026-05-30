@@ -26,7 +26,7 @@ import { estimateVisibleLines, maxScrollOffset, messagesToRows, runsToMessages, 
 import { listStoredSessions, loadSessionRuns } from "./loadSessions.js";
 import { useAltScreen } from "./terminal.js";
 import type { ActivityDetail } from "../host.js";
-import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta } from "./types.js";
+import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, TurnStats } from "./types.js";
 import type { SessionRecord } from "../store.js";
 
 let msgSeq = 0;
@@ -45,13 +45,21 @@ function pushActivity(
       if (idx >= 0) {
         const next = [...prev];
         const cur = next[idx]!;
+        const finishedAt = new Date().toISOString();
+        const durationMs =
+          entry.durationMs ??
+          (cur.at ? Math.max(0, Date.parse(finishedAt) - Date.parse(cur.at)) : undefined);
         next[idx] = {
           ...cur,
           ...entry,
           id: cur.id,
           at: cur.at,
+          finishedAt,
+          durationMs,
           label: entry.label || cur.label,
           command: entry.command || cur.command,
+          status: entry.status ?? "completed",
+          phase: "call",
         };
         return next;
       }
@@ -98,6 +106,9 @@ export function App(props: TuiOptions) {
   const [scrollLineOffset, setScrollLineOffset] = useState(0);
   const [activity, setActivity] = useState<string | null>(null);
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
+  const [lastTurnStats, setLastTurnStats] = useState<TurnStats | null>(null);
+  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
+  const [, tick] = useState(0);
   const [pickerSessions, setPickerSessions] = useState<SessionRecord[]>([]);
   const [pickerIndex, setPickerIndex] = useState(0);
   const [recentSessions, setRecentSessions] = useState<SessionRecord[]>([]);
@@ -125,8 +136,17 @@ export function App(props: TuiOptions) {
       phase: entry.phase,
       callId: entry.callId,
       detail: entry.detail,
+      exitCode: entry.exitCode,
+      durationMs: entry.durationMs,
+      stdoutPreview: entry.stdoutPreview,
     });
   }, []);
+
+  useEffect(() => {
+    if (!busy || turnStartedAt == null) return;
+    const id = setInterval(() => tick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [busy, turnStartedAt]);
 
   const patchStreaming = useCallback((delta: string) => {
     setMessages((prev) => {
@@ -198,6 +218,8 @@ export function App(props: TuiOptions) {
       setScrollLineOffset(0);
       setScrollMode(false);
       setActivityLog([]);
+      setLastTurnStats(null);
+      setTurnStartedAt(null);
 
       const history = resumeSessionId ? runsToMessages(loadSessionRuns(dir, resumeSessionId)) : [];
       const modeNote =
@@ -458,12 +480,17 @@ export function App(props: TuiOptions) {
     scrollToBottom();
     setScrollMode(false);
     setBusy(true);
+    setTurnStartedAt(Date.now());
+    setLastTurnStats(null);
     noteActivity({ label: "thinking…", kind: "other", command: "waiting for model", phase: "call" });
 
     const out = await session.sendTurn(text);
     finishStreaming();
     setBusy(false);
+    setTurnStartedAt(null);
     setActivity(null);
+
+    if (out.kind === "ok") setLastTurnStats(out.stats);
 
     if (out.kind === "blocked") {
       setMessages((prev) => {
@@ -493,6 +520,10 @@ export function App(props: TuiOptions) {
         : displayHiddenAbove > 0
           ? "Ctrl+O scroll"
           : null;
+
+  const turnElapsedMs =
+    busy && turnStartedAt != null ? Date.now() - turnStartedAt : undefined;
+  const sessionToolCalls = activityLog.filter((e) => e.kind === "tool" || e.kind === "mcp").length;
 
   return (
     <Box flexDirection="column" width="100%">
@@ -589,7 +620,16 @@ export function App(props: TuiOptions) {
         }
       />
 
-      <StatusBar meta={meta} busy={busy} error={fatal} scrollHint={scrollHint} />
+      <StatusBar
+        meta={meta}
+        busy={busy}
+        error={fatal}
+        scrollHint={scrollHint}
+        lastTurn={lastTurnStats}
+        turnElapsedMs={turnElapsedMs}
+        mcpCount={mcpView.entries.length}
+        sessionToolCalls={sessionToolCalls}
+      />
     </Box>
   );
 }

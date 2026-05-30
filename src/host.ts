@@ -86,6 +86,49 @@ export interface ActivityDetail {
   phase?: "call" | "result";
   callId?: string;
   detail?: string;
+  exitCode?: number;
+  durationMs?: number;
+  stdoutPreview?: string;
+}
+
+export interface StreamUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}
+
+/** Extract token usage from SDK stream events (best-effort). */
+export function parseStreamUsage(ev: unknown): StreamUsage | null {
+  if (ev == null || typeof ev !== "object") return null;
+  const e = ev as Record<string, unknown>;
+  const t = String(e.type ?? "");
+  if (t === "usage" || t === "token_usage" || t === "tokens") {
+    return extractUsage(e);
+  }
+  if (t === "assistant" && isRecord(e.message)) {
+    const msg = e.message as Record<string, unknown>;
+    if (isRecord(msg.usage)) return extractUsage(msg.usage as Record<string, unknown>);
+  }
+  if (isRecord(e.usage)) return extractUsage(e.usage as Record<string, unknown>);
+  return null;
+}
+
+function extractUsage(o: Record<string, unknown>): StreamUsage | null {
+  const input =
+    num(o.input_tokens) ?? num(o.inputTokens) ?? num(o.prompt_tokens) ?? num(o.promptTokens);
+  const output =
+    num(o.output_tokens) ?? num(o.outputTokens) ?? num(o.completion_tokens) ?? num(o.completionTokens);
+  const total = num(o.total_tokens) ?? num(o.totalTokens);
+  if (input == null && output == null && total == null) return null;
+  return { inputTokens: input, outputTokens: output, totalTokens: total };
+}
+
+function num(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 export { parseToolStreamEvent, eventActivity, eventActivityDetail } from "./toolFormat.js";

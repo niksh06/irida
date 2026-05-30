@@ -26,10 +26,12 @@ describe("toolFormat SDK tool_call", () => {
       status: "completed",
       call_id: "c2",
       args: { path: "src/cli.ts" },
-      result: { value: { stdout: "ok" }, status: "success" },
+      result: { value: { stdout: "ok", exitCode: 0 }, status: "success", duration_ms: 120 },
     };
     const a = parseToolStreamEvent(ev);
     assert.equal(a!.phase, "result");
+    assert.equal(a!.exitCode, 0);
+    assert.equal(a!.durationMs, 120);
     assert.match(a!.command, /read.*cli\.ts/);
   });
 
