@@ -1,0 +1,153 @@
+/**
+ * `csagent cron list|run|tick` — scheduled jobs (issue 038).
+ */
+import { writeFileSync, mkdirSync } from "node:fs";
+import { resolve } from "node:path";
+import { loadConfig, ConfigError } from "./config.js";
+import {
+  CronJobsError,
+  CRON_JOBS_FILE,
+  cronJobsPath,
+  loadCronJobs,
+  type CronJob,
+} from "./cronJobs.js";
+import { formatCronWhen, nextCronRun } from "./cronSchedule.js";
+import { cronJobEnabled } from "./cronJobs.js";
+import { executeCronJob, cronTick, markCronJobRan } from "./cronEngine.js";
+import { EXIT, type ExitCode } from "./exit.js";
+
+import type { SdkLike, SdkCreateLike, SdkResumeLike } from "./host.js";
+
+export interface CronCmdOptions {
+  dir?: string;
+  sdk?: SdkLike & SdkCreateLike & SdkResumeLike;
+}
+
+export function cmdCronList(opts: CronCmdOptions = {}): ExitCode {
+  const dir = opts.dir ?? process.cwd();
+  let jobs: CronJob[];
+  try {
+    jobs = loadCronJobs(dir);
+  } catch (e) {
+    console.error("cron: " + (e instanceof CronJobsError ? e.message : String(e)));
+    return EXIT.config;
+  }
+  const path = cronJobsPath(dir);
+  if (jobs.length === 0) {
+    console.log(`No jobs in ${path}`);
+    console.log("Create .agent/cron.jobs.json — see: csagent cron help");
+    return EXIT.ok;
+  }
+  console.log("ID               CRON            NEXT (local)       ON   PROMPT");
+  for (const j of jobs) {
+    const next = cronJobEnabled(j) ? nextCronRun(j.cron) : null;
+    const nextStr = next ? formatCronWhen(next) : "—";
+    const on = cronJobEnabled(j) ? "yes" : "no";
+    console.log(
+      `${j.id.padEnd(16)} ${j.cron.padEnd(15)} ${nextStr.padEnd(18)} ${on.padEnd(4)} ${j.prompt.slice(0, 40)}`
+    );
+  }
+  return EXIT.ok;
+}
+
+export async function cmdCronRun(jobId: string, opts: CronCmdOptions = {}): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  if (!jobId.trim()) {
+    console.error("cron run: job id required");
+    return EXIT.usage;
+  }
+  let jobs: CronJob[];
+  try {
+    jobs = loadCronJobs(dir);
+  } catch (e) {
+    console.error("cron: " + (e instanceof CronJobsError ? e.message : String(e)));
+    return EXIT.config;
+  }
+  const job = jobs.find((j) => j.id === jobId);
+  if (!job) {
+    console.error(`cron: job '${jobId}' not found`);
+    return EXIT.usage;
+  }
+  const exec = await executeCronJob(job, { dir, sdk: opts.sdk });
+  markCronJobRan(dir, job.id);
+  if (exec.ok) {
+    console.log(`cron: job '${job.id}' finished`);
+    return EXIT.ok;
+  }
+  console.error(`cron: job '${job.id}' failed — ${exec.message}`);
+  return exec.exitCode;
+}
+
+export async function cmdCronTick(opts: CronCmdOptions = {}): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  try {
+    loadCronJobs(dir);
+  } catch (e) {
+    console.error("cron: " + (e instanceof CronJobsError ? e.message : String(e)));
+    return EXIT.config;
+  }
+  const result = await cronTick({ dir, sdk: opts.sdk });
+  if (result.ran.length) console.log(`cron tick: ran ${result.ran.join(", ")}`);
+  if (result.errors.length) {
+    for (const err of result.errors) console.error(`cron tick: ${err.id} — ${err.message}`);
+    return EXIT.software;
+  }
+  return EXIT.ok;
+}
+
+export async function cmdCron(argv: string[], opts: CronCmdOptions = {}): Promise<ExitCode> {
+  const [sub, jobId] = argv;
+  switch (sub) {
+    case "list":
+    case "ls":
+      return cmdCronList(opts);
+    case "run":
+      return cmdCronRun(jobId ?? "", opts);
+    case "tick":
+      return cmdCronTick(opts);
+    case undefined:
+    case "-h":
+    case "--help":
+    case "help":
+      console.log(`Usage:
+  csagent cron list              show jobs and next run time
+  csagent cron run <id>          execute one job now
+  csagent cron tick              run all due jobs (call from system cron)
+
+Jobs file: .agent/cron.jobs.json
+Example crontab (every 5 min):
+  */5 * * * * cd /path/to/project && csagent cron tick
+
+Job JSON:
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "nightly-summary",
+      "cron": "0 9 * * *",
+      "prompt": "Summarize open issues",
+      "skills": ["review"],
+      "sessionId": "sess_optional",
+      "yesIUnderstand": false
+    }
+  ]
+}
+`);
+      return EXIT.ok;
+    default:
+      console.error(`cron: unknown subcommand '${sub}'\n\nRun: csagent cron help`);
+      return EXIT.usage;
+  }
+}
+
+/** Write example jobs file (for tests/docs). */
+export function writeExampleCronJobs(dir: string, jobs: CronJob[]): void {
+  const cfg = loadConfig(dir);
+  const root = resolve(dir, cfg.stateDir);
+  mkdirSync(root, { recursive: true });
+  writeFileSync(
+    resolve(root, CRON_JOBS_FILE),
+    JSON.stringify({ version: 1, jobs }, null, 2) + "\n",
+    { encoding: "utf8", mode: 0o600 }
+  );
+}

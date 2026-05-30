@@ -13,6 +13,7 @@ import { cmdSkills } from "./skills_cmd.js";
 import { cmdTui } from "./tui_cmd.js";
 import { cmdAuth } from "./auth_cmd.js";
 import { cmdMemory } from "./memory_cmd.js";
+import { cmdCron } from "./cron_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -29,6 +30,7 @@ Usage:
   csagent auth login --stdin  save API key to .agent/credentials.json (600)
   csagent auth status         key configured? (never prints secret)
   csagent memory list         durable notes (.agent/memory/)
+  csagent cron list           scheduled jobs (.agent/cron.jobs.json)
   csagent skills list         list local Markdown skills
   csagent skills search <q>   search skills by name/description/tags
 
@@ -90,6 +92,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdAuth(rest);
     case "memory":
       return cmdMemory(rest);
+    case "cron":
+      return cmdCron(rest);
     case undefined:
     case "-h":
     case "--help":

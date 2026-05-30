@@ -5,6 +5,7 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { CONFIG_FILE, ConfigError, loadConfig, validateMcpServers } from "./config.js";
 import { resolveApiKey, apiKeySourceLabel } from "./credentials.js";
+import { validateCronJobsFile, cronJobsPath } from "./cronJobs.js";
 
 export interface DoctorCheck {
   name: string;
@@ -62,6 +63,16 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
     writeDetail = `${probeTarget} not writable`;
   }
   checks.push({ name: "state writable", ok: writeOk, detail: writeDetail });
+
+  const cronPath = cronJobsPath(dir);
+  if (existsSync(cronPath)) {
+    const cronErrs = validateCronJobsFile(dir);
+    checks.push({
+      name: "cron jobs",
+      ok: cronErrs.length === 0,
+      detail: cronErrs.length ? cronErrs.join("; ") : "cron.jobs.json valid",
+    });
+  }
 
   return checks;
 }
