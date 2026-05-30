@@ -25,7 +25,7 @@ export function slashHelpLines(): string[] {
     const usage = c.args ? `/${c.cmd} ${c.args}` : `/${c.cmd}`;
     return `${usage.padEnd(18)} — ${c.desc}`;
   });
-  return [...rows, "", "Tab · /commands · ⌃[ ⌃] session tabs · trackpad scroll · CSAGENT_TUI_ALT=1 fullscreen"];
+  return [...rows, "", "Ctrl+J / Shift+Enter · newline · @file:path @dir:path · Tab /commands · ⌃[ ⌃] tabs"];
 }
 
 /** Match slash command prefixes for autocomplete (first token only). */

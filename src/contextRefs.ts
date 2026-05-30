@@ -70,6 +70,47 @@ function collectTokens(re: RegExp, prompt: string): string[] {
   return out;
 }
 
+export interface ContextRefToken {
+  kind: "file" | "dir";
+  raw: string;
+  display: string;
+}
+
+/** List @file / @dir tokens in prompt (deduped, order preserved). */
+export function listContextRefs(prompt: string): ContextRefToken[] {
+  const seen = new Set<string>();
+  const out: ContextRefToken[] = [];
+  for (const raw of collectTokens(FILE_TOKEN, prompt)) {
+    const key = `file:${raw}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kind: "file", raw, display: normalize(raw) });
+  }
+  for (const raw of collectTokens(DIR_TOKEN, prompt)) {
+    const key = `dir:${raw}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kind: "dir", raw, display: normalize(raw) });
+  }
+  return out;
+}
+
+export type ContextRefProbe = "ok" | "missing" | "invalid";
+
+/** Check whether a ref resolves inside cwd (for TUI hints). */
+export function probeContextRef(cwd: string, token: ContextRefToken): ContextRefProbe {
+  try {
+    const abs = safePath(cwd, token.raw);
+    if (!existsSync(abs)) return "missing";
+    const st = statSync(abs);
+    if (token.kind === "file" && !st.isFile()) return "invalid";
+    if (token.kind === "dir" && !st.isDirectory()) return "invalid";
+    return "ok";
+  } catch {
+    return "invalid";
+  }
+}
+
 /** Replace @file: and @dir: tokens; append injected blocks after user text. */
 export function expandContextRefs(prompt: string, cwd: string): string {
   const filePaths = collectTokens(FILE_TOKEN, prompt);

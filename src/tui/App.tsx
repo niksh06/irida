@@ -607,6 +607,7 @@ export function App(props: TuiOptions) {
         onSubmit={(v) => void handleSubmit(v)}
         disabled={composerDisabled}
         scrollMode={altScreen && scrollMode}
+        cwd={meta?.cwd ?? dir}
         placeholder={
           fatal
             ? "session failed"
