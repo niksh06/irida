@@ -17,6 +17,7 @@ export function MessageList(props: {
   hiddenBelow?: number;
   atBottom?: boolean;
   scrollMode?: boolean;
+  nativeScroll?: boolean;
   totalLines?: number;
 }) {
   const {
@@ -25,6 +26,7 @@ export function MessageList(props: {
     hiddenBelow = 0,
     atBottom = true,
     scrollMode = false,
+    nativeScroll = false,
     totalLines = 0,
   } = props;
 
@@ -32,7 +34,7 @@ export function MessageList(props: {
     return (
       <Box flexDirection="column" paddingX={1} paddingY={1}>
         <Text color={theme.muted}>
-          Type a message. /help · ↑↓ scroll · Ctrl+O scroll mode · Ctrl+C quit
+          Type a message. /help · {nativeScroll ? "trackpad scroll" : "Ctrl+O scroll"} · Ctrl+C quit
         </Text>
       </Box>
     );

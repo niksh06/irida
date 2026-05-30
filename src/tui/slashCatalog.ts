@@ -25,7 +25,7 @@ export function slashHelpLines(): string[] {
     const usage = c.args ? `/${c.cmd} ${c.args}` : `/${c.cmd}`;
     return `${usage.padEnd(18)} — ${c.desc}`;
   });
-  return [...rows, "", "↑↓ scroll transcript · Ctrl+O scroll mode · Ctrl+G top · Ctrl+E bottom · Ctrl+J newline · @file:path"];
+  return [...rows, "", "trackpad scroll · Ctrl+O keyboard scroll · Ctrl+G/E · Ctrl+J newline · @file:path"];
 }
 
 /** Match slash command prefixes for autocomplete (first token only). */

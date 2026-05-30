@@ -160,6 +160,18 @@ export function shouldVirtualizeTranscript(totalLines: number, visibleLines: num
   return totalLines > Math.max(4, visibleLines);
 }
 
+/**
+ * Default: dump full transcript into terminal scrollback (trackpad works).
+ * Virtual viewport when user keyboard-scrolls, scroll mode, or alt screen.
+ */
+export function useNativeTrackpadScroll(opts: {
+  altScreen: boolean;
+  scrollLineOffset: number;
+  scrollMode: boolean;
+}): boolean {
+  return !opts.altScreen && opts.scrollLineOffset === 0 && !opts.scrollMode;
+}
+
 export function estimateVisibleLines(rows: number): number {
   const chrome = 11;
   return Math.max(6, rows - chrome);

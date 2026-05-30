@@ -4,6 +4,7 @@ import {
   messagesToRowsCached,
   scrollPositionLabel,
   shouldVirtualizeTranscript,
+  useNativeTrackpadScroll,
   viewportRows,
   type MessageRowCache,
 } from "../src/tui/transcript.js";
@@ -36,6 +37,21 @@ describe("tui v8 virtual scroll", () => {
     assert.ok(r2.length >= r1.length);
     assert.equal(cache.get("m1")!.text, "hello");
     assert.equal(cache.get("m2")!.text, "world!");
+  });
+
+  it("useNativeTrackpadScroll when at bottom without alt screen", () => {
+    assert.equal(
+      useNativeTrackpadScroll({ altScreen: false, scrollLineOffset: 0, scrollMode: false }),
+      true
+    );
+    assert.equal(
+      useNativeTrackpadScroll({ altScreen: false, scrollLineOffset: 5, scrollMode: false }),
+      false
+    );
+    assert.equal(
+      useNativeTrackpadScroll({ altScreen: true, scrollLineOffset: 0, scrollMode: false }),
+      false
+    );
   });
 
   it("viewport always caps visible rows", () => {

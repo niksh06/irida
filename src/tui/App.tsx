@@ -22,8 +22,9 @@ import { listMcpEntries } from "./mcpView.js";
 import { lastAssistantText, osc52Copy } from "./clipboard.js";
 import { parseSlash } from "./slash.js";
 import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
-import { estimateVisibleLines, maxScrollOffset, messagesToRowsCached, runsToMessages, scrollPositionLabel, shouldVirtualizeTranscript, viewportRows, type MessageRowCache } from "./transcript.js";
+import { estimateVisibleLines, maxScrollOffset, messagesToRowsCached, runsToMessages, scrollPositionLabel, shouldVirtualizeTranscript, useNativeTrackpadScroll, viewportRows, type MessageRowCache } from "./transcript.js";
 import { listStoredSessions, loadSessionRuns } from "./loadSessions.js";
+import { useAltScreen } from "./terminal.js";
 import type { ActivityDetail } from "../host.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, TurnStats } from "./types.js";
 import type { SessionRecord } from "../store.js";
@@ -86,6 +87,7 @@ export function App(props: TuiOptions) {
   const cols = stdout?.columns ?? 80;
   const rows = stdout?.rows ?? 24;
   const dir = props.dir ?? process.cwd();
+  const altScreen = useAltScreen();
 
   const sessionRef = useRef<ChatSession | null>(null);
   const bootGen = useRef(0);
@@ -262,16 +264,22 @@ export function App(props: TuiOptions) {
     [allRows, visibleLines, scrollLineOffset]
   );
   const transcriptScrollable = shouldVirtualizeTranscript(allRows.length, visibleLines);
-  const displayRows = viewport.visible;
-  const displayHiddenAbove = viewport.hiddenAbove;
-  const displayHiddenBelow = viewport.hiddenBelow;
-  const displayAtBottom = viewport.atBottom;
+  const nativeTrackpadScroll = useNativeTrackpadScroll({
+    altScreen,
+    scrollLineOffset,
+    scrollMode,
+  });
+  const displayRows = nativeTrackpadScroll ? allRows : viewport.visible;
+  const displayHiddenAbove = nativeTrackpadScroll ? 0 : viewport.hiddenAbove;
+  const displayHiddenBelow = nativeTrackpadScroll ? 0 : viewport.hiddenBelow;
+  const displayAtBottom = nativeTrackpadScroll ? true : viewport.atBottom;
   const scrollPosLabel = scrollPositionLabel(allRows.length, viewport.hiddenAbove, visibleLines);
 
   const scrollKeysActive =
     !overlay &&
     !confirm &&
     !exiting &&
+    !nativeTrackpadScroll &&
     (scrollMode || transcriptScrollable) &&
     (scrollMode || input === "" || busy);
 
@@ -532,9 +540,11 @@ export function App(props: TuiOptions) {
       : `scroll +${scrollLineOffset}L`
     : scrollLineOffset > 0
       ? scrollPosLabel ?? `+${scrollLineOffset}L · Ctrl+E`
-      : transcriptScrollable
-        ? "↑↓ scroll · Ctrl+O"
-        : null;
+      : nativeTrackpadScroll && transcriptScrollable
+        ? "trackpad scroll · Ctrl+O keys"
+        : transcriptScrollable
+          ? "↑↓ scroll · Ctrl+O"
+          : null;
 
   const turnElapsedMs =
     busy && turnStartedAt != null ? Date.now() - turnStartedAt : undefined;
@@ -562,6 +572,7 @@ export function App(props: TuiOptions) {
           hiddenBelow={displayHiddenBelow}
           atBottom={displayAtBottom}
           scrollMode={scrollMode}
+          nativeScroll={nativeTrackpadScroll}
           totalLines={allRows.length}
         />
         <ToolCallBanner entry={activityLog[activityLog.length - 1] ?? null} />
@@ -632,7 +643,7 @@ export function App(props: TuiOptions) {
                 ? "agent is thinking…"
                 : scrollMode
                   ? "scroll mode · Enter compose"
-                  : "Ctrl+J newline · @file:path · /help"
+                  : "trackpad scroll · Ctrl+J newline · /help"
         }
       />
 
