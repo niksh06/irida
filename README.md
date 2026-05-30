@@ -140,7 +140,15 @@ Example crontab (every 5 minutes):
 
 Optional `sessionId` resumes an existing `sess_` and appends one turn. Destructive prompts are denied unless the job sets `"yesIUnderstand": true`. `csagent doctor` validates the jobs file when present.
 
-### Gateway (webhook → chat)
+Optional completion notify (POST to gateway webhook):
+
+```json
+"notify": { "chatId": "u1", "webhookUrl": "http://127.0.0.1:18789/hook" }
+```
+
+Or set `CRON_NOTIFY_WEBHOOK_URL` globally. Uses `GATEWAY_WEBHOOK_SECRET` by default.
+
+### Gateway (webhook / Telegram → chat)
 
 Bridge external messages into csagent sessions. Config: `.agent/gateway.json`; secret via env `GATEWAY_WEBHOOK_SECRET`.
 
@@ -165,6 +173,24 @@ curl -X POST http://127.0.0.1:18789/hook \
 ```
 
 Each `chatId` maps to a stable `sess_` (visible in `csagent sessions` / TUI). Unknown chat IDs are denied until listed in `allowedChatIds`. SIGINT closes open SDK agents cleanly.
+
+**Telegram** (long polling, no extra deps):
+
+```json
+{
+  "version": 1,
+  "adapter": "telegram",
+  "telegram": { "tokenEnv": "TELEGRAM_BOT_TOKEN", "pollIntervalMs": 1500 },
+  "allowedChatIds": ["123456789"]
+}
+```
+
+```bash
+export TELEGRAM_BOT_TOKEN=...
+csagent gateway run --adapter telegram
+```
+
+Use your numeric Telegram chat id in `allowedChatIds` (message `@userinfobot` or inspect bot updates).
 
 List or search installed skills:
 
