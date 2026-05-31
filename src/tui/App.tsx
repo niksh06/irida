@@ -691,7 +691,9 @@ export function App(props: TuiOptions) {
       setBusy(false);
       setTurnStartedAt(null);
       setActivity(null);
+      setThinkingText("");
       setThinkingExpanded(false);
+      setActivityLog((prev) => prev.filter((e) => e.kind === "tool" || e.kind === "mcp"));
     }
   };
 

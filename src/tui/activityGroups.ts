@@ -96,6 +96,15 @@ export function activityBarSummary(entries: ActivityEntry[], busy: boolean): str
   return `${total} calls · ${typeSummary}`;
 }
 
+/** Hide the bar after a turn when only the pre-turn “thinking…” placeholder remains. */
+export function shouldShowActivityBar(
+  entries: ActivityEntry[],
+  busy: boolean,
+  label: string | null
+): boolean {
+  return busy || Boolean(label) || toolActivityEntries(entries).length > 0;
+}
+
 export function activityCounterLabel(entries: ActivityEntry[]): string | null {
   const tools = toolActivityEntries(entries);
   if (tools.length <= 1) return null;

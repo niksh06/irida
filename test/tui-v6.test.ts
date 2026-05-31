@@ -6,6 +6,7 @@ import {
   groupActivityEntries,
   activityBarSummary,
   formatGroupSummary,
+  shouldShowActivityBar,
 } from "../src/tui/activityGroups.js";
 import type { ActivityEntry } from "../src/tui/types.js";
 
@@ -64,5 +65,21 @@ describe("activityGroups", () => {
     const g = groupActivityEntries([mk("1", "shell")])[0]!;
     assert.match(formatGroupSummary(g), /exit 0/);
     assert.match(formatGroupSummary(g), /100ms/);
+  });
+
+  it("shouldShowActivityBar hides stale thinking placeholder after turn", () => {
+    const thinkingOnly = [
+      {
+        id: "1",
+        at: new Date().toISOString(),
+        label: "thinking…",
+        kind: "other" as const,
+        command: "waiting for model",
+        phase: "call" as const,
+      },
+    ];
+    assert.equal(shouldShowActivityBar(thinkingOnly, false, null), false);
+    assert.equal(shouldShowActivityBar(thinkingOnly, true, null), true);
+    assert.equal(shouldShowActivityBar([mk("1", "shell")], false, null), true);
   });
 });

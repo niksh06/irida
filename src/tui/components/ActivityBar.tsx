@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import type { ActivityEntry } from "../types.js";
 import { summarizeCommandForBar } from "../toolDisplay.js";
-import { activityBarSummary, activityCounterLabel } from "../activityGroups.js";
+import { activityBarSummary, activityCounterLabel, shouldShowActivityBar } from "../activityGroups.js";
 
 export function ActivityBar(props: {
   label: string | null;
@@ -13,7 +13,7 @@ export function ActivityBar(props: {
   bannerActive?: boolean;
 }) {
   const last = props.recent[props.recent.length - 1];
-  const show = props.busy || props.label || last;
+  const show = shouldShowActivityBar(props.recent, props.busy, props.label);
   if (!show) return null;
 
   const active = last?.phase === "call" && last.status === "running" ? last : null;
@@ -28,7 +28,7 @@ export function ActivityBar(props: {
     headline = active.toolName ?? active.label;
   } else {
     const grouped = activityBarSummary(props.recent, props.busy);
-    headline = grouped || props.label || last?.label || "thinking…";
+    headline = grouped || props.label || (props.busy ? (last?.label ?? "thinking…") : "");
   }
 
   return (

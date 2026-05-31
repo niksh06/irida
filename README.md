@@ -2,7 +2,22 @@
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
-> MVP is **local-only**. No cloud runs yet. **Cron** via `csagent cron`; **Gateway** webhook bridge via `csagent gateway run`. **Ink TUI** via `csagent tui` (see `docs/issues/020-tui.md`).
+> **Local-first** (no cloud runs yet). **Cron** · **Gateway** (webhook + Telegram) · **Ink TUI** · **178 tests** green.
+
+## Feature overview
+
+| Area | What you get |
+|------|----------------|
+| **CLI** | `doctor`, `run`, `chat`, `sessions`, `resume`, `config`, `skills` |
+| **TUI** | `csagent tui` — tabs, slash cmds, overlays, scroll, `@file` complete |
+| **Auth** | `csagent auth login --stdin` → `.agent/credentials.json` (600) |
+| **Memory** | `@memory:name` + `/memory` + `csagent memory …` |
+| **Cron** | `.agent/cron.jobs.json` + `cron tick` from OS scheduler |
+| **Gateway** | Webhook or Telegram → stable `sess_` per chat id |
+| **Resilience** | SDK agent rotation in-session; auth errors surfaced clearly |
+| **Safety** | Destructive prompt gate, secret redaction, BSD exit codes |
+
+Full capability report: [Reports/projects/csagent-capabilities-2026-05-31.md](Reports/projects/csagent-capabilities-2026-05-31.md).
 
 ## Requirements
 
@@ -37,31 +52,46 @@ Dev without linking: **`npm run tui`** or **`npm run dev -- tui`** always use cu
 
 > **Name collision:** if you have Cursor CLI installed, `cursor-agent` in your PATH is **Cursor's official agent**, not this repo. It has no `doctor` subcommand — `doctor` is treated as a prompt and the process hangs. Use **`csagent`**, **`npm run doctor`**, or **`npm run dev -- …`** below.
 
-```bash
-npm run doctor                       # environment checks (key, node, cwd, config, mcp)
-npm run dev -- run "summarize repo"  # one-shot local task (Agent.prompt)
-npm run chat                         # interactive multi-turn session (Agent.create)
-npm run tui                          # Hermes-style Ink TUI (slash cmds, sessions, scroll)
-npm run sessions                     # list stored sessions (newest first)
-npm run resume -- <id> "<prompt>"  # continue a stored session (Agent.resume; replay fallback)
-npm run config                       # print non-secret config
-```
-
-After `npm link` (optional global install of **this** CLI):
+### Core
 
 ```bash
-csagent doctor
-csagent run "summarize this repository"
+csagent doctor                       # key, node, cwd, config, mcp, cron/gateway files, API probe
+csagent run "summarize repo"         # one-shot (Agent.prompt)
+csagent chat                         # interactive multi-turn (Agent.create)
+csagent tui                          # Ink TUI (recommended)
+csagent sessions                     # list sess_ (newest first)
+csagent resume <sess_id> "follow up" # live resume or transcript replay
+csagent config                       # print non-secret config
+csagent skills list|search <q>       # local Markdown skills
 ```
 
-> **Resume caveat:** Cursor SDK local agents are not reliably durable after the process exits. `resume` tries live `Agent.resume` first; if that fails (common for local), it falls back to **transcript replay** — a fresh agent seeded with the stored (redacted, truncated) transcript. Context is approximate. Cloud (`bc-`) agents resume natively.
-
-During development, any subcommand works via `npm run dev --`:
+### Auth
 
 ```bash
-npm run dev -- doctor
-npm run dev -- run "summarize this repository"
+csagent auth login --stdin           # save key to .agent/credentials.json
+csagent auth status                  # configured? (never prints secret)
+csagent auth logout                  # remove credentials file
 ```
+
+### Memory, cron, gateway
+
+```bash
+csagent memory list|show|add|rm …
+csagent cron list|run <id>|tick
+csagent gateway run [--adapter webhook|telegram] [--port 18789]
+```
+
+During development: `npm run dev -- <subcommand>` (same as above).
+
+> **Resume caveat:** local SDK agents are not reliably durable after process exit. `resume` tries live `Agent.resume` first; on failure it **replays the stored transcript** into a fresh agent. Cloud (`bc-`) agents resume natively when available.
+
+### TUI (`csagent tui`)
+
+- **Session tabs** — recent `sess_` in the header; **Ctrl+[** / **Ctrl+]** switch (empty composer).
+- **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/new`, `/resume <id>`, …
+- **Overlays** — `/sessions`, `/skills`, `/memory`, `/model`, `/mcp` (Esc closes; scroll preserved).
+- **Composer** — multiline, `@file` Tab-complete, `@memory:` refs.
+- **Activity** — tool call banner during turns; thinking strip when model streams reasoning (Ctrl+T).
 
 ### Skills
 
@@ -76,27 +106,21 @@ tags: [style]
 Always answer with exactly one lowercase word.
 ```
 
-Select per run (repeatable); content is injected as **context**, never executed:
-
 ```bash
-npm run dev -- run --skill terse "capital of France"
-npm run dev -- chat --skill terse
+csagent run --skill terse "capital of France"
+csagent chat --skill terse
 ```
 
 ### Workspace context (`@file` / `@dir`)
 
-Attach local files or directory listings inline before the SDK call:
-
 ```bash
-npm run dev -- run "review @file:src/cli.ts"
-npm run dev -- run "what lives in @dir:src?"
+csagent run "review @file:src/cli.ts"
+csagent run "what lives in @dir:src?"
 ```
 
 Paths are relative to project cwd; traversal outside the workspace is blocked.
 
 ### Memory (`@memory`)
-
-Durable notes in `.agent/memory/` (survive agent rotation and restarts):
 
 ```bash
 csagent memory add tparser --stdin <<'EOF'
@@ -105,11 +129,11 @@ XSS alerts: Reports/analysis/digest_qa_*.md
 EOF
 ```
 
-In chat/TUI use `@memory:tparser` in the prompt, or `/memory` to list. Content is injected as context; secrets are redacted on save.
+In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
 ### Cron (scheduled jobs)
 
-Jobs live in `.agent/cron.jobs.json` (five-field cron, local time):
+`.agent/cron.jobs.json` (five-field cron, local time):
 
 ```json
 {
@@ -120,7 +144,8 @@ Jobs live in `.agent/cron.jobs.json` (five-field cron, local time):
       "cron": "0 9 * * *",
       "prompt": "Summarize open issues @memory:project",
       "skills": ["review"],
-      "yesIUnderstand": false
+      "yesIUnderstand": false,
+      "notify": { "chatId": "u1", "webhookUrl": "http://127.0.0.1:18789/hook" }
     }
   ]
 }
@@ -129,42 +154,25 @@ Jobs live in `.agent/cron.jobs.json` (five-field cron, local time):
 ```bash
 csagent cron list
 csagent cron run nightly-summary
-csagent cron tick    # run all due jobs — call from system cron
+csagent cron tick    # call from system cron every minute
 ```
 
-Example crontab (every 5 minutes):
+Example crontab:
 
 ```cron
 */5 * * * * cd /path/to/project && csagent cron tick >> /tmp/csagent-cron.log 2>&1
 ```
 
-Optional `sessionId` resumes an existing `sess_` and appends one turn. Destructive prompts are denied unless the job sets `"yesIUnderstand": true`. `csagent doctor` validates the jobs file when present.
-
-Optional completion notify (POST to gateway webhook):
-
-```json
-"notify": { "chatId": "u1", "webhookUrl": "http://127.0.0.1:18789/hook" }
-```
-
-Or set `CRON_NOTIFY_WEBHOOK_URL` globally. Uses `GATEWAY_WEBHOOK_SECRET` by default.
+Optional `sessionId` binds to existing `sess_`. Destructive prompts denied unless `"yesIUnderstand": true`.
 
 ### Gateway (webhook / Telegram → chat)
 
-Bridge external messages into csagent sessions. Config: `.agent/gateway.json`; secret via env `GATEWAY_WEBHOOK_SECRET`.
+`.agent/gateway.json` + `GATEWAY_WEBHOOK_SECRET` or `TELEGRAM_BOT_TOKEN`.
 
-```json
-{
-  "version": 1,
-  "adapter": "webhook",
-  "listen": { "host": "127.0.0.1", "port": 18789 },
-  "webhook": { "path": "/hook", "secretEnv": "GATEWAY_WEBHOOK_SECRET" },
-  "allowedChatIds": ["u1"],
-  "maxMessageLength": 8000
-}
-```
+**Webhook:**
 
 ```bash
-export GATEWAY_WEBHOOK_SECRET=your-shared-secret
+export GATEWAY_WEBHOOK_SECRET=your-secret
 csagent gateway run
 curl -X POST http://127.0.0.1:18789/hook \
   -H 'Content-Type: application/json' \
@@ -172,9 +180,7 @@ curl -X POST http://127.0.0.1:18789/hook \
   -d '{"chatId":"u1","text":"hello"}'
 ```
 
-Each `chatId` maps to a stable `sess_` (visible in `csagent sessions` / TUI). Unknown chat IDs are denied until listed in `allowedChatIds`. SIGINT closes open SDK agents cleanly.
-
-**Telegram** (long polling, no extra deps):
+**Telegram** (long polling):
 
 ```json
 {
@@ -190,18 +196,11 @@ export TELEGRAM_BOT_TOKEN=...
 csagent gateway run --adapter telegram
 ```
 
-Use your numeric Telegram chat id in `allowedChatIds` (message `@userinfobot` or inspect bot updates).
-
-List or search installed skills:
-
-```bash
-npm run dev -- skills list
-npm run dev -- skills search review
-```
+Each `chatId` → stable `sess_` (visible in `csagent sessions` / TUI). Allowlist required. SIGINT disposes SDK agents.
 
 ### MCP servers
 
-Configured in `agent.config.json` and passed inline to every SDK call (and on resume):
+In `agent.config.json` — passed to every SDK call:
 
 ```json
 {
@@ -212,20 +211,14 @@ Configured in `agent.config.json` and passed inline to every SDK call (and on re
 }
 ```
 
-`npm run doctor` (or `csagent doctor`) validates each entry (stdio needs `command`, http needs `url`).
-
 ## Configuration
 
-Project-local `agent.config.json` (all fields optional; defaults shown). **Secrets never go here.**
+Project-local `agent.config.json`. **Secrets never go here.**
 
-**API key** (pick one):
-
-| Method | Use when |
-|--------|----------|
-| `csagent auth login --stdin` | Daily local use — writes `.agent/credentials.json` (mode `600`, gitignored) |
-| `export CURSOR_API_KEY=…` | CI, one-off runs, overrides file |
-
-Environment wins over the file if both are set.
+| API key method | Use when |
+|----------------|----------|
+| `csagent auth login --stdin` | Daily local use |
+| `export CURSOR_API_KEY=…` | CI / override file |
 
 ```json
 {
@@ -238,67 +231,59 @@ Environment wins over the file if both are set.
 }
 ```
 
-State (sessions + runs) is stored in `<stateDir>/state.sqlite`. No secrets are persisted; prompt previews are redacted.
+State: `<stateDir>/state.sqlite`. Previews redacted; no secrets stored.
 
-**TUI `/model`** loads live ids from `Cursor.models.list()` (needs `CURSOR_API_KEY`); falls back to `CSAGENT_MODELS` or built-in defaults. Pick only SDK-listed models — not IDE-only slugs. **`/export`** writes markdown to `.agent/exports/` by default.
+**Cloud (016):** `runtime: "cloud"` + `safety.allowCloud` only gate today — **no real cloud SDK path yet**.
 
 ## Safety
 
-- One-shot `run` and `resume` are non-interactive: detected destructive prompts are **denied** (exit 77). Override with `--yes-i-understand`.
-- `chat` and `tui` are interactive: destructive prompts require confirmation (`--yes-i-understand` skips it). **TUI:** trackpad scroll, `/export`, `/rename`, live `/model`, thinking strip (Ctrl+T), `@file` Tab-complete, multiline composer.
-- API keys and key-shaped tokens are redacted from logs and persisted state.
+- `run` / `resume` / cron: non-interactive destructive prompts **denied** (exit 77); `--yes-i-understand` overrides.
+- `chat` / `tui`: interactive confirm (or `--yes-i-understand`).
+- Redaction in logs and SQLite.
 
-> **Limitation (honest):** destructive detection is a best-effort **regex denylist**, not a sandbox or security boundary. It catches common shapes (`rm -rf`, `drop table`, force-push, fork bombs) but is trivially bypassed by obfuscation, and it does **not** police what the Cursor agent does with its own tools. Treat it as a speed-bump.
+> Destructive detection is a **regex denylist**, not a sandbox.
 
 ## Exit codes
 
-BSD `sysexits(3)` convention (so callers/CI can branch on failure class):
+| Code | Meaning |
+|------|---------|
+| `0` | ok |
+| `64` | usage |
+| `70` | software / run failed |
+| `77` | noperm (unsafe prompt) |
+| `78` | config / missing key |
 
-| Code | Name | Meaning |
-|------|------|---------|
-| `0` | EX_OK | run finished |
-| `64` | EX_USAGE | bad CLI usage: missing/extra args, unknown command/session/skill |
-| `70` | EX_SOFTWARE | executed run failed (`status === "error"`) or SDK startup/resume failure |
-| `77` | EX_NOPERM | unsafe destructive prompt denied/declined |
-| `78` | EX_CONFIG | missing `CURSOR_API_KEY`, invalid config, cloud not allowed |
+`doctor`: `0` pass / `1` fail.
 
-`doctor` is a diagnostic: `0` = all checks pass, `1` = some failed. When `CURSOR_API_KEY` is set, doctor also calls `Cursor.models.list()` to catch invalid keys before chat.
+### Three layers (auth vs session vs SDK handle)
 
-### Auth vs session drop
+1. **`CURSOR_API_KEY`** — API access.
+2. **`sess_…`** — conversation (SQLite); survives rotation.
+3. **`sdk_agent_id`** — ephemeral SDK handle; may be replaced mid-session + turn retry.
 
-Three layers are easy to confuse:
-
-1. **`CURSOR_API_KEY`** — API access (refresh in Cursor → Integrations if doctor reports auth failure).
-2. **`sess_…`** — csagent conversation (SQLite transcript); survives SDK agent rotation.
-3. **`sdk_agent_id`** — ephemeral Cursor SDK handle; csagent may replace it mid-session and retry your turn once (system line in TUI).
-
-`ERROR_NOT_LOGGED_IN` / code 16 is **auth** — rotating the SDK agent will not help; fix the key or Cursor login. Other mid-turn SDK failures may trigger silent reinit + transcript replay.
+Auth errors (`ERROR_NOT_LOGGED_IN`) are **not** fixed by rotation — refresh the key.
 
 ## Develop
 
 ```bash
 npm run typecheck
-npm test            # full unit suite (mocked SDK, CI-safe)
+npm test            # 178 tests, mocked SDK
 npm run accept      # MVP acceptance harness
-npm run smoke       # live smoke vs real Cursor SDK (needs CURSOR_API_KEY)
+npm run smoke       # live SDK (needs key)
 ```
-
-The acceptance harness (`test/acceptance.test.ts`) proves doctor / run / chat / sessions / resume / safety / redaction end-to-end without live Cursor calls.
 
 ## Architecture
 
-See `docs/adr/0001-cursor-sdk-agent-runtime.md`. Briefly: thin command layer over the Cursor SDK.
+See `docs/adr/0001-cursor-sdk-agent-runtime.md`.
 
 | Module | Role |
 |--------|------|
 | `src/cli.ts` | command dispatch |
-| `src/config.ts` | project config + validation |
-| `src/host.ts` | SDK lifecycle (prompt / create+send / resume), failure model |
-| `src/run.ts` `src/chat.ts` `src/chatEngine.ts` `src/resume.ts` | command runtimes |
-| `src/tui/` | Ink TUI (`csagent tui`) |
-| `src/store.ts` | SQLite sessions/runs |
-| `src/skills.ts` `src/promptBuilder.ts` | skill loading + prompt composition |
-| `src/safety.ts` `src/redact.ts` | destructive-prompt gate + secret redaction |
+| `src/chatEngine.ts` | shared chat + rotation |
+| `src/tui/` | Ink TUI |
+| `src/store.ts` | SQLite |
+| `src/memory.ts` `src/cron*.ts` `src/gateway*.ts` | automation surfaces |
+| `src/safety.ts` `src/redact.ts` | gate + redaction |
 
 ## License
 

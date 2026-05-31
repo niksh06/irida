@@ -25,6 +25,7 @@ export function parseSlash(input: string): SlashAction | null {
   if (!t.startsWith("/")) return null;
   const [cmd, ...rest] = t.slice(1).split(/\s+/);
   const arg = rest.join(" ").trim();
+  if (!cmd) return { type: "help" };
   switch (cmd.toLowerCase()) {
     case "exit":
     case "quit":

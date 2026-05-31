@@ -19,6 +19,7 @@ import type { ChatMessage } from "../src/tui/types.js";
 describe("tui slash", () => {
   it("parses help and sessions", () => {
     assert.deepEqual(parseSlash("/help"), { type: "help" });
+    assert.deepEqual(parseSlash("/"), { type: "help" });
     assert.deepEqual(parseSlash("/sessions"), { type: "sessions" });
   });
 
