@@ -153,6 +153,7 @@ export async function cmdResume(
         runtime: session.runtime || cfg.runtime,
         sdk_agent_id: newAgentId,
         last_status: status,
+        channel: session.channel ?? "",
       });
       return status === "error" ? EXIT.software : EXIT.ok;
     } finally {

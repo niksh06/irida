@@ -6,6 +6,7 @@
 import { loadConfig, ConfigError } from "./config.js";
 import { runOneShot, StartupError, type SdkLike } from "./host.js";
 import { createStore } from "./store.js";
+import { SESSION_CHANNEL } from "./sessionChannel.js";
 import { safetyGate } from "./safety.js";
 import { loadSkills, SkillError } from "./skills.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
@@ -97,6 +98,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
       runtime: cfg.runtime,
       sdk_agent_id: r.agentId,
       last_status: r.status,
+      channel: SESSION_CHANNEL.run,
     });
     await store.recordRun({
       id: runId,
@@ -129,6 +131,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
         runtime: cfg.runtime,
         sdk_agent_id: null,
         last_status: "startup_error",
+        channel: SESSION_CHANNEL.run,
       });
       await store.recordRun({
         id: runId,

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { openChatSession, type ChatSession } from "../chatEngine.js";
+import { SESSION_CHANNEL } from "../sessionChannel.js";
 import { formatSdkError } from "../sdkErrors.js";
 import { banner, theme } from "./theme.js";
 import { Composer } from "./components/Composer.js";
@@ -245,6 +246,7 @@ export function App(props: TuiOptions) {
         yesIUnderstand: props.yesIUnderstand,
         model: modelOverride,
         resumeSessionId,
+        channel: SESSION_CHANNEL.tui,
         interactive: true,
         confirm: (reason) => confirmRef.current(reason),
         onAssistantDelta: (d) => patchStreaming(d),

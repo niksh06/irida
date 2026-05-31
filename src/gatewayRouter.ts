@@ -1,50 +1,20 @@
 /**
  * Maps (adapter, chatId) → stable sess_ and reuses open ChatSession handles.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { loadConfig } from "./config.js";
 import { openChatSession, type ChatSession, type TurnHooks } from "./chatEngine.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
+import {
+  loadGatewayPeers,
+  saveGatewayPeers,
+  peerKey,
+  type GatewayPeersFile,
+} from "./gatewayPeers.js";
+import type { SessionChannel } from "./sessionChannel.js";
 
-export const GATEWAY_PEERS_FILE = "gateway.peers.json";
-
-export interface GatewayPeersFile {
-  version: number;
-  peers: Record<string, string>;
-}
+export { GATEWAY_PEERS_FILE, loadGatewayPeers, saveGatewayPeers, peerKey } from "./gatewayPeers.js";
+export type { GatewayPeersFile } from "./gatewayPeers.js";
 
 export class GatewayRouterError extends Error {}
-
-function peersPath(dir: string): string {
-  const cfg = loadConfig(dir);
-  return resolve(dir, cfg.stateDir, GATEWAY_PEERS_FILE);
-}
-
-export function loadGatewayPeers(dir: string): GatewayPeersFile {
-  const path = peersPath(dir);
-  if (!existsSync(path)) return { version: 1, peers: {} };
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<GatewayPeersFile>;
-    return {
-      version: 1,
-      peers: parsed.peers && typeof parsed.peers === "object" ? { ...parsed.peers } : {},
-    };
-  } catch {
-    return { version: 1, peers: {} };
-  }
-}
-
-export function saveGatewayPeers(dir: string, data: GatewayPeersFile): void {
-  const cfg = loadConfig(dir);
-  const root = resolve(dir, cfg.stateDir);
-  mkdirSync(root, { recursive: true });
-  writeFileSync(peersPath(dir), JSON.stringify(data, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
-}
-
-export function peerKey(adapter: string, chatId: string): string {
-  return `${adapter}:${chatId}`;
-}
 
 export interface GatewayRouterOptions {
   dir: string;
@@ -107,6 +77,7 @@ export class GatewaySessionRouter {
       skills: this.skills,
       yesIUnderstand: this.yesIUnderstand,
       interactive: false,
+      channel: this.adapter as SessionChannel,
       onLog: this.onLog,
     });
     if (!opened.ok) {

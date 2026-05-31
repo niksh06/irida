@@ -20,6 +20,16 @@ export interface SessionRecord {
   last_status: string;
   selected_skills: string;
   mcp_server_names: string;
+  /** Entry channel: telegram, tui, cli, … — empty = legacy. */
+  channel: string;
+}
+
+export interface ListSessionsOptions {
+  /** Only sessions with this channel, plus legacy rules below. */
+  channel?: string;
+  /** When channel is tui: also include unassigned ('') not in excludeIds. */
+  includeUnassigned?: boolean;
+  excludeIds?: string[];
 }
 
 export interface RunRecord {
@@ -48,9 +58,10 @@ export interface IStore {
     last_status?: string;
     selected_skills?: string;
     mcp_server_names?: string;
+    channel?: string;
   }): Promise<void>;
   recordRun(r: RunRecord): Promise<void>;
-  listSessions(limit?: number): Promise<SessionRecord[]>;
+  listSessions(limit?: number, opts?: ListSessionsOptions): Promise<SessionRecord[]>;
   getSession(id: string): Promise<SessionRecord | undefined>;
   updateSessionTitle(id: string, title: string): Promise<boolean>;
   listRuns(sessionId: string): Promise<RunRecord[]>;
@@ -61,6 +72,61 @@ const SESSIONS_RUNS_MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/001_sessions_runs.sql"),
   "utf8"
 );
+const SESSIONS_CHANNEL_MIGRATION = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/002_sessions_channel.sql"),
+  "utf8"
+);
+
+function buildListSessionsSql(opts: ListSessionsOptions | undefined, limit: number): { sql: string; params: unknown[] } {
+  const params: unknown[] = [];
+  let n = 1;
+  const clauses: string[] = [];
+
+  if (opts?.excludeIds?.length) {
+    const placeholders = opts.excludeIds.map(() => `$${n++}`).join(", ");
+    clauses.push(`id NOT IN (${placeholders})`);
+    params.push(...opts.excludeIds);
+  }
+
+  if (opts?.channel) {
+    if (opts.includeUnassigned) {
+      clauses.push(`(channel = $${n++} OR channel = '')`);
+      params.push(opts.channel);
+    } else {
+      clauses.push(`channel = $${n++}`);
+      params.push(opts.channel);
+    }
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  params.push(limit);
+  const sql = `SELECT * FROM sessions ${where} ORDER BY updated_at DESC LIMIT $${n}`;
+  return { sql, params };
+}
+
+function buildListSessionsSqlite(opts: ListSessionsOptions | undefined, limit: number): { sql: string; params: (string | number)[] } {
+  const params: (string | number)[] = [];
+  const clauses: string[] = [];
+
+  if (opts?.excludeIds?.length) {
+    clauses.push(`id NOT IN (${opts.excludeIds.map(() => "?").join(", ")})`);
+    params.push(...opts.excludeIds);
+  }
+
+  if (opts?.channel) {
+    if (opts.includeUnassigned) {
+      clauses.push(`(channel = ? OR channel = '')`);
+      params.push(opts.channel);
+    } else {
+      clauses.push(`channel = ?`);
+      params.push(opts.channel);
+    }
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  params.push(limit);
+  return { sql: `SELECT * FROM sessions ${where} ORDER BY updated_at DESC LIMIT ?`, params };
+}
 
 /** SQLite under <stateDir>/state.sqlite (Node >= 22.5). */
 export class SqliteStore implements IStore {
@@ -110,6 +176,16 @@ export class SqliteStore implements IStore {
     } catch {
       /* column exists */
     }
+    try {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN channel TEXT NOT NULL DEFAULT ''`);
+    } catch {
+      /* column exists */
+    }
+    try {
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_channel ON sessions(channel, updated_at DESC)`);
+    } catch {
+      /* index exists */
+    }
   }
 
   async upsertSession(s: Parameters<IStore["upsertSession"]>[0]): Promise<void> {
@@ -117,12 +193,13 @@ export class SqliteStore implements IStore {
     const title = redact(s.title);
     this.db
       .prepare(
-        `INSERT INTO sessions (id,title,cwd,runtime,sdk_agent_id,created_at,updated_at,last_status,selected_skills,mcp_server_names)
-         VALUES (?,?,?,?,?,?,?,?,?,?)
+        `INSERT INTO sessions (id,title,cwd,runtime,sdk_agent_id,created_at,updated_at,last_status,selected_skills,mcp_server_names,channel)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(id) DO UPDATE SET
            title=excluded.title, cwd=excluded.cwd, runtime=excluded.runtime,
            sdk_agent_id=COALESCE(excluded.sdk_agent_id, sessions.sdk_agent_id),
-           updated_at=excluded.updated_at, last_status=excluded.last_status`
+           updated_at=excluded.updated_at, last_status=excluded.last_status,
+           channel=CASE WHEN excluded.channel != '' THEN excluded.channel ELSE sessions.channel END`
       )
       .run(
         s.id,
@@ -134,7 +211,8 @@ export class SqliteStore implements IStore {
         now,
         s.last_status ?? "",
         s.selected_skills ?? "",
-        s.mcp_server_names ?? ""
+        s.mcp_server_names ?? "",
+        s.channel ?? ""
       );
   }
 
@@ -166,10 +244,9 @@ export class SqliteStore implements IStore {
       );
   }
 
-  async listSessions(limit = 50): Promise<SessionRecord[]> {
-    return this.db
-      .prepare(`SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?`)
-      .all(limit) as unknown as SessionRecord[];
+  async listSessions(limit = 50, opts?: ListSessionsOptions): Promise<SessionRecord[]> {
+    const { sql, params } = buildListSessionsSqlite(opts, limit);
+    return this.db.prepare(sql).all(...params) as unknown as SessionRecord[];
   }
 
   async getSession(id: string): Promise<SessionRecord | undefined> {
@@ -188,6 +265,7 @@ export class SqliteStore implements IStore {
       last_status: row.last_status,
       selected_skills: row.selected_skills,
       mcp_server_names: row.mcp_server_names,
+      channel: row.channel ?? "",
     });
     return true;
   }
@@ -218,6 +296,7 @@ export class PostgresStore implements IStore {
   private async ensureMigrated(): Promise<void> {
     if (this.migrated) return;
     await this.pool.query(SESSIONS_RUNS_MIGRATION);
+    await this.pool.query(SESSIONS_CHANNEL_MIGRATION);
     this.migrated = true;
   }
 
@@ -226,12 +305,13 @@ export class PostgresStore implements IStore {
     const now = nowIso();
     const title = redact(s.title);
     await this.pool.query(
-      `INSERT INTO sessions (id,title,cwd,runtime,sdk_agent_id,created_at,updated_at,last_status,selected_skills,mcp_server_names)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `INSERT INTO sessions (id,title,cwd,runtime,sdk_agent_id,created_at,updated_at,last_status,selected_skills,mcp_server_names,channel)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT(id) DO UPDATE SET
          title=EXCLUDED.title, cwd=EXCLUDED.cwd, runtime=EXCLUDED.runtime,
          sdk_agent_id=COALESCE(EXCLUDED.sdk_agent_id, sessions.sdk_agent_id),
-         updated_at=EXCLUDED.updated_at, last_status=EXCLUDED.last_status`,
+         updated_at=EXCLUDED.updated_at, last_status=EXCLUDED.last_status,
+         channel=CASE WHEN EXCLUDED.channel != '' THEN EXCLUDED.channel ELSE sessions.channel END`,
       [
         s.id,
         title,
@@ -243,6 +323,7 @@ export class PostgresStore implements IStore {
         s.last_status ?? "",
         s.selected_skills ?? "",
         s.mcp_server_names ?? "",
+        s.channel ?? "",
       ]
     );
   }
@@ -275,9 +356,10 @@ export class PostgresStore implements IStore {
     );
   }
 
-  async listSessions(limit = 50): Promise<SessionRecord[]> {
+  async listSessions(limit = 50, opts?: ListSessionsOptions): Promise<SessionRecord[]> {
     await this.ensureMigrated();
-    const res = await this.pool.query(`SELECT * FROM sessions ORDER BY updated_at DESC LIMIT $1`, [limit]);
+    const { sql, params } = buildListSessionsSql(opts, limit);
+    const res = await this.pool.query(sql, params);
     return res.rows as SessionRecord[];
   }
 
@@ -299,6 +381,7 @@ export class PostgresStore implements IStore {
       last_status: row.last_status,
       selected_skills: row.selected_skills,
       mcp_server_names: row.mcp_server_names,
+      channel: row.channel ?? "",
     });
     return true;
   }

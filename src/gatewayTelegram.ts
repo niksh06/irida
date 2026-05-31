@@ -123,10 +123,11 @@ function toolEmoji(toolName: string, kind: ActivityDetail["kind"]): string {
 
 /** Hermes-style one-liner for a tool call. */
 export function formatTelegramToolProgressLine(activity: ActivityDetail): string {
-  const emoji = toolEmoji(activity.toolName, activity.kind);
-  const preview = activity.command.trim().slice(0, TOOL_PREVIEW_MAX);
-  if (preview) return `${emoji} ${activity.toolName}: ${preview}`;
-  return `${emoji} ${activity.toolName}…`;
+  const toolName = activity.toolName?.trim() || activity.label?.trim() || "tool";
+  const emoji = toolEmoji(toolName, activity.kind);
+  const preview = (activity.command ?? "").trim().slice(0, TOOL_PREVIEW_MAX);
+  if (preview) return `${emoji} ${toolName}: ${preview}`;
+  return `${emoji} ${toolName}…`;
 }
 
 export interface TelegramToolProgressState {
@@ -148,7 +149,7 @@ export function shouldEmitTelegramToolProgress(
   if (cfg.telegramToolProgressMode === "new" && activity.toolName === state.lastToolName) {
     return false;
   }
-  state.lastToolName = activity.toolName;
+  state.lastToolName = activity.toolName ?? null;
   return true;
 }
 

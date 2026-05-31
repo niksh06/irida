@@ -5,6 +5,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { openChatSession, type ChatSessionOptions } from "./chatEngine.js";
+import { SESSION_CHANNEL } from "./sessionChannel.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
 export type ChatOptions = ChatSessionOptions & {
@@ -30,6 +31,7 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
 
   const opened = await openChatSession({
     ...opts,
+    channel: opts.channel ?? SESSION_CHANNEL.cli,
     interactive,
     confirm,
     onAssistantDelta: opts.onAssistantDelta ?? ((d) => write(d)),

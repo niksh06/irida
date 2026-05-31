@@ -4,6 +4,7 @@
 import { loadConfig, ConfigError } from "./config.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 import { openChatSession } from "./chatEngine.js";
+import { SESSION_CHANNEL } from "./sessionChannel.js";
 import { cmdRun } from "./run.js";
 import { safetyGate } from "./safety.js";
 import { createStore } from "./store.js";
@@ -98,6 +99,7 @@ export async function executeCronJob(
       skills: job.skills,
       yesIUnderstand: job.yesIUnderstand,
       interactive: false,
+      channel: SESSION_CHANNEL.cron,
       confirm: async () => false,
       onLog: (line) => console.error(line),
     });

@@ -18,6 +18,12 @@ import {
   type StreamUsage,
 } from "./host.js";
 import { createStore, type IStore } from "./store.js";
+import {
+  sessionAllowedForChannel,
+  sessionChannelConflictMessage,
+  type SessionChannel,
+} from "./sessionChannel.js";
+import { loadGatewayPeers } from "./gatewayPeers.js";
 import { safetyGate, type Confirmer } from "./safety.js";
 import { loadSkills, SkillError, type Skill } from "./skills.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
@@ -49,6 +55,8 @@ export interface ChatSessionOptions {
   model?: string;
   /** Continue an existing stored session (live resume or transcript replay). */
   resumeSessionId?: string;
+  /** Owning channel (telegram, tui, cli, …) — isolates gateway from TUI. */
+  channel?: SessionChannel;
   onLog?: (line: string) => void;
   onAssistantDelta?: (delta: string) => void;
   onThinkingDelta?: (chunk: string) => void;
@@ -148,6 +156,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   }
 
   const store = createStore(dir, cfg.stateDir);
+  const gatewayPeerIds = new Set(Object.values(loadGatewayPeers(dir).peers));
 
   let sdk: ChatSdk;
   try {
@@ -162,6 +171,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   let connectMode: ConnectMode | "fresh" = "fresh";
   let replayPrefix = "";
   let sessionCwd = cfg.cwd;
+  let sessionChannel = opts.channel ?? "";
 
   if (opts.resumeSessionId) {
     const existing = await store.getSession(opts.resumeSessionId);
@@ -169,8 +179,17 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       await store.close();
       return { ok: false, code: EXIT.usage, message: `session '${opts.resumeSessionId}' not found` };
     }
+    if (!sessionAllowedForChannel(existing, opts.channel, gatewayPeerIds)) {
+      await store.close();
+      return {
+        ok: false,
+        code: EXIT.usage,
+        message: sessionChannelConflictMessage(existing),
+      };
+    }
     sessionId = existing.id;
     sessionCwd = existing.cwd || cfg.cwd;
+    sessionChannel = existing.channel?.trim() || opts.channel || "";
     try {
       const connected = await connectAgentForSession(sdk, store, existing, cfg, apiKey);
       agent = connected.agent;
@@ -210,6 +229,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     runtime: cfg.runtime,
     sdk_agent_id: agent.agentId ?? null,
     last_status: connectMode === "fresh" ? "created" : "resumed",
+    channel: sessionChannel,
   });
 
   let firstTurn = true;
@@ -287,6 +307,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           runtime: cfg.runtime,
           sdk_agent_id: agent.agentId ?? null,
           last_status: "agent_rotated",
+          channel: sessionChannel,
         });
         attemptSendMsg = prefix
           ? prefix + "Continue. New request:\n\n" + baseSendMsg
@@ -351,6 +372,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             runtime: cfg.runtime,
             sdk_agent_id: agent.agentId ?? null,
             last_status: lastStatus,
+            channel: sessionChannel,
           });
           if (lastStatus === "error") {
             if (await tryRotateAgent()) continue;
@@ -390,6 +412,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             runtime: cfg.runtime,
             sdk_agent_id: agent.agentId ?? null,
             last_status: "error",
+            channel: sessionChannel,
           });
           return {
             kind: "error",
