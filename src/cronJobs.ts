@@ -26,6 +26,9 @@ export interface CronJob {
   yesIUnderstand?: boolean;
   /** Optional gateway webhook notify on completion (issue 038 P2). */
   notify?: CronJobNotify;
+  /** Prepend recent memory_facts for this subject (e.g. seen_post). */
+  memoryFactsSubject?: string;
+  memoryFactsLimit?: number;
 }
 
 export interface CronJobsFile {
@@ -79,6 +82,12 @@ function validateJob(raw: unknown, index: number): CronJob {
   }
   if (o.enabled === false) job.enabled = false;
   if (o.yesIUnderstand === true) job.yesIUnderstand = true;
+  if (typeof o.memoryFactsSubject === "string" && o.memoryFactsSubject.trim()) {
+    job.memoryFactsSubject = o.memoryFactsSubject.trim();
+  }
+  if (typeof o.memoryFactsLimit === "number" && o.memoryFactsLimit > 0) {
+    job.memoryFactsLimit = Math.min(o.memoryFactsLimit, 500);
+  }
   if (o.notify && typeof o.notify === "object" && !Array.isArray(o.notify)) {
     const n = o.notify as Record<string, unknown>;
     const chatId = typeof n.chatId === "string" ? n.chatId.trim() : "";

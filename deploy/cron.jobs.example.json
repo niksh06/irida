@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "hot-feed-digest",
+      "cron": "0 9,18 * * *",
+      "cwd": "/path/to/TParser",
+      "skills": ["memory-ops"],
+      "memoryFactsSubject": "seen_post",
+      "memoryFactsLimit": 80,
+      "prompt": "1) curl -s 'http://127.0.0.1:8002/api/feed?limit=15' | head -c 120000\n2) Skip posts already listed above (seen_post facts). For each NEW valuable post (AI, AISec, ML, MLSec, DevSecOps, InfoSec, Programming): summarize and call memory_fact_add with subject seen_post, predicate=channel_id, object=post_id.\n3) Output top-3 new picks: channel | post_id | category | why hot."
+    }
+  ]
+}

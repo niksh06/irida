@@ -27,8 +27,9 @@
 
 ## Шаг 3 — Cron / dedup
 
-- [ ] Hourly analytics: facts вместо `hourly-posts.state.json`
-- [ ] Prompt helper: inject recent facts by wing
+- [x] Hourly analytics: facts `seen_post` вместо `hourly-posts.state.json` (`memoryDedup.ts`, `memoryFactsSubject` в cron job)
+- [x] Prompt helper: inject recent facts (`buildSeenPostsPromptSection` в `resolveCronPrompt`)
+- [x] Пример: `deploy/cron.jobs.example.json`
 
 ## Шаг 4 — Search (later)
 
