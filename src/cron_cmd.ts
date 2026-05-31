@@ -71,7 +71,7 @@ export async function cmdCronRun(jobId: string, opts: CronCmdOptions = {}): Prom
   }
   const exec = await executeCronJob(job, { dir, sdk: opts.sdk });
   markCronJobRan(dir, job.id);
-  await sendCronJobNotify(job, exec);
+  await sendCronJobNotify(job, exec, undefined, dir);
   if (exec.ok) {
     console.log(`cron: job '${job.id}' finished`);
     return EXIT.ok;

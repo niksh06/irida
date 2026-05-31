@@ -11,6 +11,9 @@ export const CRON_STATE_FILE = "cron.state.json";
 
 export interface CronJobNotify {
   chatId: string;
+  /** Direct Telegram sendMessage (no webhook agent turn). */
+  telegram?: boolean;
+  tokenEnv?: string;
   webhookUrl?: string;
   secretEnv?: string;
 }
@@ -93,6 +96,8 @@ function validateJob(raw: unknown, index: number): CronJob {
     const chatId = typeof n.chatId === "string" ? n.chatId.trim() : "";
     if (chatId) {
       job.notify = { chatId };
+      if (n.telegram === true) job.notify.telegram = true;
+      if (typeof n.tokenEnv === "string" && n.tokenEnv.trim()) job.notify.tokenEnv = n.tokenEnv.trim();
       if (typeof n.webhookUrl === "string" && n.webhookUrl.trim()) job.notify.webhookUrl = n.webhookUrl.trim();
       if (typeof n.secretEnv === "string" && n.secretEnv.trim()) job.notify.secretEnv = n.secretEnv.trim();
     }

@@ -24,23 +24,29 @@ export interface RunOptions {
   yesIUnderstand?: boolean;
 }
 
+export interface RunResult {
+  exitCode: ExitCode;
+  /** Assistant text on success; empty on early failure. */
+  text: string;
+}
+
 async function resolveSdk(injected?: SdkLike): Promise<SdkLike> {
   if (injected) return injected;
   const mod = await import("@cursor/sdk");
   return mod.Agent as unknown as SdkLike;
 }
 
-export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<ExitCode> {
+export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<RunResult> {
   const dir = opts.dir ?? process.cwd();
 
   if (!prompt || !prompt.trim()) {
     console.error('run: a prompt is required, e.g. cursor-agent run "summarize this repo"');
-    return EXIT.usage;
+    return { exitCode: EXIT.usage, text: "" };
   }
   const { key: apiKey } = resolveApiKey(dir);
   if (!apiKey) {
     console.error(`run: ${API_KEY_HELP}`);
-    return EXIT.config;
+    return { exitCode: EXIT.config, text: "" };
   }
 
   let cfg;
@@ -48,19 +54,17 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     cfg = loadConfig(dir);
   } catch (e) {
     console.error("run: " + (e instanceof ConfigError ? e.message : String(e)));
-    return EXIT.config;
+    return { exitCode: EXIT.config, text: "" };
   }
   if (cfg.runtime === "cloud" && !cfg.safety.allowCloud) {
     console.error("run: cloud runtime requires safety.allowCloud=true (MVP is local-first)");
-    return EXIT.config;
+    return { exitCode: EXIT.config, text: "" };
   }
 
-  // One-shot is non-interactive: destructive prompts are denied unless the
-  // caller explicitly acknowledges with --yes-i-understand.
   const gate = await safetyGate({ prompt, interactive: false, override: opts.yesIUnderstand });
   if (!gate.allowed) {
     console.error(`run: blocked — ${gate.reason}. Use 'cursor-agent chat' or --yes-i-understand.`);
-    return EXIT.noperm;
+    return { exitCode: EXIT.noperm, text: "" };
   }
 
   let finalPrompt: string;
@@ -79,7 +83,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
   } catch (e) {
     if (e instanceof ContextRefError || e instanceof MemoryError || e instanceof SkillError) {
       console.error("run: " + e.message);
-      return EXIT.usage;
+      return { exitCode: EXIT.usage, text: "" };
     }
     throw e;
   }
@@ -128,10 +132,11 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     });
     if (failed) {
       console.error("run: executed run failed (status=error)");
-      return EXIT.software;
+      return { exitCode: EXIT.software, text: r.text ?? "" };
     }
-    console.log(redact(r.text));
-    return EXIT.ok;
+    const text = redact(r.text);
+    console.log(text);
+    return { exitCode: EXIT.ok, text };
   } catch (e) {
     if (e instanceof StartupError) {
       console.error("run: startup failed: " + redact(e.message));
@@ -159,10 +164,15 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
         runtime: cfg.runtime,
         model: cfg.model,
       });
-      return EXIT.software;
+      return { exitCode: EXIT.software, text: "" };
     }
     throw e;
   } finally {
     await store.close();
   }
+}
+
+export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<ExitCode> {
+  const { exitCode } = await runPrompt(prompt, opts);
+  return exitCode;
 }

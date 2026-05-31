@@ -5,7 +5,7 @@ import { loadConfig, ConfigError } from "./config.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 import { openChatSession } from "./chatEngine.js";
 import { SESSION_CHANNEL } from "./sessionChannel.js";
-import { cmdRun } from "./run.js";
+import { runPrompt } from "./run.js";
 import { safetyGate } from "./safety.js";
 import { createStore } from "./store.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -31,6 +31,8 @@ export interface CronExecuteResult {
   ok: boolean;
   exitCode: ExitCode;
   message: string;
+  /** Full agent output for notify (digest). */
+  output?: string;
 }
 
 function jobDir(job: CronJob, base: string): string {
@@ -119,7 +121,13 @@ export async function executeCronJob(
     try {
       const out = await opened.session.sendTurn(prompt);
       if (out.kind === "ok") {
-        return { ok: true, exitCode: EXIT.ok, message: out.assistantText.slice(0, 200) || "finished" };
+        const text = out.assistantText;
+        return {
+          ok: true,
+          exitCode: EXIT.ok,
+          message: text.slice(0, 200) || "finished",
+          output: text,
+        };
       }
       if (out.kind === "blocked") {
         return { ok: false, exitCode: EXIT.noperm, message: out.reason };
@@ -134,16 +142,17 @@ export async function executeCronJob(
     }
   }
 
-  const code = await cmdRun(prompt, {
+  const run = await runPrompt(prompt, {
     dir,
     sdk: opts.sdk,
     skills: job.skills,
     yesIUnderstand: job.yesIUnderstand,
   });
   return {
-    ok: code === EXIT.ok,
-    exitCode: code,
-    message: code === EXIT.ok ? "finished" : `run exited ${code}`,
+    ok: run.exitCode === EXIT.ok,
+    exitCode: run.exitCode,
+    message: run.exitCode === EXIT.ok ? run.text.slice(0, 200) || "finished" : `run exited ${run.exitCode}`,
+    output: run.text,
   };
 }
 
@@ -182,7 +191,7 @@ export async function cronTick(
       const exec = await executeCronJob(job, opts);
       state.lastRun[job.id] = cronMinuteKey(at);
       saveCronState(dir, state);
-      await sendCronJobNotify(job, exec, at);
+      await sendCronJobNotify(job, exec, at, dir);
       if (exec.ok) {
         result.ran.push(job.id);
         console.error(`[cron] job=${job.id} ok`);

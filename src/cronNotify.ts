@@ -1,9 +1,27 @@
 /**
- * Optional cron completion notifications (issue 038 P2 stub → gateway webhook).
+ * Optional cron completion notifications (webhook or direct Telegram).
  */
+import { resolveTelegramBotToken } from "./credentials.js";
+import { telegramSendMessage } from "./gatewayTelegram.js";
 import type { CronJob } from "./cronJobs.js";
 import type { CronExecuteResult } from "./cronEngine.js";
 
+export interface CronJobNotifyWebhook {
+  mode: "webhook";
+  chatId: string;
+  webhookUrl: string;
+  secretEnv: string;
+}
+
+export interface CronJobNotifyTelegram {
+  mode: "telegram";
+  chatId: string;
+  tokenEnv: string;
+}
+
+export type CronJobNotifyTarget = CronJobNotifyWebhook | CronJobNotifyTelegram;
+
+/** @deprecated use CronJobNotifyWebhook fields via resolveJobNotifyTarget */
 export interface CronJobNotifyConfig {
   chatId: string;
   webhookUrl: string;
@@ -18,6 +36,9 @@ export interface CronNotifyPayload {
 }
 
 export type CronNotifyHook = (payload: CronNotifyPayload) => void | Promise<void>;
+
+/** Telegram Bot API message length limit. */
+export const TELEGRAM_MESSAGE_MAX = 4096;
 
 let customHook: CronNotifyHook | null = null;
 
@@ -34,21 +55,50 @@ function resolveEnv(name: string): string {
   return (process.env[name] ?? "").trim();
 }
 
-export function resolveJobNotify(job: CronJob): CronJobNotifyConfig | null {
+export function resolveJobNotifyTarget(job: CronJob): CronJobNotifyTarget | null {
   const n = job.notify;
   if (!n || typeof n !== "object") return null;
   const chatId = typeof n.chatId === "string" ? n.chatId.trim() : "";
   if (!chatId) return null;
+  if (n.telegram === true) {
+    const tokenEnv =
+      (typeof n.tokenEnv === "string" ? n.tokenEnv.trim() : "") || "TELEGRAM_BOT_TOKEN";
+    return { mode: "telegram", chatId, tokenEnv };
+  }
   const webhookUrl =
     (typeof n.webhookUrl === "string" ? n.webhookUrl.trim() : "") ||
     resolveEnv("CRON_NOTIFY_WEBHOOK_URL");
   if (!webhookUrl) return null;
   const secretEnv =
     (typeof n.secretEnv === "string" ? n.secretEnv.trim() : "") || "GATEWAY_WEBHOOK_SECRET";
-  return { chatId, webhookUrl, secretEnv };
+  return { mode: "webhook", chatId, webhookUrl, secretEnv };
 }
 
-function formatNotifyText(payload: CronNotifyPayload): string {
+/** @deprecated use resolveJobNotifyTarget */
+export function resolveJobNotify(job: CronJob): CronJobNotifyConfig | null {
+  const t = resolveJobNotifyTarget(job);
+  if (!t || t.mode !== "webhook") return null;
+  return { chatId: t.chatId, webhookUrl: t.webhookUrl, secretEnv: t.secretEnv };
+}
+
+export function splitTelegramMessages(text: string, maxLen = TELEGRAM_MESSAGE_MAX): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [""];
+  if (trimmed.length <= maxLen) return [trimmed];
+  const chunks: string[] = [];
+  let rest = trimmed;
+  while (rest.length > maxLen) {
+    let cut = rest.lastIndexOf("\n", maxLen);
+    if (cut < maxLen * 0.5) cut = maxLen;
+    chunks.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+function formatNotifyText(payload: CronNotifyPayload, exec: CronExecuteResult): string {
+  if (exec.output?.trim()) return exec.output.trim();
   const status = payload.ok ? "OK" : "FAILED";
   return `[cron:${payload.jobId}] ${status}\n${payload.message.slice(0, 2000)}`;
 }
@@ -56,7 +106,8 @@ function formatNotifyText(payload: CronNotifyPayload): string {
 export async function sendCronJobNotify(
   job: CronJob,
   exec: CronExecuteResult,
-  at: Date = new Date()
+  at: Date = new Date(),
+  dir: string = process.cwd()
 ): Promise<void> {
   const payload: CronNotifyPayload = {
     jobId: job.id,
@@ -68,17 +119,32 @@ export async function sendCronJobNotify(
     await customHook(payload);
     return;
   }
-  const notify = resolveJobNotify(job);
-  if (!notify) return;
-  const secret = resolveEnv(notify.secretEnv);
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (secret) headers["X-Gateway-Secret"] = secret;
-  const text = formatNotifyText(payload);
+  const target = resolveJobNotifyTarget(job);
+  if (!target) return;
+  const text = formatNotifyText(payload, exec);
   try {
-    await fetch(notify.webhookUrl, {
+    if (target.mode === "telegram") {
+      const token = resolveTelegramBotToken(dir, target.tokenEnv).value;
+      if (!token) {
+        console.error(`[cron] notify telegram: ${target.tokenEnv} unset job=${job.id}`);
+        return;
+      }
+      const parts = splitTelegramMessages(text);
+      for (let i = 0; i < parts.length; i++) {
+        const body =
+          parts.length > 1 ? `[${i + 1}/${parts.length}]\n${parts[i]}` : parts[i]!;
+        await telegramSendMessage(token, target.chatId, body);
+      }
+      return;
+    }
+    const secret = resolveEnv(target.secretEnv);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (secret) headers["X-Gateway-Secret"] = secret;
+    const webhookText = formatNotifyText(payload, exec);
+    await fetch(target.webhookUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify({ chatId: notify.chatId, text }),
+      body: JSON.stringify({ chatId: target.chatId, text: webhookText }),
     });
   } catch (e) {
     console.error(
