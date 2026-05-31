@@ -4,6 +4,7 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { CONFIG_FILE, ConfigError, loadConfig, validateMcpServers } from "./config.js";
+import { resolveMcpServers } from "./mcpServers.js";
 import { resolveApiKey, apiKeySourceLabel } from "./credentials.js";
 import { probePostgresStore } from "./store.js";
 import { validateCronJobsFile, cronJobsPath } from "./cronJobs.js";
@@ -42,8 +43,9 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
     if (existsSync(resolve(dir, CONFIG_FILE))) {
       cfgDetail = `loaded (model=${c.model}, runtime=${c.runtime})`;
     }
-    mcpCount = Object.keys(c.mcpServers).length;
-    mcpErrs = validateMcpServers(c.mcpServers);
+    const merged = resolveMcpServers(c, dir);
+    mcpCount = Object.keys(merged).length;
+    mcpErrs = validateMcpServers(merged);
   } catch (e) {
     cfgOk = false;
     cfgDetail = e instanceof ConfigError ? e.message : String(e);

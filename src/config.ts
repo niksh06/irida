@@ -12,6 +12,16 @@ export interface SafetyConfig {
   allowAutoPr: boolean;
 }
 
+/** Durable memory injected before the first turn of each chat session (issue 036). */
+export interface MemoryConfig {
+  /** Optional: inject named notes on first turn only (prefer MCP tools). */
+  onStart?: string[];
+  /** Total chars cap for onStart injection (default 32 KiB). */
+  maxCharsPerTurn?: number;
+  /** Attach csagent-memory MCP tools (default true). Set false to disable. */
+  mcp?: boolean;
+}
+
 export interface AgentConfig {
   model: string;
   runtime: "local" | "cloud";
@@ -20,6 +30,7 @@ export interface AgentConfig {
   stateDir: string;
   mcpServers: Record<string, unknown>;
   safety: SafetyConfig;
+  memory: MemoryConfig;
 }
 
 export class ConfigError extends Error {}
@@ -65,6 +76,7 @@ export function defaults(dir: string): AgentConfig {
     stateDir: defaultStateDir(dir),
     mcpServers: {},
     safety: { allowCloud: false, allowAutoPr: false },
+    memory: {},
   };
 }
 
@@ -132,6 +144,30 @@ function validate(obj: unknown, dir: string): AgentConfig {
     }
     const s = o.safety as Record<string, unknown>;
     cfg.safety = { allowCloud: s.allowCloud === true, allowAutoPr: s.allowAutoPr === true };
+  }
+  if (o.memory !== undefined) {
+    if (typeof o.memory !== "object" || o.memory === null || Array.isArray(o.memory)) {
+      throw new ConfigError("memory must be an object");
+    }
+    const m = o.memory as Record<string, unknown>;
+    if (m.onStart !== undefined) {
+      if (!Array.isArray(m.onStart) || !m.onStart.every((x) => typeof x === "string")) {
+        throw new ConfigError("memory.onStart must be an array of strings");
+      }
+      cfg.memory.onStart = m.onStart.map((x) => x.trim()).filter(Boolean);
+    }
+    if (m.maxCharsPerTurn !== undefined) {
+      if (typeof m.maxCharsPerTurn !== "number" || m.maxCharsPerTurn < 256) {
+        throw new ConfigError("memory.maxCharsPerTurn must be a number >= 256");
+      }
+      cfg.memory.maxCharsPerTurn = m.maxCharsPerTurn;
+    }
+    if (m.mcp !== undefined) {
+      if (typeof m.mcp !== "boolean") {
+        throw new ConfigError("memory.mcp must be a boolean");
+      }
+      cfg.memory.mcp = m.mcp;
+    }
   }
   return cfg;
 }

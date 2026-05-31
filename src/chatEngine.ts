@@ -27,7 +27,9 @@ import { loadGatewayPeers } from "./gatewayPeers.js";
 import { safetyGate, type Confirmer } from "./safety.js";
 import { loadSkills, SkillError, type Skill } from "./skills.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
+import { sessionStartMemoryBlocks } from "./memory.js";
 import { connectAgentForSession, replayPreamble, type ConnectMode } from "./sessionConnect.js";
+import { resolveMcpServers } from "./mcpServers.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -142,6 +144,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   }
   cfg = { ...cfg, model: activeModel };
 
+  const mcpServers = resolveMcpServers(cfg, dir);
+
   let skills: Skill[] = [];
   if (opts.skills?.length) {
     try {
@@ -191,7 +195,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     sessionCwd = existing.cwd || cfg.cwd;
     sessionChannel = existing.channel?.trim() || opts.channel || "";
     try {
-      const connected = await connectAgentForSession(sdk, store, existing, cfg, apiKey);
+      const connected = await connectAgentForSession(sdk, store, existing, cfg, apiKey, mcpServers);
       agent = connected.agent;
       connectMode = connected.mode;
       replayPrefix = connected.replayPrefix;
@@ -212,7 +216,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         apiKey,
         model: cfg.model,
         cwd: cfg.cwd,
-        mcpServers: cfg.mcpServers,
+        mcpServers,
       });
     } catch (e) {
       await store.close();
@@ -259,10 +263,14 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
       let sendMsg: string;
       try {
+        const sessionMemoryBlocks =
+          firstTurn ? await sessionStartMemoryBlocks(dir, cfg) : [];
         sendMsg = composePrompt({
           userPrompt: msg,
           cwd: sessionCwd,
+          dir,
           skills: firstTurn ? skills : [],
+          sessionMemoryBlocks,
         });
       } catch (e) {
         if (e instanceof ContextRefError) return { kind: "error", message: e.message, fatal: false };
@@ -287,7 +295,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           apiKey,
           model: cfg.model,
           cwd: sessionCwd,
-          mcpServers: cfg.mcpServers,
+          mcpServers: mcpServers,
         });
         session.agentId = agent.agentId ?? null;
         const replayTurns = (await store.listRuns(sessionId)).slice(-10).length;

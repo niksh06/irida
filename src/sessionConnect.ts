@@ -7,6 +7,7 @@ import {
   resumeSession,
   StartupError,
   type AgentLike,
+  type McpServers,
   type SdkCreateLike,
   type SdkResumeLike,
 } from "./host.js";
@@ -38,14 +39,15 @@ export async function connectAgentForSession(
   store: IStore,
   session: SessionRecord,
   cfg: AgentConfig,
-  apiKey: string
+  apiKey: string,
+  mcpServers: McpServers
 ): Promise<ConnectResult> {
   const cwd = session.cwd || cfg.cwd;
   let liveResumeError = "";
 
   if (session.sdk_agent_id) {
     try {
-      const agent = await resumeSession(sdk, session.sdk_agent_id, apiKey, cfg.mcpServers);
+      const agent = await resumeSession(sdk, session.sdk_agent_id, apiKey, mcpServers);
       return { agent, mode: "resumed", replayPrefix: "", liveResumeError: "" };
     } catch (e) {
       liveResumeError = e instanceof StartupError ? e.message : String(e);
@@ -58,7 +60,7 @@ export async function connectAgentForSession(
     apiKey,
     model: cfg.model,
     cwd,
-    mcpServers: cfg.mcpServers,
+    mcpServers,
   });
   return {
     agent,

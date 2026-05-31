@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { loadConfig } from "../src/config.js";
 import {
   deleteMemory,
   expandMemoryRefs,
@@ -11,6 +12,7 @@ import {
   MemoryError,
   readMemory,
   saveMemory,
+  sessionStartMemoryBlocks,
 } from "../src/memory.js";
 import { composePrompt } from "../src/composePrompt.js";
 
@@ -64,4 +66,24 @@ test("redacts secrets on save", () => {
 
 test("listMemoryRefs dedupes", () => {
   assert.deepEqual(listMemoryRefs("@memory:a @memory:a").map((t) => t.name), ["a"]);
+});
+
+test("expandMemoryRefs prepends session-start blocks", () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "mem-pre-"));
+  saveMemory(dir, "ops", "launchd gateway");
+  const out = expandMemoryRefs("hello", dir, ["### Memory: ops\n\nlaunchd gateway"]);
+  assert.match(out, /loaded for this session/);
+  assert.match(out, /launchd gateway/);
+  assert.match(out, /hello/);
+});
+
+test("sessionStartMemoryBlocks loads configured notes", async () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "mem-start-"));
+  saveMemory(dir, "a", "note-a");
+  saveMemory(dir, "b", "note-b");
+  const cfg = loadConfig(dir);
+  cfg.memory.onStart = ["a"];
+  const blocks = await sessionStartMemoryBlocks(dir, cfg);
+  assert.equal(blocks.length, 1);
+  assert.match(blocks[0]!, /note-a/);
 });

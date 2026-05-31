@@ -13,9 +13,11 @@ export function composePrompt(args: {
   cwd: string;
   dir?: string;
   skills?: Skill[];
+  /** Pre-loaded memory blocks (first session turn). */
+  sessionMemoryBlocks?: string[];
 }): string {
   const dir = args.dir ?? args.cwd;
-  let text = expandMemoryRefs(args.userPrompt, dir);
+  let text = expandMemoryRefs(args.userPrompt, dir, args.sessionMemoryBlocks ?? []);
   text = expandContextRefs(text, args.cwd);
   if (args.skills && args.skills.length) return buildPrompt(text, args.skills);
   return text;

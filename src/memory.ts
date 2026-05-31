@@ -4,7 +4,8 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve, basename, extname } from "node:path";
-import { loadConfig } from "./config.js";
+import { loadConfig, type AgentConfig } from "./config.js";
+import { createMemoryStore } from "./memoryStore.js";
 import { redact } from "./redact.js";
 
 export class MemoryError extends Error {}
@@ -130,6 +131,64 @@ function formatMemoryBlock(name: string, body: string): string {
   return `### Memory: ${name}\n\n${body.trim()}`;
 }
 
+/** Load configured notes for the first turn of a chat session. */
+export async function sessionStartMemoryBlocks(
+  dir: string,
+  cfg: AgentConfig
+): Promise<string[]> {
+  const onStart = cfg.memory?.onStart;
+  if (!onStart?.length) return [];
+
+  const maxChars = cfg.memory.maxCharsPerTurn ?? MAX_TOTAL_CHARS;
+  const store = createMemoryStore(dir, cfg.stateDir);
+  const blocks: string[] = [];
+  let total = 0;
+
+  try {
+    const loadOne = async (name: string): Promise<string | undefined> => {
+      const note = await store.getNote(name);
+      if (note) return note.body;
+      try {
+        return readMemory(dir, name);
+      } catch {
+        return undefined;
+      }
+    };
+
+    if (onStart.length === 1 && onStart[0] === "*") {
+      const notes = await store.listNotes();
+      if (notes.length > 0) {
+        for (const n of notes) {
+          if (total + n.body.length > maxChars) break;
+          blocks.push(formatMemoryBlock(n.name, n.body));
+          total += n.body.length;
+        }
+      } else {
+        for (const entry of listMemories(dir)) {
+          const body = readMemory(dir, entry.name);
+          if (total + body.length > maxChars) break;
+          blocks.push(formatMemoryBlock(entry.name, body));
+          total += body.length;
+        }
+      }
+      return blocks;
+    }
+
+    for (const raw of onStart) {
+      const name = raw.trim();
+      if (!name || name === "*") continue;
+      const body = await loadOne(name);
+      if (!body) continue;
+      if (total + body.length > maxChars) break;
+      blocks.push(formatMemoryBlock(name, body));
+      total += body.length;
+    }
+    return blocks;
+  } finally {
+    await store.close();
+  }
+}
+
 function loadMemoriesForToken(dir: string, tokenName: string): string[] {
   if (!tokenName.trim()) {
     const all = listMemories(dir);
@@ -149,25 +208,26 @@ function loadMemoriesForToken(dir: string, tokenName: string): string[] {
   return [formatMemoryBlock(name, readMemory(dir, name))];
 }
 
-/** Replace @memory: tokens; append memory blocks before task text. */
-export function expandMemoryRefs(prompt: string, dir: string = process.cwd()): string {
+/** Replace @memory: tokens; optional prepend blocks (session start). */
+export function expandMemoryRefs(
+  prompt: string,
+  dir: string = process.cwd(),
+  prependBlocks: string[] = []
+): string {
   const tokens = listMemoryRefs(prompt);
-  if (tokens.length === 0) return prompt;
-
-  const blocks: string[] = [];
+  const blocks: string[] = [...prependBlocks];
   for (const t of tokens) {
     blocks.push(...loadMemoriesForToken(dir, t.name));
   }
+  if (blocks.length === 0) return prompt;
 
   MEMORY_TOKEN.lastIndex = 0;
   const stripped = prompt.replace(MEMORY_TOKEN, "").trim();
   const task = stripped || "(see attached memory)";
-  return (
-    "The following durable memory was attached via @memory references.\n\n" +
-    blocks.join("\n\n") +
-    "\n\n# Task\n\n" +
-    task
-  );
+  const header = prependBlocks.length
+    ? "The following durable memory was loaded for this session.\n\n"
+    : "The following durable memory was attached via @memory references.\n\n";
+  return header + blocks.join("\n\n") + "\n\n# Task\n\n" + task;
 }
 
 export function probeMemoryRef(dir: string, token: MemoryRefToken): "ok" | "missing" {
