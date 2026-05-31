@@ -4,7 +4,7 @@
 
 **Canonical runtime:** `CSAGENT_HOME=~/.csagent` + `CSAGENT_DATABASE_URL` (PG `:5435`).
 
-См. issue [039 — unified memory root](./issues/039-unified-memory-root.md) для кода.
+См. issue **039** (локально: `docs/issues/039-unified-memory-root.md`, не в git) для кода.
 
 ---
 
