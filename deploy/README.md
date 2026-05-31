@@ -2,7 +2,7 @@
 
 Hermes-style home: **`~/.csagent`**. Code in **`~/.csagent/csagent`**, runtime in **`~/.csagent/.agent`**.
 
-TParser — отдельный проект; для интеграции с его API настройте cron/job вручную (см. `Reports/projects/tparser-csagent-obsidian-telegram-setup.md`).
+TParser — отдельный проект; bi-hourly digest cron: [TPARSER-BIHOURLY-CRON.md](./TPARSER-BIHOURLY-CRON.md).
 
 ## Layout
 
@@ -13,6 +13,8 @@ TParser — отдельный проект; для интеграции с ег
   .agent/              # credentials, gateway, cron, sqlite, memory
   csagent/             # install copy (synced from repo by setup-home.sh)
 ```
+
+**Memory (dev ↔ Telegram):** gateway и локальный dev должны использовать один `CSAGENT_HOME` + PG, иначе заметки расходятся. Чеклист: [MEMORY-DEV-ALIGNMENT.md](./MEMORY-DEV-ALIGNMENT.md). Код: [issue 039](./issues/039-unified-memory-root.md).
 
 ## Quick start
 

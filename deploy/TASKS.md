@@ -38,8 +38,10 @@ Phase 0 checklist: [PHASE0-CHECKLIST.md](./PHASE0-CHECKLIST.md)
 | P2-3 | CLI: search, fact add/query/invalidate | done |
 | P2-4 | Dual-write DB + `.agent/memory/*.md` for @memory | done |
 | P2-5 | MCP csagent-memory tools (memory_get/search/save/facts) | done |
-| P2-6 | Cron: facts instead of JSON state (hourly dedup) | todo |
+| P2-6 | Cron: facts instead of JSON state (hourly dedup) | done |
 | P2-7 | FTS / pgvector search (optional) | todo |
+| P2-8 | Unified memory root — [039](./issues/039-unified-memory-root.md); ops [MEMORY-DEV-ALIGNMENT.md](./MEMORY-DEV-ALIGNMENT.md) | todo |
+| P2-9 | TParser bi-hourly digest cron + Telegram notify — [TPARSER-BIHOURLY-CRON.md](./TPARSER-BIHOURLY-CRON.md) | done (code); runtime smoke pending |
 
 ## Phase 3 — Unified PG schema
 
