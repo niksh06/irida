@@ -49,9 +49,9 @@ sync_install() {
     --exclude .agent \
     "$SOURCE_ROOT/" "$CSAGENT_ROOT/"
 
-  if [[ ! -d "$CSAGENT_ROOT/node_modules" ]]; then
+  if [[ ! -d "$CSAGENT_ROOT/node_modules" ]] || [[ ! -d "$CSAGENT_ROOT/node_modules/pg" ]]; then
     echo "Running npm install in $CSAGENT_ROOT…"
-    (cd "$CSAGENT_ROOT" && npm install --no-fund --no-audit)
+    (cd "$CSAGENT_ROOT" && npm install --no-fund --no-audit --ignore-scripts)
   fi
 }
 
