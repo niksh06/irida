@@ -2,13 +2,19 @@
   "version": 1,
   "jobs": [
     {
-      "id": "hot-feed-digest",
-      "cron": "0 9,18 * * *",
+      "id": "tparser-bi-hourly-digest",
+      "cron": "0 */2 * * *",
       "cwd": "/path/to/TParser",
-      "skills": ["memory-ops"],
+      "skills": [
+        "memory-ops"
+      ],
       "memoryFactsSubject": "seen_post",
-      "memoryFactsLimit": 80,
-      "prompt": "1) curl -s 'http://127.0.0.1:8002/api/feed?limit=15' | head -c 120000\n2) Skip posts already listed above (seen_post facts). For each NEW valuable post (AI, AISec, ML, MLSec, DevSecOps, InfoSec, Programming): summarize and call memory_fact_add with subject seen_post, predicate=channel_id, object=post_id.\n3) Output top-3 new picks: channel | post_id | category | why hot."
+      "memoryFactsLimit": 50,
+      "notify": {
+        "chatId": "123456789",
+        "telegram": true
+      },
+      "prompt": "TParser bi-hourly digest (last 2 hours). **Do not use /api/feed.**\n\n1) Call memory_get name=tparser-workflow for tag/sphere rules.\n2) Compute WINDOW_START = now UTC minus 2 hours (ISO8601).\n3) Fetch ingested posts:\n   - GET http://127.0.0.1:8002/api/posts/recent-live?limit=150\n   - Paginate with after_rowid if needed until items are older than WINDOW_START.\n   - Keep items where created_at (or date) >= WINDOW_START.\n4) Hydrate cards: batch GET /api/posts/by-keys?keys=channel_id:post_id,... (max 50 keys per request).\n5) Filter **by topic_tags** (primary) and summary when tags sparse. Match tags/keywords from tparser-workflow spheres: AI, ML, LLM, MLSec, security, InfoSec, AppSec, AISec, DevSecOps, programming, devtools, benchmark, vulnerability, LLM security. Include General News if tags match.\n6) Include **ALL** matching posts in the window (no top-N cap). Skip posts already in seen_post facts (memory_fact_query subject=seen_post) if duplicate.\n7) For each included post: one bullet — channel_name | post_id | tags | one-line why it matters. Use GET /api/posts/{post_id}/analysis?channel_id= only when analysis_status=completed and summary is thin.\n8) memory_fact_add subject=seen_post predicate=channel_id object=post_id for each included post.\n9) **Output ONLY the Telegram message body** (Russian, markdown-lite). Header line: \"📬 TParser · последние 2ч · {count} постов · {window_end_utc}\".\n   Stats footer: raw_ingested / tag_matched / sent.\n   If tag_matched=0: output exactly \"📬 TParser · последние 2ч · новых релевантных постов нет.\"\n10) Do not invent posts. Do not re-analyze. Do not write Obsidian files (evening job only)."
     }
   ]
 }

@@ -1,0 +1,17 @@
+TParser bi-hourly digest (last 2 hours). **Do not use /api/feed.**
+
+1) Call memory_get name=tparser-workflow for tag/sphere rules.
+2) Compute WINDOW_START = now UTC minus 2 hours (ISO8601).
+3) Fetch ingested posts:
+   - GET http://127.0.0.1:8002/api/posts/recent-live?limit=150
+   - Paginate with after_rowid if needed until items are older than WINDOW_START.
+   - Keep items where created_at (or date) >= WINDOW_START.
+4) Hydrate cards: batch GET /api/posts/by-keys?keys=channel_id:post_id,... (max 50 keys per request).
+5) Filter **by topic_tags** (primary) and summary when tags sparse. Match tags/keywords from tparser-workflow spheres: AI, ML, LLM, MLSec, security, InfoSec, AppSec, AISec, DevSecOps, programming, devtools, benchmark, vulnerability, LLM security. Include General News if tags match.
+6) Include **ALL** matching posts in the window (no top-N cap). Skip posts already in seen_post facts (memory_fact_query subject=seen_post) if duplicate.
+7) For each included post: one bullet — channel_name | post_id | tags | one-line why it matters. Use GET /api/posts/{post_id}/analysis?channel_id= only when analysis_status=completed and summary is thin.
+8) memory_fact_add subject=seen_post predicate=channel_id object=post_id for each included post.
+9) **Output ONLY the Telegram message body** (Russian, markdown-lite). Header line: "📬 TParser · последние 2ч · {count} постов · {window_end_utc}".
+   Stats footer: raw_ingested / tag_matched / sent.
+   If tag_matched=0: output exactly "📬 TParser · последние 2ч · новых релевантных постов нет."
+10) Do not invent posts. Do not re-analyze. Do not write Obsidian files (evening job only).
