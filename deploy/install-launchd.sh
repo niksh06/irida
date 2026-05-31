@@ -15,6 +15,7 @@ fi
 
 CSAGENT_HOME="${CSAGENT_HOME:-$HOME/.csagent}"
 CSAGENT_ROOT="${CSAGENT_ROOT:-$CSAGENT_HOME/csagent}"
+CSAGENT_DATABASE_URL="${CSAGENT_DATABASE_URL:-}"
 LOG_DIR="$CSAGENT_HOME/logs"
 NODE_BIN="$(command -v node)"
 
@@ -36,6 +37,7 @@ render() {
   sed \
     -e "s|__CSAGENT_HOME__|${CSAGENT_HOME//|/\\|}|g" \
     -e "s|__CSAGENT_ROOT__|${CSAGENT_ROOT//|/\\|}|g" \
+    -e "s|__CSAGENT_DATABASE_URL__|${CSAGENT_DATABASE_URL//|/\\|}|g" \
     -e "s|__CSAGENT_LOG_DIR__|${LOG_DIR//|/\\|}|g" \
     -e "s|__NODE_BIN__|${NODE_BIN//|/\\|}|g" \
     -e "s|__PATH_SNAPSHOT__|${PATH_SNAPSHOT//|/\\|}|g" \
@@ -44,6 +46,11 @@ render() {
 
 echo "CSAGENT_HOME=$CSAGENT_HOME"
 echo "CSAGENT_ROOT=$CSAGENT_ROOT"
+if [[ -n "$CSAGENT_DATABASE_URL" ]]; then
+  echo "CSAGENT_DATABASE_URL=set (postgres store)"
+else
+  echo "CSAGENT_DATABASE_URL=unset (sqlite store)"
+fi
 echo "LOG_DIR=$LOG_DIR"
 echo "NODE=$NODE_BIN"
 

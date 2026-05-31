@@ -25,11 +25,11 @@ async function withKey<T>(value: string | undefined, fn: () => Promise<T>): Prom
   }
 }
 
-function seedSession(dir: string, agentId: string | null): string {
+async function seedSession(dir: string, agentId: string | null): Promise<string> {
   const s = new Store(dir, ".agent");
   const id = "sess_seed";
-  s.upsertSession({ id, title: "seed", cwd: dir, runtime: "local", sdk_agent_id: agentId, last_status: "finished" });
-  s.recordRun({
+  await s.upsertSession({ id, title: "seed", cwd: dir, runtime: "local", sdk_agent_id: agentId, last_status: "finished" });
+  await s.recordRun({
     id: "run_prior",
     session_id: id,
     sdk_agent_id: agentId,
@@ -44,7 +44,7 @@ function seedSession(dir: string, agentId: string | null): string {
     runtime: "local",
     model: "composer-2.5",
   });
-  s.close();
+  await s.close();
   return id;
 }
 
@@ -91,7 +91,7 @@ function deadSdk(): ResumeSdk {
 test("live resume success -> 0, new run persisted", async () => {
   await withKey("k", async () => {
     const dir = tmp();
-    const id = seedSession(dir, "agent-123");
+    const id = await seedSession(dir, "agent-123");
     const d = { v: false };
     let out = "";
     const code = await cmdResume(id, "continue", { sdk: liveSdk(d), dir, write: (s) => (out += s) });
@@ -99,8 +99,8 @@ test("live resume success -> 0, new run persisted", async () => {
     assert.match(out, /r:continue/);
     assert.equal(d.v, true);
     const store = new Store(dir, ".agent");
-    assert.equal(store.listRuns(id).length, 2); // prior + new
-    store.close();
+    assert.equal((await store.listRuns(id)).length, 2); // prior + new
+    await store.close();
   });
 });
 
@@ -113,7 +113,7 @@ test("missing session -> EX_USAGE 64", async () => {
 test("no stored agent id -> transcript replay -> 0", async () => {
   await withKey("k", async () => {
     const dir = tmp();
-    const id = seedSession(dir, null);
+    const id = await seedSession(dir, null);
     const code = await cmdResume(id, "go on", { sdk: liveSdk({ v: false }), dir, write: () => {} });
     assert.equal(code, 0);
   });
@@ -122,30 +122,30 @@ test("no stored agent id -> transcript replay -> 0", async () => {
 test("live resume fails -> transcript replay -> 0", async () => {
   await withKey("k", async () => {
     const dir = tmp();
-    const id = seedSession(dir, "agent-123");
+    const id = await seedSession(dir, "agent-123");
     const code = await cmdResume(id, "go on", { sdk: replaySdk({ v: false }), dir, write: () => {} });
     assert.equal(code, 0);
     const store = new Store(dir, ".agent");
-    assert.equal(store.getSession(id)!.sdk_agent_id, "agent_created"); // updated to replay agent
-    store.close();
+    assert.equal((await store.getSession(id))!.sdk_agent_id, "agent_created"); // updated to replay agent
+    await store.close();
   });
 });
 
 test("resume and replay both fail -> EX_SOFTWARE 70", async () => {
   await withKey("k", async () => {
     const dir = tmp();
-    const id = seedSession(dir, "agent-123");
+    const id = await seedSession(dir, "agent-123");
     assert.equal(await cmdResume(id, "go", { sdk: deadSdk(), dir, write: () => {} }), 70);
     const store = new Store(dir, ".agent");
-    assert.ok(store.getSession(id)); // state intact
-    store.close();
+    assert.ok(await store.getSession(id)); // state intact
+    await store.close();
   });
 });
 
 test("destructive prompt -> EX_NOPERM 77", async () => {
   await withKey("k", async () => {
     const dir = tmp();
-    const id = seedSession(dir, "agent-123");
+    const id = await seedSession(dir, "agent-123");
     assert.equal(await cmdResume(id, "rm -rf /", { sdk: liveSdk({ v: false }), dir, write: () => {} }), 77);
   });
 });

@@ -13,7 +13,7 @@
  */
 import { loadConfig, ConfigError, type AgentConfig } from "./config.js";
 import { disposeAgent, eventText, StartupError, type RunLike, type SdkResumeLike, type SdkCreateLike } from "./host.js";
-import { Store } from "./store.js";
+import { createStore } from "./store.js";
 import { safetyGate } from "./safety.js";
 import { loadSkills, SkillError } from "./skills.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
@@ -69,9 +69,9 @@ export async function cmdResume(
     return EXIT.config;
   }
 
-  const store = new Store(dir, cfg.stateDir);
+  const store = createStore(dir, cfg.stateDir);
   try {
-    const session = store.getSession(sessionId);
+    const session = await store.getSession(sessionId);
     if (!session) {
       console.error(`resume: session '${sessionId}' not found (see \`cursor-agent sessions\`)`);
       return EXIT.usage;
@@ -131,7 +131,7 @@ export async function cmdResume(
       const status = String(res.status);
       const newAgentId = agent.agentId ?? session.sdk_agent_id;
       console.error(`[resume] session=${sessionId} mode=${mode} runId=${res.id ?? "-"} status=${status}`);
-      store.recordRun({
+      await store.recordRun({
         id: runId,
         session_id: sessionId,
         sdk_agent_id: newAgentId,
@@ -146,7 +146,7 @@ export async function cmdResume(
         runtime: session.runtime || cfg.runtime,
         model: cfg.model,
       });
-      store.upsertSession({
+      await store.upsertSession({
         id: sessionId,
         title: session.title,
         cwd: session.cwd || cfg.cwd,
@@ -163,6 +163,6 @@ export async function cmdResume(
     console.error("resume: failed: " + redact(e instanceof StartupError ? e.message : (e as Error).message));
     return EXIT.software;
   } finally {
-    store.close();
+    await store.close();
   }
 }

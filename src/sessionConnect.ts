@@ -11,7 +11,7 @@ import {
   type SdkResumeLike,
 } from "./host.js";
 import type { AgentConfig } from "./config.js";
-import type { SessionRecord, Store } from "./store.js";
+import type { IStore, SessionRecord } from "./store.js";
 import { redact } from "./redact.js";
 
 export type ConnectMode = "resumed" | "replayed";
@@ -24,8 +24,8 @@ export interface ConnectResult {
   liveResumeError: string;
 }
 
-export function replayPreamble(store: Store, sessionId: string, max = 10): string {
-  const runs = store.listRuns(sessionId).slice(-max);
+export async function replayPreamble(store: IStore, sessionId: string, max = 10): Promise<string> {
+  const runs = (await store.listRuns(sessionId)).slice(-max);
   if (runs.length === 0) return "";
   const turns = runs
     .map((r) => `User: ${r.prompt_preview}\nAssistant: ${r.result_preview || "(no stored output)"}`)
@@ -35,7 +35,7 @@ export function replayPreamble(store: Store, sessionId: string, max = 10): strin
 
 export async function connectAgentForSession(
   sdk: SdkResumeLike & SdkCreateLike,
-  store: Store,
+  store: IStore,
   session: SessionRecord,
   cfg: AgentConfig,
   apiKey: string
@@ -63,7 +63,7 @@ export async function connectAgentForSession(
   return {
     agent,
     mode: "replayed",
-    replayPrefix: replayPreamble(store, session.id),
+    replayPrefix: await replayPreamble(store, session.id),
     liveResumeError: redact(liveResumeError),
   };
 }

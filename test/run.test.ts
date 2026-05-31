@@ -34,12 +34,12 @@ test("finished run -> exit 0 and persisted to sqlite", async () => {
     const code = await cmdRun("hi", { sdk, dir });
     assert.equal(code, 0);
     const store = new Store(dir, ".agent");
-    const sessions = store.listSessions();
+    const sessions = await store.listSessions();
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0].last_status, "finished");
-    const runs = store.listRuns(sessions[0].id);
+    const runs = await store.listRuns(sessions[0].id);
     assert.equal(runs[0].sdk_run_id, "r1");
-    store.close();
+    await store.close();
   });
 });
 

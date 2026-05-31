@@ -1,13 +1,12 @@
 /**
  * `cursor-agent sessions` — list stored sessions (issue 010), newest first.
- * Shows id, title/preview, cwd, updated time, last status. No secrets.
  */
 import { loadConfig, ConfigError } from "./config.js";
-import { Store } from "./store.js";
+import { createStore } from "./store.js";
 import { redact } from "./redact.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
-export function cmdSessions(dir: string = process.cwd()): ExitCode {
+export async function cmdSessions(dir: string = process.cwd()): Promise<ExitCode> {
   let cfg;
   try {
     cfg = loadConfig(dir);
@@ -16,9 +15,9 @@ export function cmdSessions(dir: string = process.cwd()): ExitCode {
     return EXIT.config;
   }
 
-  const store = new Store(dir, cfg.stateDir);
+  const store = createStore(dir, cfg.stateDir);
   try {
-    const rows = store.listSessions();
+    const rows = await store.listSessions();
     if (rows.length === 0) {
       console.log("No sessions yet. Run `cursor-agent run \"...\"` or `cursor-agent chat`.");
       return EXIT.ok;
@@ -31,6 +30,6 @@ export function cmdSessions(dir: string = process.cwd()): ExitCode {
     }
     return EXIT.ok;
   } finally {
-    store.close();
+    await store.close();
   }
 }

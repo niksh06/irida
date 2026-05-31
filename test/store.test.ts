@@ -3,28 +3,28 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { Store } from "../src/store.js";
+import { SqliteStore, createStore } from "../src/store.js";
 
 function tmp(): string {
   return mkdtempSync(resolve(tmpdir(), "store-"));
 }
 
-test("upsert + list sessions newest first", () => {
+test("upsert + list sessions newest first", async () => {
   const dir = tmp();
-  const s = new Store(dir, ".agent");
-  s.upsertSession({ id: "sess_a", title: "first", cwd: dir, runtime: "local", last_status: "finished" });
-  s.upsertSession({ id: "sess_b", title: "second", cwd: dir, runtime: "local", last_status: "finished" });
-  const rows = s.listSessions();
+  const s = new SqliteStore(dir, ".agent");
+  await s.upsertSession({ id: "sess_a", title: "first", cwd: dir, runtime: "local", last_status: "finished" });
+  await s.upsertSession({ id: "sess_b", title: "second", cwd: dir, runtime: "local", last_status: "finished" });
+  const rows = await s.listSessions();
   assert.equal(rows.length, 2);
-  assert.equal(rows[0].id, "sess_b"); // newest first
-  s.close();
+  assert.equal(rows[0].id, "sess_b");
+  await s.close();
 });
 
-test("recordRun stores metadata and redacts secrets in preview", () => {
+test("recordRun stores metadata and redacts secrets in preview", async () => {
   const dir = tmp();
-  const s = new Store(dir, ".agent");
-  s.upsertSession({ id: "sess_x", title: "t", cwd: dir, runtime: "local" });
-  s.recordRun({
+  const s = new SqliteStore(dir, ".agent");
+  await s.upsertSession({ id: "sess_x", title: "t", cwd: dir, runtime: "local" });
+  await s.recordRun({
     id: "run_1",
     session_id: "sess_x",
     sdk_agent_id: "a1",
@@ -39,10 +39,23 @@ test("recordRun stores metadata and redacts secrets in preview", () => {
     runtime: "local",
     model: "composer-2.5",
   });
-  const runs = s.listRuns("sess_x");
+  const runs = await s.listRuns("sess_x");
   assert.equal(runs.length, 1);
   assert.equal(runs[0].status, "finished");
   assert.doesNotMatch(runs[0].prompt_preview, /key_abcdef123456/);
   assert.match(runs[0].prompt_preview, /<redacted>/);
-  s.close();
+  await s.close();
+});
+
+test("createStore defaults to sqlite", async () => {
+  const prev = process.env.CSAGENT_DATABASE_URL;
+  delete process.env.CSAGENT_DATABASE_URL;
+  const dir = tmp();
+  const s = createStore(dir, ".agent");
+  await s.upsertSession({ id: "sess_z", title: "z", cwd: dir, runtime: "local" });
+  const rows = await s.listSessions();
+  assert.equal(rows.length, 1);
+  await s.close();
+  if (prev === undefined) delete process.env.CSAGENT_DATABASE_URL;
+  else process.env.CSAGENT_DATABASE_URL = prev;
 });

@@ -17,7 +17,7 @@ import {
   type SdkResumeLike,
   type StreamUsage,
 } from "./host.js";
-import { Store } from "./store.js";
+import { createStore, type IStore } from "./store.js";
 import { safetyGate, type Confirmer } from "./safety.js";
 import { loadSkills, SkillError, type Skill } from "./skills.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
@@ -93,8 +93,8 @@ async function resolveSdk(injected?: ChatSdk): Promise<ChatSdk> {
   return mod.Agent as unknown as ChatSdk;
 }
 
-function resolveSessionTitle(store: Store, sessionId: string, userMsg: string): string {
-  const existing = store.getSession(sessionId);
+async function resolveSessionTitle(store: IStore, sessionId: string, userMsg: string): Promise<string> {
+  const existing = await store.getSession(sessionId);
   const t = existing?.title?.trim() ?? "";
   if (t && t !== "chat session") return t;
   return preview(userMsg, 60);
@@ -147,13 +147,13 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     }
   }
 
-  const store = new Store(dir, cfg.stateDir);
+  const store = createStore(dir, cfg.stateDir);
 
   let sdk: ChatSdk;
   try {
     sdk = await resolveSdk(opts.sdk);
   } catch (e) {
-    store.close();
+    await store.close();
     return { ok: false, code: EXIT.software, message: "cannot load @cursor/sdk: " + redact((e as Error).message) };
   }
 
@@ -164,9 +164,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   let sessionCwd = cfg.cwd;
 
   if (opts.resumeSessionId) {
-    const existing = store.getSession(opts.resumeSessionId);
+    const existing = await store.getSession(opts.resumeSessionId);
     if (!existing) {
-      store.close();
+      await store.close();
       return { ok: false, code: EXIT.usage, message: `session '${opts.resumeSessionId}' not found` };
     }
     sessionId = existing.id;
@@ -182,7 +182,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         log(`[chat] resume live session=${sessionId}`);
       }
     } catch (e) {
-      store.close();
+      await store.close();
       const msg = e instanceof StartupError ? e.message : String(e);
       return { ok: false, code: EXIT.software, message: "resume failed: " + redact(msg) };
     }
@@ -196,14 +196,14 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         mcpServers: cfg.mcpServers,
       });
     } catch (e) {
-      store.close();
+      await store.close();
       const msg = e instanceof StartupError ? e.message : String(e);
       return { ok: false, code: EXIT.software, message: "startup failed: " + redact(msg) };
     }
     log(`[chat] agentId=${agent.agentId ?? "-"} session=${sessionId} cwd=${cfg.cwd}`);
   }
 
-  store.upsertSession({
+  await store.upsertSession({
     id: sessionId,
     title: "chat session",
     cwd: sessionCwd,
@@ -270,8 +270,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           mcpServers: cfg.mcpServers,
         });
         session.agentId = agent.agentId ?? null;
-        const replayTurns = store.listRuns(sessionId).slice(-10).length;
-        const prefix = replayPreamble(store, sessionId);
+        const replayTurns = (await store.listRuns(sessionId)).slice(-10).length;
+        const prefix = await replayPreamble(store, sessionId);
         log(
           `[chat] agent rotated old=${previousAgentId ?? "-"} new=${agent.agentId ?? "-"} replay=${replayTurns}`
         );
@@ -280,9 +280,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           newAgentId: agent.agentId ?? null,
           replayTurns,
         });
-        store.upsertSession({
+        await store.upsertSession({
           id: sessionId,
-          title: resolveSessionTitle(store, sessionId, msg),
+          title: await resolveSessionTitle(store, sessionId, msg),
           cwd: sessionCwd,
           runtime: cfg.runtime,
           sdk_agent_id: agent.agentId ?? null,
@@ -329,7 +329,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             outputTokens: usage.outputTokens,
           };
           log(`[chat] runId=${res.id ?? "-"} status=${lastStatus} tools=${toolCalls} ${stats.durationMs}ms`);
-          store.recordRun({
+          await store.recordRun({
             id: runId,
             session_id: sessionId,
             sdk_agent_id: agent.agentId ?? null,
@@ -344,9 +344,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             runtime: cfg.runtime,
             model: cfg.model,
           });
-          store.upsertSession({
+          await store.upsertSession({
             id: sessionId,
-            title: resolveSessionTitle(store, sessionId, msg),
+            title: await resolveSessionTitle(store, sessionId, msg),
             cwd: sessionCwd,
             runtime: cfg.runtime,
             sdk_agent_id: agent.agentId ?? null,
@@ -368,7 +368,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
           const formatted = formatSdkError(e);
           log(`[chat] turn error kind=${formatted.errorKind} ${formatted.message}`);
-          store.recordRun({
+          await store.recordRun({
             id: runId,
             session_id: sessionId,
             sdk_agent_id: agent.agentId ?? null,
@@ -383,9 +383,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             runtime: cfg.runtime,
             model: cfg.model,
           });
-          store.upsertSession({
+          await store.upsertSession({
             id: sessionId,
-            title: resolveSessionTitle(store, sessionId, msg),
+            title: await resolveSessionTitle(store, sessionId, msg),
             cwd: sessionCwd,
             runtime: cfg.runtime,
             sdk_agent_id: agent.agentId ?? null,
@@ -401,7 +401,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     },
     async close(): Promise<void> {
       await disposeAgent(agent);
-      store.close();
+      await store.close();
     },
   };
 

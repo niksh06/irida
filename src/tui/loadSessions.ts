@@ -1,37 +1,37 @@
 import { loadConfig, ConfigError } from "../config.js";
-import { Store, type SessionRecord } from "../store.js";
+import { createStore, type SessionRecord } from "../store.js";
 
-export function listStoredSessions(dir: string = process.cwd()): SessionRecord[] {
+export async function listStoredSessions(dir: string = process.cwd()): Promise<SessionRecord[]> {
   let cfg;
   try {
     cfg = loadConfig(dir);
   } catch (e) {
     throw e instanceof ConfigError ? e : new ConfigError(String(e));
   }
-  const store = new Store(dir, cfg.stateDir);
+  const store = createStore(dir, cfg.stateDir);
   try {
-    return store.listSessions(30);
+    return await store.listSessions(30);
   } finally {
-    store.close();
+    await store.close();
   }
 }
 
-export function loadSessionRuns(dir: string, sessionId: string) {
+export async function loadSessionRuns(dir: string, sessionId: string) {
   const cfg = loadConfig(dir);
-  const store = new Store(dir, cfg.stateDir);
+  const store = createStore(dir, cfg.stateDir);
   try {
-    return store.listRuns(sessionId);
+    return await store.listRuns(sessionId);
   } finally {
-    store.close();
+    await store.close();
   }
 }
 
-export function renameStoredSession(dir: string, sessionId: string, title: string): boolean {
+export async function renameStoredSession(dir: string, sessionId: string, title: string): Promise<boolean> {
   const cfg = loadConfig(dir);
-  const store = new Store(dir, cfg.stateDir);
+  const store = createStore(dir, cfg.stateDir);
   try {
-    return store.updateSessionTitle(sessionId, title);
+    return await store.updateSessionTitle(sessionId, title);
   } finally {
-    store.close();
+    await store.close();
   }
 }

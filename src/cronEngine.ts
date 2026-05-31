@@ -6,7 +6,7 @@ import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 import { openChatSession } from "./chatEngine.js";
 import { cmdRun } from "./run.js";
 import { safetyGate } from "./safety.js";
-import { Store } from "./store.js";
+import { createStore } from "./store.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { cronMinuteKey } from "./cronSchedule.js";
 import { sendCronJobNotify } from "./cronNotify.js";
@@ -78,9 +78,9 @@ export async function executeCronJob(
   }
 
   if (job.sessionId) {
-    const store = new Store(dir, loadConfig(dir).stateDir);
+    const store = createStore(dir, loadConfig(dir).stateDir);
     try {
-      if (!store.getSession(job.sessionId)) {
+      if (!(await store.getSession(job.sessionId))) {
         return {
           ok: false,
           exitCode: EXIT.usage,
@@ -88,7 +88,7 @@ export async function executeCronJob(
         };
       }
     } finally {
-      store.close();
+      await store.close();
     }
 
     const opened = await openChatSession({

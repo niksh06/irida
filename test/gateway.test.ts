@@ -104,8 +104,8 @@ test("GatewaySessionRouter maps peer to stable sess_", async () => {
     const key = peerKey("webhook", "u1");
     assert.ok(peers.peers[key]?.startsWith("sess_"));
     const store = new Store(dir, ".agent");
-    assert.ok(store.getSession(peers.peers[key]!));
-    store.close();
+    assert.ok(await store.getSession(peers.peers[key]!));
+    await store.close();
     await router.closeAll();
     assert.equal(disposed.v, true);
   });

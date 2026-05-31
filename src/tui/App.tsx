@@ -294,7 +294,9 @@ export function App(props: TuiOptions) {
       setLastTurnStats(null);
       setTurnStartedAt(null);
 
-      const history = resumeSessionId ? runsToMessages(loadSessionRuns(dir, resumeSessionId)) : [];
+      const history = resumeSessionId
+        ? runsToMessages(await loadSessionRuns(dir, resumeSessionId))
+        : [];
       const modeNote =
         s.connectMode === "resumed"
           ? "live resume"
@@ -309,7 +311,7 @@ export function App(props: TuiOptions) {
         },
         ...history,
       ]);
-      setRecentSessions(listStoredSessions(dir));
+      setRecentSessions(await listStoredSessions(dir));
       return opened;
     },
     [dir, modelOverride, noteActivity, patchStreaming, patchThinking, props.skills, props.yesIUnderstand, pushMessage, resetTurnRetry]
@@ -398,10 +400,10 @@ export function App(props: TuiOptions) {
     setHoldNativeScroll(false);
   }, []);
 
-  const openSessionsOverlay = useCallback(() => {
+  const openSessionsOverlay = useCallback(async () => {
     try {
       setInput("");
-      setPickerSessions(listStoredSessions(dir));
+      setPickerSessions(await listStoredSessions(dir));
       openOverlay("sessions");
     } catch (e) {
       pushMessage({ role: "error", text: String(e) });
@@ -599,8 +601,8 @@ export function App(props: TuiOptions) {
             pushMessage({ role: "error", text: "No active session" });
             return;
           }
-          if (renameStoredSession(dir, meta.sessionId, slash.title)) {
-            setRecentSessions(listStoredSessions(dir));
+          if (await renameStoredSession(dir, meta.sessionId, slash.title)) {
+            setRecentSessions(await listStoredSessions(dir));
             pushMessage({ role: "system", text: `Session renamed → ${slash.title}` });
           } else {
             pushMessage({ role: "error", text: "Rename failed" });

@@ -5,6 +5,7 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { CONFIG_FILE, ConfigError, loadConfig, validateMcpServers } from "./config.js";
 import { resolveApiKey, apiKeySourceLabel } from "./credentials.js";
+import { probePostgresStore } from "./store.js";
 import { validateCronJobsFile, cronJobsPath } from "./cronJobs.js";
 import { validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
 
@@ -102,6 +103,15 @@ export function doctorAllOk(checks: DoctorCheck[]): boolean {
 }
 
 export type ModelsListFn = (opts: { apiKey: string }) => Promise<Array<{ id?: string }>>;
+
+export async function gatherDoctorStoreChecks(_dir: string = process.cwd()): Promise<DoctorCheck[]> {
+  const url = process.env.CSAGENT_DATABASE_URL?.trim();
+  if (!url) {
+    return [{ name: "store", ok: true, detail: "sqlite (CSAGENT_DATABASE_URL unset)" }];
+  }
+  const probe = await probePostgresStore(url);
+  return [{ name: "CSAGENT_DATABASE_URL", ok: probe.ok, detail: probe.detail }];
+}
 
 /** Tier-1 Cursor API probe (models list). Skipped when key is unset. */
 export async function gatherDoctorApiChecks(

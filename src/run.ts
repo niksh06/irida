@@ -5,7 +5,7 @@
  */
 import { loadConfig, ConfigError } from "./config.js";
 import { runOneShot, StartupError, type SdkLike } from "./host.js";
-import { Store } from "./store.js";
+import { createStore } from "./store.js";
 import { safetyGate } from "./safety.js";
 import { loadSkills, SkillError } from "./skills.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
@@ -72,7 +72,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     throw e;
   }
 
-  const store = new Store(dir, cfg.stateDir);
+  const store = createStore(dir, cfg.stateDir);
   const sessionId = newId("sess");
   const runId = newId("run");
   const startedAt = nowIso();
@@ -90,7 +90,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     });
     console.error(`[run] agentId=${r.agentId ?? "-"} runId=${r.runId ?? "-"} status=${r.status}`);
     const failed = r.status === "error";
-    store.upsertSession({
+    await store.upsertSession({
       id: sessionId,
       title: preview(prompt, 60),
       cwd: cfg.cwd,
@@ -98,7 +98,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
       sdk_agent_id: r.agentId,
       last_status: r.status,
     });
-    store.recordRun({
+    await store.recordRun({
       id: runId,
       session_id: sessionId,
       sdk_agent_id: r.agentId,
@@ -122,7 +122,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
   } catch (e) {
     if (e instanceof StartupError) {
       console.error("run: startup failed: " + redact(e.message));
-      store.upsertSession({
+      await store.upsertSession({
         id: sessionId,
         title: preview(prompt, 60),
         cwd: cfg.cwd,
@@ -130,7 +130,7 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
         sdk_agent_id: null,
         last_status: "startup_error",
       });
-      store.recordRun({
+      await store.recordRun({
         id: runId,
         session_id: sessionId,
         sdk_agent_id: null,
@@ -149,6 +149,6 @@ export async function cmdRun(prompt: string, opts: RunOptions = {}): Promise<Exi
     }
     throw e;
   } finally {
-    store.close();
+    await store.close();
   }
 }

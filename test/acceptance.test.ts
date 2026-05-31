@@ -85,19 +85,19 @@ test("acceptance: run -> chat -> sessions -> resume flow", async () => {
 
     // 3) sessions lists both
     const store = new Store(dir, ".agent");
-    const sessions = store.listSessions();
+    const sessions = await store.listSessions();
     assert.ok(sessions.length >= 2, `expected >=2 sessions, got ${sessions.length}`);
-    assert.equal(cmdSessions(dir), 0);
+    assert.equal(await cmdSessions(dir), 0);
 
     // 4) resume the chat session (has sdk_agent_id) -> success
     const chatSession = sessions.find((s) => s.sdk_agent_id === "agent_chat");
     assert.ok(chatSession, "chat session with agent id present");
-    const beforeRuns = store.listRuns(chatSession!.id).length;
+    const beforeRuns = (await store.listRuns(chatSession!.id)).length;
     assert.equal(await cmdResume(chatSession!.id, "follow up", { sdk, dir, write: () => {} }), 0);
-    assert.equal(store.listRuns(chatSession!.id).length, beforeRuns + 1);
+    assert.equal((await store.listRuns(chatSession!.id)).length, beforeRuns + 1);
 
     // 5) live resume rejected -> transcript replay succeeds (exit 0)
-    store.upsertSession({ id: "sess_fail", title: "f", cwd: dir, runtime: "local", sdk_agent_id: "agent_fail" });
+    await store.upsertSession({ id: "sess_fail", title: "f", cwd: dir, runtime: "local", sdk_agent_id: "agent_fail" });
     assert.equal(await cmdResume("sess_fail", "go", { sdk, dir, write: () => {} }), 0);
 
     // 6) resume AND replay both fail -> EX_SOFTWARE 70, state intact
@@ -111,8 +111,8 @@ test("acceptance: run -> chat -> sessions -> resume flow", async () => {
       },
     };
     assert.equal(await cmdResume("sess_fail", "go", { sdk: dead, dir, write: () => {} }), 70);
-    assert.ok(store.getSession("sess_fail"), "failed resume leaves session intact");
-    store.close();
+    assert.ok(await store.getSession("sess_fail"), "failed resume leaves session intact");
+    await store.close();
   });
 });
 
@@ -161,11 +161,11 @@ test("acceptance: secrets redacted in persisted state", async () => {
     const disposed = { v: false };
     await cmdRun("use CURSOR_API_KEY=key_supersecret123 now", { sdk: mockSdk(disposed), dir });
     const store = new Store(dir, ".agent");
-    const sess = store.listSessions();
-    const runs = store.listRuns(sess[0].id);
+    const sess = await store.listSessions();
+    const runs = await store.listRuns(sess[0].id);
     const blob = JSON.stringify(sess) + JSON.stringify(runs);
     assert.doesNotMatch(blob, /key_supersecret123/);
     assert.match(blob, /<redacted>/);
-    store.close();
+    await store.close();
   });
 });

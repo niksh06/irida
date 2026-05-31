@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Text, useInput } from "ink";
 import { theme } from "../theme.js";
-import { gatherDoctorChecks, gatherDoctorApiChecks, doctorAllOk } from "../../doctorChecks.js";
+import { gatherDoctorChecks, gatherDoctorApiChecks, gatherDoctorStoreChecks, doctorAllOk } from "../../doctorChecks.js";
 import { OverlayPanel } from "./OverlayPanel.js";
 
 export function DoctorPanel(props: { dir: string; onClose: () => void }) {
@@ -11,8 +11,9 @@ export function DoctorPanel(props: { dir: string; onClose: () => void }) {
     let cancelled = false;
     void (async () => {
       const sync = gatherDoctorChecks(props.dir);
+      const store = await gatherDoctorStoreChecks(props.dir);
       const api = await gatherDoctorApiChecks(props.dir);
-      if (!cancelled) setChecks([...sync, ...api]);
+      if (!cancelled) setChecks([...sync, ...store, ...api]);
     })();
     return () => {
       cancelled = true;

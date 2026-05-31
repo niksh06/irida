@@ -59,10 +59,10 @@ test("two-turn chat streams, persists, disposes", async () => {
     assert.match(out, /echo:more/);
     assert.equal(disposed.v, true);
     const store = new Store(dir, ".agent");
-    const sess = store.listSessions();
+    const sess = await store.listSessions();
     assert.equal(sess.length, 1);
-    assert.equal(store.listRuns(sess[0].id).length, 2);
-    store.close();
+    assert.equal((await store.listRuns(sess[0].id)).length, 2);
+    await store.close();
   });
 });
 
