@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
   resolveApiKey,
+  resolveTelegramBotToken,
   saveCredentials,
+  saveTelegramBotToken,
   clearCredentials,
   credentialsPath,
   CREDENTIALS_FILE,
@@ -94,7 +96,50 @@ test("auth status does not print key", async () => {
       console.log = orig;
     }
     const out = lines.join("\n");
-    assert.match(out, /configured/);
+    assert.match(out, /CURSOR_API_KEY/);
     assert.doesNotMatch(out, /super-secret-key/);
   });
+});
+
+test("saveTelegramBotToken preserves cursor_api_key", () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "cred-tg-"));
+  saveCredentials("cursor-key", dir);
+  saveTelegramBotToken("tg-token", dir);
+  const parsed = JSON.parse(readFileSync(credentialsPath(dir), "utf8")) as {
+    cursor_api_key?: string;
+    telegram_bot_token?: string;
+  };
+  assert.equal(parsed.cursor_api_key, "cursor-key");
+  assert.equal(parsed.telegram_bot_token, "tg-token");
+});
+
+test("resolveTelegramBotToken prefers environment", async () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "cred-tg-env-"));
+  saveTelegramBotToken("file-tg", dir);
+  const prev = process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  try {
+    assert.equal(resolveTelegramBotToken(dir).value, "file-tg");
+    assert.equal(resolveTelegramBotToken(dir).source, "file");
+    process.env.TELEGRAM_BOT_TOKEN = "env-tg";
+    assert.equal(resolveTelegramBotToken(dir).value, "env-tg");
+    assert.equal(resolveTelegramBotToken(dir).source, "env");
+  } finally {
+    if (prev === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prev;
+  }
+});
+
+test("auth telegram login --from-env", async () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "cred-tg-auth-"));
+  const prev = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = "bot123";
+  try {
+    assert.equal(await cmdAuth(["telegram", "login", "--from-env"], dir), 0);
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    assert.equal(resolveTelegramBotToken(dir).value, "bot123");
+  } finally {
+    if (prev === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prev;
+  }
 });

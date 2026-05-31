@@ -10,7 +10,7 @@ Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/s
 |------|----------------|
 | **CLI** | `doctor`, `run`, `chat`, `sessions`, `resume`, `config`, `skills` |
 | **TUI** | `csagent tui` — tabs, slash cmds, overlays, scroll, `@file` complete |
-| **Auth** | `csagent auth login --stdin` → `.agent/credentials.json` (600) |
+| **Auth** | `csagent auth login` + `auth telegram login` → `.agent/credentials.json` (600) |
 | **Memory** | `@memory:name` + `/memory` + `csagent memory …` |
 | **Cron** | `.agent/cron.jobs.json` + `cron tick` from OS scheduler |
 | **Gateway** | Webhook or Telegram → stable `sess_` per chat id |
@@ -167,7 +167,7 @@ Optional `sessionId` binds to existing `sess_`. Destructive prompts denied unles
 
 ### Gateway (webhook / Telegram → chat)
 
-`.agent/gateway.json` + `GATEWAY_WEBHOOK_SECRET` or `TELEGRAM_BOT_TOKEN`.
+`.agent/gateway.json`. Webhook secret via env; Telegram token via **`csagent auth telegram login --stdin`** (same `credentials.json`) or env.
 
 **Webhook:**
 
@@ -192,7 +192,7 @@ curl -X POST http://127.0.0.1:18789/hook \
 ```
 
 ```bash
-export TELEGRAM_BOT_TOKEN=...
+csagent auth telegram login --stdin   # or --from-env
 csagent gateway run --adapter telegram
 ```
 
@@ -215,10 +215,11 @@ In `agent.config.json` — passed to every SDK call:
 
 Project-local `agent.config.json`. **Secrets never go here.**
 
-| API key method | Use when |
-|----------------|----------|
-| `csagent auth login --stdin` | Daily local use |
-| `export CURSOR_API_KEY=…` | CI / override file |
+| Secret | Use when |
+|--------|----------|
+| `csagent auth login --stdin` | Cursor API key → `.agent/credentials.json` |
+| `csagent auth telegram login --stdin` | Telegram bot token (same file) |
+| `export CURSOR_API_KEY=…` / `TELEGRAM_BOT_TOKEN=…` | CI override (wins over file) |
 
 ```json
 {

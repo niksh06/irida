@@ -60,7 +60,7 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
   });
 
   if (cfg.adapter === "telegram") {
-    const telegram = startTelegramPoller({ cfg, router });
+    const telegram = startTelegramPoller({ cfg, router, dir });
     return {
       cfg,
       router,
@@ -136,7 +136,7 @@ export async function cmdGateway(argv: string[], opts: GatewayRunOptions = {}): 
 
 Config: .agent/gateway.json
 Webhook secret: env GATEWAY_WEBHOOK_SECRET
-Telegram token: env TELEGRAM_BOT_TOKEN
+Telegram token: csagent auth telegram login --stdin (or env TELEGRAM_BOT_TOKEN)
 
 Example gateway.json (webhook):
 {

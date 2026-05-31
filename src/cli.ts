@@ -29,7 +29,8 @@ Usage:
   csagent resume <id> "<p>"   continue a stored session (Agent.resume)
   csagent config              print non-secret config
   csagent auth login --stdin  save API key to .agent/credentials.json (600)
-  csagent auth status         key configured? (never prints secret)
+  csagent auth telegram login --stdin  save Telegram bot token to credentials.json
+  csagent auth status         keys configured? (never prints secrets)
   csagent memory list         durable notes (.agent/memory/)
   csagent cron list           scheduled jobs (.agent/cron.jobs.json)
   csagent gateway run         messaging bridge (webhook → chat)

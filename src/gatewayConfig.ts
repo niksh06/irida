@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
+import { resolveTelegramBotToken } from "./credentials.js";
 
 export const GATEWAY_FILE = "gateway.json";
 
@@ -121,8 +122,8 @@ export function validateGatewayConfig(dir: string = process.cwd()): string[] {
     if (cfg.adapter === "webhook" && !gatewayWebhookSecret(cfg)) {
       return [`webhook secret env ${cfg.secretEnv} is unset`];
     }
-    if (cfg.adapter === "telegram" && !(process.env[cfg.telegramTokenEnv] ?? "").trim()) {
-      return [`telegram token env ${cfg.telegramTokenEnv} is unset`];
+    if (cfg.adapter === "telegram" && !resolveTelegramBotToken(dir, cfg.telegramTokenEnv).value) {
+      return [`telegram token env ${cfg.telegramTokenEnv} is unset and not in ${loadConfig(dir).stateDir}/credentials.json`];
     }
     if (cfg.allowedChatIds.length === 0) {
       return ["allowedChatIds is empty — gateway denies all peers until configured"];

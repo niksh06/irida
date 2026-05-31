@@ -2,6 +2,7 @@
  * Telegram Bot API adapter (long polling, no extra deps) — issue 037 follow-up.
  */
 import { type GatewayConfig, isChatAllowed } from "./gatewayConfig.js";
+import { resolveTelegramBotToken } from "./credentials.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 
 export interface TelegramMessage {
@@ -17,9 +18,9 @@ export interface TelegramUpdate {
 
 export type TelegramFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
-export function telegramBotToken(cfg: GatewayConfig): string {
+export function telegramBotToken(cfg: GatewayConfig, dir: string = process.cwd()): string {
   const envName = cfg.telegramTokenEnv.trim() || "TELEGRAM_BOT_TOKEN";
-  return (process.env[envName] ?? "").trim();
+  return resolveTelegramBotToken(dir, envName).value;
 }
 
 export async function telegramApiGet<T>(
@@ -103,13 +104,15 @@ export interface TelegramPoller {
 export interface TelegramPollerOptions {
   cfg: GatewayConfig;
   router: GatewaySessionRouter;
+  dir?: string;
   fetchFn?: TelegramFetch;
   pollIntervalMs?: number;
   onLog?: (line: string) => void;
 }
 
 export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller {
-  const token = telegramBotToken(opts.cfg);
+  const dir = opts.dir ?? process.cwd();
+  const token = telegramBotToken(opts.cfg, dir);
   if (!token) throw new Error(`telegram bot token env ${opts.cfg.telegramTokenEnv} is unset`);
   const fetchFn = opts.fetchFn ?? fetch;
   const log = opts.onLog ?? ((s: string) => console.error(s));
