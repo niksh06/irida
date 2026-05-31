@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "adapter": "telegram",
+  "telegram": {
+    "tokenEnv": "TELEGRAM_BOT_TOKEN",
+    "pollIntervalMs": 2000
+  },
+  "allowedChatIds": ["YOUR_CHAT_ID"],
+  "skills": ["memory-ops"]
+}

@@ -83,6 +83,47 @@ cd "/path/to/csagent"
 bash deploy/uninstall-launchd.sh
 ```
 
+## Postgres (Phase 1)
+
+Hybrid store: set `CSAGENT_DATABASE_URL` in `~/.csagent/csagent.env`, then reinstall launchd so plists pick it up.
+
+```bash
+# Start PG (from repo clone)
+docker compose -f deploy/docker-compose.csagent-postgres.yml up -d
+
+# In ~/.csagent/csagent.env:
+export CSAGENT_DATABASE_URL="postgresql://csagent:csagent@127.0.0.1:5435/csagent"
+
+bash deploy/setup-home.sh
+bash deploy/install-launchd.sh
+~/.csagent/csagent/scripts/csagent-run.sh doctor
+```
+
+Without `CSAGENT_DATABASE_URL` — fallback to `~/.csagent/.agent/state.sqlite` (Variant A unchanged).
+
+Migrations run automatically on first connect (`deploy/postgres/migrations/*.sql`).
+
+### Backup
+
+```bash
+docker exec deploy-csagent-postgres-1 pg_dump -U csagent -Fc csagent \
+  > ~/backups/csagent-$(date +%Y%m%d).dump
+
+# restore
+pg_restore -U csagent -d csagent --clean --if-exists ~/backups/csagent-YYYYMMDD.dump
+```
+
+## Memory (Phase 2, MCP-first)
+
+Default: **`memory.mcp: true`**, no `memory.onStart` — agent pulls notes via MCP tools on demand.
+
+```bash
+# First-time agent.config (also created by setup-home.sh if missing):
+cp deploy/agent.config.example.json ~/.csagent/csagent/agent.config.json
+
+# Telegram: memory-ops skill in gateway.json (see deploy/gateway.json.example)
+```
+
 ## Task tracker
 
-See [TASKS.md](./TASKS.md) for Phase 1–3 (Postgres, MemPalace MCP).
+See [TASKS.md](./TASKS.md) for Phase 2–3 (csagent-memory, PG hardening).

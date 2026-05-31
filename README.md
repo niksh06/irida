@@ -131,6 +131,14 @@ EOF
 
 In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
+**Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, `memory_list`, `memory_save`, `memory_fact_query`, `memory_fact_add`. Enable skill `memory-ops` in `gateway.json` for Telegram so the model queries memory before guessing.
+
+```json
+"memory": { "mcp": true }
+```
+
+**Manual inject:** `@memory:name` in a message still works. **Advanced:** optional `memory.onStart` (1–2 short notes on first turn only) — avoid with large libraries; use MCP search instead.
+
 ### Cron (scheduled jobs)
 
 `.agent/cron.jobs.json` (five-field cron, local time):
@@ -187,7 +195,8 @@ curl -X POST http://127.0.0.1:18789/hook \
   "version": 1,
   "adapter": "telegram",
   "telegram": { "tokenEnv": "TELEGRAM_BOT_TOKEN", "pollIntervalMs": 1500 },
-  "allowedChatIds": ["123456789"]
+  "allowedChatIds": ["123456789"],
+  "skills": ["memory-ops"]
 }
 ```
 
@@ -228,6 +237,7 @@ Project-local `agent.config.json`. **Secrets never go here.**
   "skillsPath": "skills",
   "stateDir": ".agent",
   "mcpServers": {},
+  "memory": { "mcp": true },
   "safety": { "allowCloud": false, "allowAutoPr": false }
 }
 ```

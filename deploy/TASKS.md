@@ -27,22 +27,24 @@ Phase 0 checklist: [PHASE0-CHECKLIST.md](./PHASE0-CHECKLIST.md)
 | P1-3 | Store abstraction `sqlite \| postgres` | done |
 | P1-4 | SQL migrations: sessions, runs | done |
 | P1-5 | `CSAGENT_DATABASE_URL` in doctor | done |
-| P1-6 | PG smoke + optional env in csagent.env | **→ user** |
+| P1-6 | PG smoke + optional env in csagent.env | done |
 
-## Phase 2 — MemPalace MCP
+## Phase 2 — csagent-memory (native)
 
 | ID | Task | Status |
 |----|------|--------|
-| P2-1 | `uv tool install mempalace` on host | todo |
-| P2-2 | `mempalace init` → `~/.csagent/.mempalace/` | todo |
-| P2-3 | Wings/rooms: csagent-ops, telegram, analytics | todo |
-| P2-4 | `agent.config.json` mcpServers.mempalace | todo |
-| P2-5 | Cron prompt → KG instead of JSON state | todo |
+| P2-1 | `memoryStore.ts` — notes + facts in sqlite/PG | done |
+| P2-2 | Migration `003_memory.sql` | done |
+| P2-3 | CLI: search, fact add/query/invalidate | done |
+| P2-4 | Dual-write DB + `.agent/memory/*.md` for @memory | done |
+| P2-5 | MCP csagent-memory tools (memory_get/search/save/facts) | done |
+| P2-6 | Cron: facts instead of JSON state (hourly dedup) | todo |
+| P2-7 | FTS / pgvector search (optional) | todo |
 
 ## Phase 3 — Unified PG schema
 
 | ID | Task | Status |
 |----|------|--------|
-| P3-1 | MemPalace drawers/facts schema on :5435 | todo |
-| P3-2 | pgcrypto for sensitive drawers | todo |
+| P3-1 | pgcrypto for sensitive facts/notes | todo |
+| P3-2 | Optional: ingest session runs as searchable notes | todo |
 | P3-3 | Optional: mine Cursor JSONL convos | todo |

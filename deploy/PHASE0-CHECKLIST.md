@@ -69,7 +69,7 @@ grep "long-poll started" ~/.csagent/logs/gateway.log | tail -1
 ## После Phase 0 (порядок фаз)
 
 1. **Phase 1** — Store `sqlite | postgres`, `:5435`, migrations, `CSAGENT_DATABASE_URL`
-2. **Phase 2** — MemPalace MCP в `~/.csagent/.mempalace/` (Chroma local)
+2. **Phase 2** — csagent-memory (notes + facts в PG/SQLite, без MemPalace)
 3. **Phase 3** — unified PG schema, pgcrypto, optional JSONL mine
 
 См. [TASKS.md](./TASKS.md).

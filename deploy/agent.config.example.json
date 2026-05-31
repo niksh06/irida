@@ -1,0 +1,9 @@
+{
+  "model": "composer-2.5",
+  "runtime": "local",
+  "memory": {
+    "mcp": true
+  },
+  "mcpServers": {},
+  "safety": { "allowCloud": false, "allowAutoPr": false }
+}

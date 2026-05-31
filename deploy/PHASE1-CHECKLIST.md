@@ -12,7 +12,7 @@
 - [x] SQL migrations `deploy/postgres/migrations/001_sessions_runs.sql`
 - [x] `PostgresStore` + dep `pg`
 - [x] Call sites переведены на `createStore` (async API)
-- [ ] Smoke с `CSAGENT_DATABASE_URL` в `~/.csagent/csagent.env`
+- [x] Smoke с `CSAGENT_DATABASE_URL` в `~/.csagent/csagent.env`
 
 ## Шаг 3 — Doctor probe
 
@@ -28,19 +28,19 @@ export CSAGENT_DATABASE_URL="postgresql://csagent:csagent@127.0.0.1:5435/csagent
 ~/.csagent/csagent/scripts/csagent-run.sh sessions list
 ```
 
-- [ ] sessions/runs пишутся в PG (`psql` или `\dt`)
+- [x] sessions/runs пишутся в PG (`psql` или `\dt`)
 
 ## Шаг 5 — Ops
 
-- [ ] `pg_dump` backup note в deploy/README
-- [ ] Без URL — fallback sqlite (вариант A не ломается)
+- [x] `pg_dump` backup note в deploy/README
+- [x] Без URL — fallback sqlite (вариант A не ломается)
 
 ---
 
 ## Не в Phase 1
 
-- MemPalace MCP (Phase 2)
-- MemPalace PG backend #665 (Phase 3)
+- csagent-memory Phase 2 (notes + facts in PG)
+- MemPalace external package — **не используем**
 - Миграция TParser :5433
 
-См. [TASKS.md](./TASKS.md) P1-*.
+См. [PHASE2-CHECKLIST.md](./PHASE2-CHECKLIST.md), [TASKS.md](./TASKS.md).

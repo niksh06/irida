@@ -78,6 +78,12 @@ ${PRESERVE_DATABASE_URL:+export CSAGENT_DATABASE_URL="$PRESERVE_DATABASE_URL"}
 EOF
 chmod 644 "$CSAGENT_HOME/csagent.env"
 
+AGENT_CONFIG="$CSAGENT_ROOT/agent.config.json"
+if [[ ! -f "$AGENT_CONFIG" && -f "$CSAGENT_ROOT/deploy/agent.config.example.json" ]]; then
+  cp "$CSAGENT_ROOT/deploy/agent.config.example.json" "$AGENT_CONFIG"
+  echo "Created $AGENT_CONFIG (MCP-first memory, no onStart)"
+fi
+
 echo ""
 echo "CSAGENT_HOME=$CSAGENT_HOME"
 echo "CSAGENT_ROOT=$CSAGENT_ROOT"
