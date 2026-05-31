@@ -2,7 +2,7 @@
 
 Hermes-style home: **`~/.csagent`**. Code in **`~/.csagent/csagent`**, runtime in **`~/.csagent/.agent`**.
 
-TParser — отдельный проект; bi-hourly digest cron: [TPARSER-BIHOURLY-CRON.md](./TPARSER-BIHOURLY-CRON.md).
+Внутренние runbook'и (фазы, TParser cron, memory alignment): **`docs/deploy/`** — локально, не в git.
 
 ## Layout
 
@@ -13,8 +13,6 @@ TParser — отдельный проект; bi-hourly digest cron: [TPARSER-BIH
   .agent/              # credentials, gateway, cron, sqlite, memory
   csagent/             # install copy (synced from repo by setup-home.sh)
 ```
-
-**Memory (dev ↔ Telegram):** gateway и локальный dev должны использовать один `CSAGENT_HOME` + PG, иначе заметки расходятся. Чеклист: [MEMORY-DEV-ALIGNMENT.md](./MEMORY-DEV-ALIGNMENT.md). Код: issue 039 в `docs/issues/` (локально, не в git).
 
 ## Quick start
 
@@ -73,7 +71,7 @@ source ~/.csagent/csagent.env
 
 ```bash
 export CSAGENT_HOME=~/.csagent
-cd "/path/to/csagent"
+cd /path/to/your/csagent-clone
 ./scripts/csagent-run.sh doctor
 ```
 
@@ -125,7 +123,3 @@ cp deploy/agent.config.example.json ~/.csagent/csagent/agent.config.json
 
 # Telegram: memory-ops skill in gateway.json (see deploy/gateway.json.example)
 ```
-
-## Task tracker
-
-See [TASKS.md](./TASKS.md) for Phase 2–3 (csagent-memory, PG hardening).
