@@ -248,6 +248,43 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       let attemptSendMsg = sendMsg;
       let rotated = false;
 
+      const tryRotateAgent = async (): Promise<boolean> => {
+        if (rotated) return false;
+        rotated = true;
+        const previousAgentId = agent.agentId ?? null;
+        await disposeAgent(agent);
+        agent = await createSession(sdk, {
+          apiKey,
+          model: cfg.model,
+          cwd: sessionCwd,
+          mcpServers: cfg.mcpServers,
+        });
+        session.agentId = agent.agentId ?? null;
+        const replayTurns = store.listRuns(sessionId).slice(-10).length;
+        const prefix = replayPreamble(store, sessionId);
+        log(
+          `[chat] agent rotated old=${previousAgentId ?? "-"} new=${agent.agentId ?? "-"} replay=${replayTurns}`
+        );
+        opts.onAgentRotated?.({
+          previousAgentId,
+          newAgentId: agent.agentId ?? null,
+          replayTurns,
+        });
+        store.upsertSession({
+          id: sessionId,
+          title: resolveSessionTitle(store, sessionId, msg),
+          cwd: sessionCwd,
+          runtime: cfg.runtime,
+          sdk_agent_id: agent.agentId ?? null,
+          last_status: "agent_rotated",
+        });
+        attemptSendMsg = prefix
+          ? prefix + "Continue. New request:\n\n" + baseSendMsg
+          : baseSendMsg;
+        opts.onTurnRetry?.();
+        return true;
+      };
+
       for (;;) {
         const runId = newId("run");
         const startedAt = nowIso();
@@ -306,6 +343,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             last_status: lastStatus,
           });
           if (lastStatus === "error") {
+            if (await tryRotateAgent()) continue;
             const failed = formatRunErrorMessage({ res, toolCalls, turnText });
             return {
               kind: "error",
@@ -316,41 +354,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           }
           return { kind: "ok", status: lastStatus, assistantText: turnText, stats };
         } catch (e) {
-          if (!rotated && isAgentRotatableError(e)) {
-            rotated = true;
-            const previousAgentId = agent.agentId ?? null;
-            await disposeAgent(agent);
-            agent = await createSession(sdk, {
-              apiKey,
-              model: cfg.model,
-              cwd: sessionCwd,
-              mcpServers: cfg.mcpServers,
-            });
-            session.agentId = agent.agentId ?? null;
-            const replayTurns = store.listRuns(sessionId).slice(-10).length;
-            const prefix = replayPreamble(store, sessionId);
-            log(
-              `[chat] agent rotated old=${previousAgentId ?? "-"} new=${agent.agentId ?? "-"} replay=${replayTurns}`
-            );
-            opts.onAgentRotated?.({
-              previousAgentId,
-              newAgentId: agent.agentId ?? null,
-              replayTurns,
-            });
-            store.upsertSession({
-              id: sessionId,
-              title: resolveSessionTitle(store, sessionId, msg),
-              cwd: sessionCwd,
-              runtime: cfg.runtime,
-              sdk_agent_id: agent.agentId ?? null,
-              last_status: "agent_rotated",
-            });
-            attemptSendMsg = prefix
-              ? prefix + "Continue. New request:\n\n" + baseSendMsg
-              : baseSendMsg;
-            opts.onTurnRetry?.();
-            continue;
-          }
+          if (isAgentRotatableError(e) && (await tryRotateAgent())) continue;
 
           const formatted = formatSdkError(e);
           log(`[chat] turn error kind=${formatted.errorKind} ${formatted.message}`);

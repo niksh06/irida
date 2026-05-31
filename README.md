@@ -288,4 +288,39 @@ See `docs/adr/0001-cursor-sdk-agent-runtime.md`.
 
 ## License
 
-ISC
+**csagent** (this repository) is licensed under the [ISC License](LICENSE).
+
+### Third-party runtime (not open source)
+
+This project depends on [`@cursor/sdk`](https://www.npmjs.com/package/@cursor/sdk), which is **proprietary software** © Anysphere Inc. Its use is governed by [Cursor Terms of Service](https://cursor.com/terms-of-service), not by this repository's license.
+
+- You need your own **Cursor account** and **API key** (`CURSOR_API_KEY` or `csagent auth login`).
+- SDK usage is **billed** according to Cursor pricing (same pools as IDE / Cloud Agents).
+- Do **not** redistribute, relicense, or bundle `@cursor/sdk` as if it were part of this project.
+
+### Other dependencies
+
+Direct npm dependencies with permissive licenses (MIT unless noted):
+
+| Package | Role |
+|---------|------|
+| `ink`, `ink-text-input`, `react` | Terminal UI |
+| `@cursor/sdk` | Agent runtime (**proprietary**, see above) |
+
+Transitive licenses are listed in `package-lock.json` (`npm licenses` / `license-checker`).
+
+### Trademarks and affiliation
+
+- **csagent** is a community / personal project. It is **not** affiliated with, endorsed by, or maintained by Cursor or Anysphere.
+- **Cursor** and related marks belong to their respective owners.
+- UX patterns are **inspired by** [Hermes Agent](https://github.com/NousResearch/hermes-agent); this is a separate codebase, not a fork.
+
+### Publishing checklist
+
+Before pushing to a public repository:
+
+1. Never commit `.agent/credentials.json`, bot tokens, or API keys.
+2. Keep `LICENSE` and this section in sync with `package.json` (`"license": "ISC"`).
+3. State clearly in the repo description that a **Cursor subscription / API access** is required to run the agent.
+
+> This section is not legal advice. For commercial embedding or redistribution at scale, review Cursor ToS or consult counsel.

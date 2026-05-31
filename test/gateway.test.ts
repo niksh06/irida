@@ -111,6 +111,22 @@ test("GatewaySessionRouter maps peer to stable sess_", async () => {
   });
 });
 
+test("GatewaySessionRouter /new resets peer to fresh sess_", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+    await router.handleInbound("u1", "hello");
+    const first = loadGatewayPeers(dir).peers[peerKey("telegram", "u1")];
+    assert.ok(first?.startsWith("sess_"));
+    const out = await router.handleInbound("u1", "/new");
+    assert.match(out.reply, /Новая сессия csagent/);
+    const second = loadGatewayPeers(dir).peers[peerKey("telegram", "u1")];
+    assert.ok(second?.startsWith("sess_"));
+    assert.notEqual(first, second);
+    await router.closeAll();
+  });
+});
+
 test("dispatchWebhookRequest end-to-end with mocked SDK", async () => {
   await withKey("k", async () => {
     await withEnv({ GATEWAY_WEBHOOK_SECRET: "test-secret" }, async () => {

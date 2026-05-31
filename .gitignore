@@ -15,3 +15,8 @@ logs/
 
 # os
 .DS_Store
+
+repos/
+Reports/
+docs/
+

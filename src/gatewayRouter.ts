@@ -80,6 +80,20 @@ export class GatewaySessionRouter {
     return this.busy.has(peerKey(this.adapter, chatId));
   }
 
+  /** Drop cached SDK session for a peer; next inbound creates a fresh sess_. */
+  async resetPeer(chatId: string): Promise<string | null> {
+    const key = peerKey(this.adapter, chatId);
+    const previousSessionId = this.peers.peers[key] ?? null;
+    const cached = this.active.get(key);
+    if (cached) {
+      await cached.close();
+      this.active.delete(key);
+    }
+    delete this.peers.peers[key];
+    saveGatewayPeers(this.dir, this.peers);
+    return previousSessionId;
+  }
+
   async getOrCreateSession(chatId: string): Promise<ChatSession> {
     const key = peerKey(this.adapter, chatId);
     const cached = this.active.get(key);
@@ -111,6 +125,15 @@ export class GatewaySessionRouter {
     }
     this.busy.add(key);
     try {
+      if (text.trim() === "/new") {
+        const previousSessionId = await this.resetPeer(chatId);
+        await this.getOrCreateSession(chatId);
+        return {
+          reply: previousSessionId
+            ? `Новая сессия csagent (было ${previousSessionId}). Контекст сброшен — можно писать заново.`
+            : "Новая сессия csagent. Контекст сброшен — можно писать заново.",
+        };
+      }
       const session = await this.getOrCreateSession(chatId);
       const out = await session.sendTurn(text);
       if (out.kind === "ok") return { reply: out.assistantText };

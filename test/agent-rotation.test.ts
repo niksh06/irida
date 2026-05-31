@@ -130,6 +130,44 @@ describe("in-session agent rotation", () => {
     });
   });
 
+  it("rotates and retries once on SDK status=error", async () => {
+    await withKey(async () => {
+      const dir = mkdtempSync(resolve(tmpdir(), "rotate-status-"));
+      let sendCount = 0;
+      let createCount = 0;
+      const sdk: SdkCreateLike = {
+        create: async () => {
+          createCount++;
+          const agentId = createCount === 1 ? "agent-old" : "agent-new";
+          return {
+            agentId,
+            send: async () => {
+              sendCount++;
+              if (sendCount === 1) {
+                return {
+                  stream: async function* () {},
+                  wait: async () => ({ status: "error", id: "r-fail" }),
+                };
+              }
+              return okRun("recovered after status error");
+            },
+          };
+        },
+      };
+
+      const opened = await openChatSession({ sdk, dir, interactive: false });
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+
+      const out = await opened.session.sendTurn("hello");
+      assert.equal(out.kind, "ok");
+      if (out.kind === "ok") assert.equal(out.assistantText, "recovered after status error");
+      assert.equal(createCount, 2);
+      assert.equal(sendCount, 2);
+      await opened.session.close();
+    });
+  });
+
   it("returns error when rotation retry also fails", async () => {
     await withKey(async () => {
       const dir = mkdtempSync(resolve(tmpdir(), "rotate-fail-"));
