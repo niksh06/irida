@@ -3,6 +3,7 @@
  */
 import { stdin as input } from "node:process";
 import { loadConfig, ConfigError } from "./config.js";
+import { importHappyinKb } from "./importHappyinKb.js";
 import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from "./memory.js";
 import { createMemoryStore } from "./memoryStore.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -163,6 +164,41 @@ export async function cmdMemorySearch(query: string, opts: MemoryCmdOptions = {}
   }
 }
 
+export async function cmdMemoryImportMd(
+  argv: string[],
+  opts: MemoryCmdOptions = {}
+): Promise<ExitCode> {
+  let memoryDir = opts.dir ?? process.cwd();
+  let kbRoot = memoryDir;
+  let dryRun = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--dry-run") dryRun = true;
+    else if (a === "--dir" && argv[i + 1]) {
+      memoryDir = argv[++i]!;
+      kbRoot = memoryDir;
+    } else if (a === "--kb-root" && argv[i + 1]) {
+      kbRoot = argv[++i]!;
+    }
+  }
+  try {
+    const result = await importHappyinKb({ kbRoot, memoryDir, dryRun });
+    if (dryRun) {
+      console.log(
+        `dry-run: ${result.imported} notes, commit=${result.commit}, aliases=${result.aliases}`
+      );
+      return EXIT.ok;
+    }
+    console.log(
+      `import-md: ${result.imported} notes (commit ${result.commit}, aliases ${result.aliases})`
+    );
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory import-md: " + (e instanceof Error ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
 export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
   const dir = opts.dir ?? process.cwd();
   const [sub, ...rest] = argv;
@@ -227,6 +263,8 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemorySearch([name, ...rest].filter(Boolean).join(" "), opts);
     case "fact":
       return cmdMemoryFact([name ?? "", ...rest], opts);
+    case "import-md":
+      return cmdMemoryImportMd([name ?? "", ...rest], opts);
     case "add": {
       const wingFlag = rest.indexOf("--wing");
       let wing: string | undefined;
@@ -253,6 +291,7 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory add <name> [--wing W] [--stdin]
   csagent memory search <query>            search note bodies
   csagent memory rm <name>
+  csagent memory import-md --dir PATH [--kb-root PATH] [--dry-run]
   csagent memory fact add|query|invalidate …
 
 In chat/TUI, inject with @memory:<name> or @memory: for all.
