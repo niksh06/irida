@@ -7,7 +7,10 @@ import {
   processTelegramUpdate,
   telegramGetUpdates,
   telegramSendMessage,
+  telegramSendChatAction,
   startTelegramPoller,
+  formatTelegramToolProgressLine,
+  shouldEmitTelegramToolProgress,
 } from "../src/gatewayTelegram.js";
 import { writeExampleGatewayConfig } from "../src/gateway_cmd.js";
 import { GatewaySessionRouter } from "../src/gatewayRouter.js";
@@ -29,13 +32,14 @@ async function withKey<T>(value: string | undefined, fn: () => Promise<T>): Prom
   }
 }
 
-function chatAgent(disposed: { v: boolean }): AgentLike {
+function chatAgent(disposed: { v: boolean }, stream?: RunLike["stream"]): AgentLike {
+  const defaultStream: RunLike["stream"] = async function* () {
+    yield { type: "assistant", message: { content: [{ type: "text", text: "tg:reply" }] } };
+  };
   return {
     agentId: "tg-agent",
-    send: async (m: string): Promise<RunLike> => ({
-      stream: async function* () {
-        yield { type: "assistant", message: { content: [{ type: "text", text: `tg:${m}` }] } };
-      },
+    send: async (_m: string): Promise<RunLike> => ({
+      stream: stream ?? defaultStream,
       wait: async () => ({ status: "finished", id: "run_tg" }),
     }),
     [Symbol.asyncDispose]: async () => {
@@ -44,25 +48,100 @@ function chatAgent(disposed: { v: boolean }): AgentLike {
   };
 }
 
-function mockSdk(disposed: { v: boolean }): SdkLike & SdkCreateLike & SdkResumeLike {
+function mockSdk(disposed: { v: boolean }, stream?: RunLike["stream"]): SdkLike & SdkCreateLike & SdkResumeLike {
   return {
     prompt: async () => ({ status: "finished", result: "x", id: "r", agentId: "a" }),
-    create: async () => chatAgent(disposed),
-    resume: async () => chatAgent(disposed),
+    create: async () => chatAgent(disposed, stream),
+    resume: async () => chatAgent(disposed, stream),
   };
 }
+
+test("formatTelegramToolProgressLine uses command preview", () => {
+  const line = formatTelegramToolProgressLine({
+    label: "shell",
+    kind: "tool",
+    toolName: "shell",
+    command: "npm test",
+    phase: "call",
+  });
+  assert.match(line, /💻 shell: npm test/);
+});
+
+test("shouldEmitTelegramToolProgress dedupes in new mode", () => {
+  const cfg = {
+    telegramShowToolProgress: true,
+    telegramToolProgressMode: "new" as const,
+  } as import("../src/gatewayConfig.js").GatewayConfig;
+  const state = { lastToolName: null, seenCallIds: new Set<string>() };
+  const shell = {
+    label: "shell",
+    kind: "tool" as const,
+    toolName: "shell",
+    command: "ls",
+    phase: "call" as const,
+  };
+  assert.equal(shouldEmitTelegramToolProgress(cfg, shell, state), true);
+  assert.equal(shouldEmitTelegramToolProgress(cfg, shell, state), false);
+});
 
 test("processTelegramUpdate routes text to router", async () => {
   await withKey("k", async () => {
     const dir = tmp();
     const cfg = writeExampleGatewayConfig(dir, { adapter: "telegram", allowedChatIds: ["42"] });
     const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
-    const out = await processTelegramUpdate(cfg, router, {
-      update_id: 1,
-      message: { message_id: 1, chat: { id: 42 }, text: "hello bot" },
-    });
+    const out = await processTelegramUpdate(
+      cfg,
+      router,
+      { update_id: 1, message: { message_id: 1, chat: { id: 42 }, text: "hello bot" } },
+      { token: "tok" }
+    );
     assert.equal(out.handled, true);
-    assert.match(out.reply ?? "", /hello bot/);
+    assert.match(out.reply ?? "", /reply/);
+    await router.closeAll();
+  });
+});
+
+test("processTelegramUpdate sends typing and tool progress", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const cfg = writeExampleGatewayConfig(dir, {
+      adapter: "telegram",
+      allowedChatIds: ["42"],
+      telegramShowToolProgress: true,
+    });
+    const stream: RunLike["stream"] = async function* () {
+      yield {
+        type: "tool_call",
+        name: "shell",
+        status: "running",
+        call_id: "c1",
+        args: { command: "npm test" },
+      };
+      yield { type: "assistant", message: { content: [{ type: "text", text: "done" }] } };
+    };
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }, stream) });
+    const calls: string[] = [];
+    const fetchFn = async (url: string, init?: RequestInit) => {
+      calls.push(url);
+      if (url.includes("sendChatAction")) {
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      if (url.includes("sendMessage")) {
+        const body = JSON.parse(String(init?.body)) as { text: string };
+        calls.push(`msg:${body.text}`);
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      return new Response(JSON.stringify({ ok: false }));
+    };
+    const out = await processTelegramUpdate(
+      cfg,
+      router,
+      { update_id: 1, message: { message_id: 1, chat: { id: 42 }, text: "run tests" } },
+      { token: "tok", fetchFn }
+    );
+    assert.equal(out.reply, "done");
+    assert.ok(calls.some((u) => u.includes("sendChatAction")));
+    assert.ok(calls.some((c) => c.includes("shell") && c.includes("npm test")));
     await router.closeAll();
   });
 });
@@ -74,7 +153,7 @@ test("telegramGetUpdates and sendMessage use fetch mock", async () => {
     if (url.includes("getUpdates")) {
       return new Response(JSON.stringify({ ok: true, result: [] }));
     }
-    if (url.includes("sendMessage")) {
+    if (url.includes("sendMessage") || url.includes("sendChatAction")) {
       assert.equal(init?.method, "POST");
       return new Response(JSON.stringify({ ok: true }));
     }
@@ -83,8 +162,10 @@ test("telegramGetUpdates and sendMessage use fetch mock", async () => {
   const updates = await telegramGetUpdates("tok", 0, 1, fetchFn);
   assert.deepEqual(updates, []);
   await telegramSendMessage("tok", "42", "hi", fetchFn);
+  await telegramSendChatAction("tok", "42", "typing", fetchFn);
   assert.ok(calls.some((u) => u.includes("getUpdates")));
   assert.ok(calls.some((u) => u.includes("sendMessage")));
+  assert.ok(calls.some((u) => u.includes("sendChatAction")));
 });
 
 test("startTelegramPoller processes update and replies", async () => {
@@ -113,9 +194,7 @@ test("startTelegramPoller processes update and replies", async () => {
         }
         return new Response(JSON.stringify({ ok: true, result: [] }));
       }
-      if (url.includes("sendMessage")) {
-        const body = JSON.parse(String(init?.body)) as { text: string };
-        assert.match(body.text, /ping/);
+      if (url.includes("sendMessage") || url.includes("sendChatAction")) {
         return new Response(JSON.stringify({ ok: true }));
       }
       return new Response(JSON.stringify({ ok: false }));

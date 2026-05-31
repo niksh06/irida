@@ -45,10 +45,23 @@ function rebuild() {
   return r.status === 0 && existsSync(distCli);
 }
 
+function runViaTsx(args) {
+  const tsxCli = join(root, "node_modules", ".bin", "tsx");
+  const srcCli = join(root, "src", "cli.ts");
+  if (!existsSync(tsxCli) || !existsSync(srcCli)) return false;
+  const run = spawnSync(process.execPath, [tsxCli, srcCli, ...args], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+  });
+  process.exit(run.status ?? 1);
+}
+
 if (distIsStale()) {
   process.stderr.write("csagent: dist is stale — running npm run build…\n");
   if (!rebuild()) {
-    process.stderr.write("csagent: build failed; try npm install && npm run build\n");
+    process.stderr.write("csagent: build failed — falling back to tsx (dev mode)\n");
+    runViaTsx(process.argv.slice(2));
+    process.stderr.write("csagent: tsx fallback unavailable; try npm install && npm run build\n");
     process.exit(78);
   }
 }

@@ -71,12 +71,19 @@ export interface TurnStats {
   outputTokens?: number;
 }
 
+/** Per-turn hooks (gateway Telegram UX overrides session-level callbacks). */
+export interface TurnHooks {
+  onActivity?: (entry: ActivityDetail) => void;
+  onAssistantDelta?: (delta: string) => void;
+  onThinkingDelta?: (chunk: string) => void;
+}
+
 export interface ChatSession {
   sessionId: string;
   cfg: AgentConfig;
   agentId: string | null;
   connectMode: ConnectMode | "fresh";
-  sendTurn(userMessage: string): Promise<TurnOutcome>;
+  sendTurn(userMessage: string, hooks?: TurnHooks): Promise<TurnOutcome>;
   close(): Promise<void>;
 }
 
@@ -213,7 +220,10 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     cfg,
     agentId: agent.agentId ?? null,
     connectMode,
-    async sendTurn(userMessage: string): Promise<TurnOutcome> {
+    async sendTurn(userMessage: string, turnHooks?: TurnHooks): Promise<TurnOutcome> {
+      const onActivity = turnHooks?.onActivity ?? opts.onActivity;
+      const onAssistantDelta = turnHooks?.onAssistantDelta ?? opts.onAssistantDelta;
+      const onThinkingDelta = turnHooks?.onThinkingDelta ?? opts.onThinkingDelta;
       const msg = userMessage.trim();
       if (!msg) return { kind: "error", message: "empty message", fatal: false };
 
@@ -298,16 +308,16 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             const activity = eventActivityDetail(ev);
             if (activity) {
               if (activity.phase === "call") toolCalls++;
-              opts.onActivity?.(activity);
+              onActivity?.(activity);
             }
             const u = parseStreamUsage(ev);
             if (u) usage = { ...usage, ...u };
             const th = eventThinkingText(ev);
-            if (th) opts.onThinkingDelta?.(th);
+            if (th) onThinkingDelta?.(th);
             const t = eventText(ev);
             if (t) {
               turnText += t;
-              opts.onAssistantDelta?.(t);
+              onAssistantDelta?.(t);
             }
           });
           const res = await run.wait();

@@ -23,6 +23,12 @@ export interface GatewayConfig {
   /** Env var for Telegram bot token (adapter=telegram). */
   telegramTokenEnv: string;
   telegramPollIntervalMs: number;
+  /** Send sendChatAction typing while agent runs (default true). */
+  telegramShowTyping: boolean;
+  /** Post tool-call lines as separate messages (Hermes-style). */
+  telegramShowToolProgress: boolean;
+  /** "new" = only when tool name changes; "all" = every tool call. */
+  telegramToolProgressMode: "new" | "all";
 }
 
 export class GatewayConfigError extends Error {}
@@ -93,6 +99,11 @@ export function loadGatewayConfig(dir: string = process.cwd()): GatewayConfig {
     typeof telegram.pollIntervalMs === "number" && telegram.pollIntervalMs >= 500
       ? telegram.pollIntervalMs
       : 1500;
+  const telegramShowTyping = telegram.showTyping !== false;
+  const telegramShowToolProgress = telegram.showToolProgress === true;
+  const toolProgressRaw =
+    typeof telegram.toolProgressMode === "string" ? telegram.toolProgressMode.trim() : "new";
+  const telegramToolProgressMode = toolProgressRaw === "all" ? "all" : "new";
   const skills = Array.isArray(o.skills)
     ? o.skills.filter((s): s is string => typeof s === "string" && s.trim() !== "").map((s) => s.trim())
     : [];
@@ -109,6 +120,9 @@ export function loadGatewayConfig(dir: string = process.cwd()): GatewayConfig {
     yesIUnderstand: o.yesIUnderstand === true,
     telegramTokenEnv,
     telegramPollIntervalMs,
+    telegramShowTyping,
+    telegramShowToolProgress,
+    telegramToolProgressMode,
   };
 }
 

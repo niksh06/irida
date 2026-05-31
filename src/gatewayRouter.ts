@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
-import { openChatSession, type ChatSession } from "./chatEngine.js";
+import { openChatSession, type ChatSession, type TurnHooks } from "./chatEngine.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
 export const GATEWAY_PEERS_FILE = "gateway.peers.json";
@@ -118,7 +118,11 @@ export class GatewaySessionRouter {
     return opened.session;
   }
 
-  async handleInbound(chatId: string, text: string): Promise<{ reply: string }> {
+  async handleInbound(
+    chatId: string,
+    text: string,
+    hooks?: TurnHooks
+  ): Promise<{ reply: string }> {
     const key = peerKey(this.adapter, chatId);
     if (this.busy.has(key)) {
       throw new GatewayRouterError("peer busy — previous turn still running");
@@ -135,7 +139,7 @@ export class GatewaySessionRouter {
         };
       }
       const session = await this.getOrCreateSession(chatId);
-      const out = await session.sendTurn(text);
+      const out = await session.sendTurn(text, hooks);
       if (out.kind === "ok") return { reply: out.assistantText };
       if (out.kind === "blocked") throw new GatewayRouterError(out.reason);
       const partial = out.partialAssistantText?.trim();

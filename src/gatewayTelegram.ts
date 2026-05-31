@@ -4,6 +4,7 @@
 import { type GatewayConfig, isChatAllowed } from "./gatewayConfig.js";
 import { resolveTelegramBotToken } from "./credentials.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
+import type { ActivityDetail } from "./host.js";
 
 export interface TelegramMessage {
   message_id: number;
@@ -17,6 +18,9 @@ export interface TelegramUpdate {
 }
 
 export type TelegramFetch = (url: string, init?: RequestInit) => Promise<Response>;
+
+const TYPING_REFRESH_MS = 4000;
+const TOOL_PREVIEW_MAX = 80;
 
 export function telegramBotToken(cfg: GatewayConfig, dir: string = process.cwd()): string {
   const envName = cfg.telegramTokenEnv.trim() || "TELEGRAM_BOT_TOKEN";
@@ -38,6 +42,23 @@ export async function telegramApiGet<T>(
   return body.result as T;
 }
 
+export async function telegramApiPost<T>(
+  token: string,
+  method: string,
+  payload: Record<string, unknown>,
+  fetchFn: TelegramFetch = fetch
+): Promise<T> {
+  const url = `https://api.telegram.org/bot${token}/${method}`;
+  const res = await fetchFn(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = (await res.json()) as { ok: boolean; result?: T; description?: string };
+  if (!body.ok) throw new Error(body.description ?? `telegram ${method} failed`);
+  return body.result as T;
+}
+
 export async function telegramGetUpdates(
   token: string,
   offset: number,
@@ -53,14 +74,82 @@ export async function telegramSendMessage(
   text: string,
   fetchFn: TelegramFetch = fetch
 ): Promise<void> {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  const res = await fetchFn(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
-  });
-  const body = (await res.json()) as { ok: boolean; description?: string };
-  if (!body.ok) throw new Error(body.description ?? "telegram sendMessage failed");
+  await telegramApiPost(token, "sendMessage", { chat_id: chatId, text }, fetchFn);
+}
+
+export async function telegramSendChatAction(
+  token: string,
+  chatId: string,
+  action: "typing" | "cancel" = "typing",
+  fetchFn: TelegramFetch = fetch
+): Promise<void> {
+  await telegramApiPost(token, "sendChatAction", { chat_id: chatId, action }, fetchFn);
+}
+
+export interface TelegramTypingLoop {
+  stop(): void;
+}
+
+/** Keep Telegram "typing…" alive for long agent turns (expires after ~5s). */
+export function startTelegramTypingLoop(
+  token: string,
+  chatId: string,
+  fetchFn: TelegramFetch = fetch
+): TelegramTypingLoop {
+  let stopped = false;
+  const ping = () => {
+    if (stopped) return;
+    void telegramSendChatAction(token, chatId, "typing", fetchFn).catch(() => {});
+  };
+  ping();
+  const timer = setInterval(ping, TYPING_REFRESH_MS);
+  return {
+    stop() {
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
+}
+
+function toolEmoji(toolName: string, kind: ActivityDetail["kind"]): string {
+  if (kind === "mcp") return "🔌";
+  const n = toolName.toLowerCase();
+  if (n.includes("shell") || n === "run_terminal_cmd") return "💻";
+  if (n.includes("read")) return "📖";
+  if (n.includes("write") || n.includes("edit")) return "✏️";
+  if (n.includes("grep") || n.includes("glob") || n.includes("search")) return "🔍";
+  return "⚙️";
+}
+
+/** Hermes-style one-liner for a tool call. */
+export function formatTelegramToolProgressLine(activity: ActivityDetail): string {
+  const emoji = toolEmoji(activity.toolName, activity.kind);
+  const preview = activity.command.trim().slice(0, TOOL_PREVIEW_MAX);
+  if (preview) return `${emoji} ${activity.toolName}: ${preview}`;
+  return `${emoji} ${activity.toolName}…`;
+}
+
+export interface TelegramToolProgressState {
+  lastToolName: string | null;
+  seenCallIds: Set<string>;
+}
+
+export function shouldEmitTelegramToolProgress(
+  cfg: GatewayConfig,
+  activity: ActivityDetail,
+  state: TelegramToolProgressState
+): boolean {
+  if (!cfg.telegramShowToolProgress) return false;
+  if (activity.phase !== "call") return false;
+  if (activity.callId) {
+    if (state.seenCallIds.has(activity.callId)) return false;
+    state.seenCallIds.add(activity.callId);
+  }
+  if (cfg.telegramToolProgressMode === "new" && activity.toolName === state.lastToolName) {
+    return false;
+  }
+  state.lastToolName = activity.toolName;
+  return true;
 }
 
 export interface ProcessTelegramUpdateResult {
@@ -70,11 +159,17 @@ export interface ProcessTelegramUpdateResult {
   error?: string;
 }
 
+export interface ProcessTelegramUpdateOptions {
+  token: string;
+  fetchFn?: TelegramFetch;
+}
+
 /** Handle one Telegram update through the gateway router. */
 export async function processTelegramUpdate(
   cfg: GatewayConfig,
   router: GatewaySessionRouter,
-  update: TelegramUpdate
+  update: TelegramUpdate,
+  opts: ProcessTelegramUpdateOptions
 ): Promise<ProcessTelegramUpdateResult> {
   const msg = update.message;
   if (!msg?.text?.trim()) return { handled: false };
@@ -89,11 +184,46 @@ export async function processTelegramUpdate(
   if (router.isBusy(chatId)) {
     return { handled: true, chatId, error: "busy" };
   }
+
+  if (router.isBusy(chatId)) {
+    return { handled: true, chatId, error: "busy" };
+  }
+
+  const token = opts.token;
+  const fetchFn = opts.fetchFn ?? fetch;
+  const quickCommand = text === "/new";
+  const typing =
+    cfg.telegramShowTyping && !quickCommand
+      ? startTelegramTypingLoop(token, chatId, fetchFn)
+      : null;
+  const toolState: TelegramToolProgressState = { lastToolName: null, seenCallIds: new Set() };
+  const toolNotifies: Promise<void>[] = [];
+
   try {
-    const { reply } = await router.handleInbound(chatId, text);
+    const { reply } = await router.handleInbound(chatId, text, {
+      onActivity: (activity) => {
+        if (!shouldEmitTelegramToolProgress(cfg, activity, toolState)) return;
+        toolNotifies.push(
+          (async () => {
+            try {
+              await telegramSendMessage(token, chatId, formatTelegramToolProgressLine(activity), fetchFn);
+              if (cfg.telegramShowTyping) {
+                await telegramSendChatAction(token, chatId, "typing", fetchFn);
+              }
+            } catch {
+              /* non-fatal UX */
+            }
+          })()
+        );
+      },
+    });
+    await Promise.allSettled(toolNotifies);
     return { handled: true, chatId, reply };
   } catch (e) {
+    await Promise.allSettled(toolNotifies);
     return { handled: true, chatId, error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    typing?.stop();
   }
 }
 
@@ -127,7 +257,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       const updates = await telegramGetUpdates(token, offset, Math.min(50, Math.max(1, Math.floor(pollMs / 1000))), fetchFn);
       for (const u of updates) {
         offset = Math.max(offset, u.update_id + 1);
-        const result = await processTelegramUpdate(opts.cfg, opts.router, u);
+        const result = await processTelegramUpdate(opts.cfg, opts.router, u, { token, fetchFn });
         if (!result.handled || !result.chatId) continue;
         if (result.reply) {
           await telegramSendMessage(token, result.chatId, result.reply, fetchFn);
@@ -137,6 +267,8 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
             await telegramSendMessage(token, result.chatId, "Still working on your previous message…", fetchFn);
           } else if (result.error === "chat not allowed") {
             await telegramSendMessage(token, result.chatId, "This chat is not allowlisted.", fetchFn);
+          } else if (result.error === "peer busy — previous turn still running") {
+            await telegramSendMessage(token, result.chatId, "Still working on your previous message…", fetchFn);
           } else {
             await telegramSendMessage(token, result.chatId, `Error: ${result.error.slice(0, 500)}`, fetchFn);
           }

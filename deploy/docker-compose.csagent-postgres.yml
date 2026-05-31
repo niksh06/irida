@@ -1,0 +1,26 @@
+# csagent hybrid store — isolated Postgres on host :5435 (TParser uses :5433).
+services:
+  csagent-postgres:
+    restart: unless-stopped
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_USER: ${CSAGENT_POSTGRES_USER:-csagent}
+      POSTGRES_PASSWORD: ${CSAGENT_POSTGRES_PASSWORD:-csagent}
+      POSTGRES_DB: ${CSAGENT_POSTGRES_DB:-csagent}
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - csagent_pg_data:/var/lib/postgresql
+    ports:
+      - "${CSAGENT_POSTGRES_HOST_PORT:-5435}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  csagent_pg_data:
+    name: csagent_pg_data

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.csagent.gateway</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__NODE_BIN__</string>
+        <string>__CSAGENT_ROOT__/node_modules/.bin/tsx</string>
+        <string>__CSAGENT_ROOT__/src/cli.ts</string>
+        <string>gateway</string>
+        <string>run</string>
+        <string>--adapter</string>
+        <string>telegram</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__CSAGENT_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CSAGENT_HOME</key>
+        <string>__CSAGENT_HOME__</string>
+        <key>CSAGENT_ROOT</key>
+        <string>__CSAGENT_ROOT__</string>
+        <key>PATH</key>
+        <string>__PATH_SNAPSHOT__</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__CSAGENT_LOG_DIR__/gateway.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__CSAGENT_LOG_DIR__/gateway.error.log</string>
+</dict>
+</plist>

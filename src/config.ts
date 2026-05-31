@@ -44,13 +44,25 @@ export function validateMcpServers(mcp: Record<string, unknown>): string[] {
 
 const SECRET_KEYS = ["CURSOR_API_KEY", "cursorApiKey", "apiKey", "api_key"];
 
+/** Runtime home (~/.csagent): credentials, gateway, sqlite, memory. */
+export function csagentHome(): string | undefined {
+  const home = process.env.CSAGENT_HOME?.trim();
+  return home || undefined;
+}
+
+export function defaultStateDir(_dir: string): string {
+  const home = csagentHome();
+  if (home) return resolve(home, ".agent");
+  return ".agent";
+}
+
 export function defaults(dir: string): AgentConfig {
   return {
     model: "composer-2.5",
     runtime: "local",
     cwd: dir,
     skillsPath: "skills",
-    stateDir: ".agent",
+    stateDir: defaultStateDir(dir),
     mcpServers: {},
     safety: { allowCloud: false, allowAutoPr: false },
   };

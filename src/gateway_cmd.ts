@@ -186,6 +186,9 @@ export function writeExampleGatewayConfig(dir: string, partial: Partial<GatewayC
     skills: [],
     telegramTokenEnv: "TELEGRAM_BOT_TOKEN",
     telegramPollIntervalMs: 1500,
+    telegramShowTyping: true,
+    telegramShowToolProgress: false,
+    telegramToolProgressMode: "new",
     ...partial,
   };
   const json: Record<string, unknown> = {
@@ -199,7 +202,13 @@ export function writeExampleGatewayConfig(dir: string, partial: Partial<GatewayC
     json.listen = { host: example.host, port: example.port };
     json.webhook = { path: example.webhookPath, secretEnv: example.secretEnv };
   } else {
-    json.telegram = { tokenEnv: example.telegramTokenEnv, pollIntervalMs: example.telegramPollIntervalMs };
+    json.telegram = {
+      tokenEnv: example.telegramTokenEnv,
+      pollIntervalMs: example.telegramPollIntervalMs,
+      showTyping: example.telegramShowTyping,
+      showToolProgress: example.telegramShowToolProgress,
+      toolProgressMode: example.telegramToolProgressMode,
+    };
   }
   writeFileSync(resolve(root, GATEWAY_FILE), JSON.stringify(json, null, 2) + "\n", {
     encoding: "utf8",

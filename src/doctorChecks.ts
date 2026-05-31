@@ -27,6 +27,10 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   const major = Number(process.versions.node.split(".")[0]);
   checks.push({ name: "node >= 20", ok: major >= 20, detail: `v${process.versions.node}` });
   checks.push({ name: "cwd", ok: true, detail: dir });
+  const home = process.env.CSAGENT_HOME?.trim();
+  if (home) {
+    checks.push({ name: "CSAGENT_HOME", ok: true, detail: home });
+  }
 
   let cfgOk = true;
   let cfgDetail = `defaults (no ${CONFIG_FILE})`;
@@ -53,12 +57,17 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   }
 
   let writeOk = true;
-  let writeDetail = "cwd writable (.agent created on first run)";
-  const stateDir = resolve(dir, ".agent");
-  const probeTarget = existsSync(stateDir) ? stateDir : dir;
+  let writeDetail = "state dir writable (created on first run)";
+  let stateRoot = dir;
+  try {
+    stateRoot = resolve(dir, loadConfig(dir).stateDir);
+  } catch {
+    stateRoot = resolve(dir, ".agent");
+  }
+  const probeTarget = existsSync(stateRoot) ? stateRoot : dir;
   try {
     accessSync(probeTarget, constants.W_OK);
-    if (existsSync(stateDir)) writeDetail = ".agent writable";
+    if (existsSync(stateRoot)) writeDetail = `${stateRoot} writable`;
   } catch {
     writeOk = false;
     writeDetail = `${probeTarget} not writable`;
