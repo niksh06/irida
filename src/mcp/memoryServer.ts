@@ -2,6 +2,9 @@
 /**
  * stdio MCP server: csagent-memory tools for Cursor SDK agents.
  */
+import { loadCsagentEnv } from "../loadEnv.js";
+loadCsagentEnv();
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerMemoryMcpTools, resolveMemoryMcpContext } from "./memoryTools.js";

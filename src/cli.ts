@@ -4,6 +4,9 @@
  * P0 commands (issue 001): doctor, run, chat, sessions, resume, config — all
  * implemented. See docs/reviews/mvp-p0-review.md for status and limitations.
  */
+import { loadCsagentEnv } from "./loadEnv.js";
+loadCsagentEnv();
+
 import { cmdDoctor } from "./doctor.js";
 import { cmdRun } from "./run.js";
 import { cmdChat } from "./chat.js";
