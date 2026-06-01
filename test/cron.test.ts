@@ -93,6 +93,22 @@ test("isJobDue respects state and enabled flag", () => {
   assert.ok(!isJobDue({ ...job, enabled: false }, at, loadCronState(tmp())));
 });
 
+test("isJobDue matches scheduled minute within grace (launchd skew)", () => {
+  const job = { id: "digest", cron: "0 */2 * * *", prompt: "x" };
+  const state = loadCronState(tmp());
+  const tick = new Date(2026, 5, 1, 2, 3, 0);
+  assert.ok(isJobDue(job, tick, state));
+  state.lastRun.digest = "2026-06-01 02:00";
+  assert.ok(!isJobDue(job, tick, state));
+});
+
+test("isJobDue catches bi-hourly slot up to 10 min after launchd tick", () => {
+  const job = { id: "digest", cron: "0 */2 * * *", prompt: "x" };
+  const state = loadCronState(tmp());
+  const tick = new Date(2026, 5, 1, 2, 7, 0);
+  assert.ok(isJobDue(job, tick, state));
+});
+
 test("executeCronJob runs with mocked SDK", async () => {
   await withKey("k", async () => {
     const dir = tmp();

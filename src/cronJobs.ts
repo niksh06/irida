@@ -164,12 +164,39 @@ export function cronJobEnabled(job: CronJob): boolean {
   return job.enabled !== false;
 }
 
-export function isJobDue(job: CronJob, at: Date, state: CronStateFile): boolean {
-  if (!cronJobEnabled(job)) return false;
+function parseCronMinuteKey(key: string): Date | null {
+  const m = key.trim().match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0);
+}
+
+/** launchd StartInterval (300s) rarely hits minute 0 — look back for a due slot. */
+export const CRON_DUE_GRACE_MINUTES = 10;
+
+export function findDueCronMinute(
+  job: CronJob,
+  at: Date,
+  state: CronStateFile,
+  graceMinutes: number = CRON_DUE_GRACE_MINUTES
+): Date | null {
+  if (!cronJobEnabled(job)) return null;
   const cron = parseCronExpression(job.cron);
-  if (!cron.matches(at)) return false;
-  const key = cronMinuteKey(at);
-  return state.lastRun[job.id] !== key;
+  const tick = new Date(at);
+  tick.setSeconds(0, 0);
+  const lastRan = parseCronMinuteKey(state.lastRun[job.id] ?? "");
+
+  for (let m = 0; m <= graceMinutes; m++) {
+    const probe = new Date(tick.getTime() - m * 60_000);
+    probe.setSeconds(0, 0);
+    if (!cron.matches(probe)) continue;
+    if (lastRan && probe.getTime() <= lastRan.getTime()) continue;
+    return probe;
+  }
+  return null;
+}
+
+export function isJobDue(job: CronJob, at: Date, state: CronStateFile): boolean {
+  return findDueCronMinute(job, at, state) !== null;
 }
 
 export { jobsPath as cronJobsPath, statePath as cronStatePath };

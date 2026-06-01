@@ -35,10 +35,6 @@ export interface CronExecuteResult {
   output?: string;
 }
 
-function jobDir(job: CronJob, base: string): string {
-  return job.cwd ?? base;
-}
-
 function cronPrompt(job: CronJob): string {
   return `[cron:${job.id}] ${job.prompt}`;
 }
@@ -56,16 +52,16 @@ export async function executeCronJob(
   job: CronJob,
   opts: CronExecuteOptions = {}
 ): Promise<CronExecuteResult> {
-  const baseDir = opts.dir ?? process.cwd();
-  const dir = jobDir(job, baseDir);
+  const configDir = opts.dir ?? process.cwd();
+  const workDir = job.cwd ?? configDir;
 
-  const { key: apiKey } = resolveApiKey(dir);
+  const { key: apiKey } = resolveApiKey(configDir);
   if (!apiKey) {
     return { ok: false, exitCode: EXIT.config, message: API_KEY_HELP };
   }
 
   try {
-    loadConfig(dir);
+    loadConfig(configDir);
   } catch (e) {
     return {
       ok: false,
@@ -74,7 +70,7 @@ export async function executeCronJob(
     };
   }
 
-  const prompt = await resolveCronPrompt(job, dir);
+  const prompt = await resolveCronPrompt(job, configDir);
   if (opts.checkSafety !== false) {
     const gate = await safetyGate({
       prompt: job.prompt,
@@ -91,7 +87,7 @@ export async function executeCronJob(
   }
 
   if (job.sessionId) {
-    const store = createStore(dir, loadConfig(dir).stateDir);
+    const store = createStore(configDir, loadConfig(configDir).stateDir);
     try {
       if (!(await store.getSession(job.sessionId))) {
         return {
@@ -105,7 +101,8 @@ export async function executeCronJob(
     }
 
     const opened = await openChatSession({
-      dir,
+      dir: configDir,
+      cwd: workDir,
       sdk: opts.sdk,
       resumeSessionId: job.sessionId,
       skills: job.skills,
@@ -143,7 +140,8 @@ export async function executeCronJob(
   }
 
   const run = await runPrompt(prompt, {
-    dir,
+    dir: configDir,
+    cwd: workDir,
     sdk: opts.sdk,
     skills: job.skills,
     yesIUnderstand: job.yesIUnderstand,
@@ -175,9 +173,10 @@ export async function cronTick(
   const result: CronTickResult = { ran: [], skipped: [], errors: [] };
 
   for (const job of jobs) {
+    const { findDueCronMinute } = await import("./cronJobs.js");
+    const dueAt = findDueCronMinute(job, at, state);
     if (!opts.force) {
-      const { isJobDue } = await import("./cronJobs.js");
-      if (!isJobDue(job, at, state)) {
+      if (!dueAt) {
         result.skipped.push(job.id);
         continue;
       }
@@ -186,12 +185,13 @@ export async function cronTick(
       continue;
     }
 
-    console.error(`[cron] running job=${job.id}`);
+    const slot = dueAt ?? at;
+    console.error(`[cron] running job=${job.id} slot=${cronMinuteKey(slot)}`);
     try {
       const exec = await executeCronJob(job, opts);
-      state.lastRun[job.id] = cronMinuteKey(at);
+      state.lastRun[job.id] = cronMinuteKey(slot);
       saveCronState(dir, state);
-      await sendCronJobNotify(job, exec, at, dir);
+      await sendCronJobNotify(job, exec, slot, dir);
       if (exec.ok) {
         result.ran.push(job.id);
         console.error(`[cron] job=${job.id} ok`);
