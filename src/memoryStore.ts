@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { redact } from "./redact.js";
 import { newId, nowIso } from "./util.js";
+import { resolveMemoryRoot } from "./config.js";
 
 export interface MemoryNote {
   name: string;
@@ -101,8 +102,8 @@ const SQLITE_MEMORY_DDL = `
 export class SqliteMemoryStore implements IMemoryStore {
   private db: DatabaseSync;
 
-  constructor(dir: string, stateDir: string) {
-    const target = resolve(dir, stateDir);
+  constructor(stateRoot: string) {
+    const target = resolve(stateRoot);
     mkdirSync(target, { recursive: true });
     this.db = new DatabaseSync(resolve(target, "state.sqlite"));
     this.db.exec(SQLITE_MEMORY_DDL);
@@ -356,8 +357,8 @@ export class PostgresMemoryStore implements IMemoryStore {
   }
 }
 
-export function createMemoryStore(dir: string, stateDir: string): IMemoryStore {
+export function createMemoryStore(projectDir: string, _stateDir?: string): IMemoryStore {
   const url = process.env.CSAGENT_DATABASE_URL?.trim();
   if (url) return new PostgresMemoryStore(url);
-  return new SqliteMemoryStore(dir, stateDir);
+  return new SqliteMemoryStore(resolveMemoryRoot(projectDir));
 }

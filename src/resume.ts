@@ -91,7 +91,7 @@ export async function cmdResume(
     const skillList = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
     const sessionMemoryBlocks = await sessionStartMemoryBlocks(dir, cfg);
     mcpServers = resolveMcpServers(cfg, dir);
-    finalPrompt = composePrompt({
+    finalPrompt = await composePrompt({
         userPrompt: prompt,
         cwd: cfg.cwd,
         dir,

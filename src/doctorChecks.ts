@@ -1,9 +1,9 @@
 /**
  * Doctor checks as data (shared by CLI and TUI).
  */
-import { accessSync, constants, existsSync } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { CONFIG_FILE, ConfigError, loadConfig, validateMcpServers } from "./config.js";
+import { CONFIG_FILE, ConfigError, loadConfig, resolveMemoryRoot, validateMcpServers } from "./config.js";
 import { resolveMcpServers } from "./mcpServers.js";
 import { resolveApiKey, apiKeySourceLabel } from "./credentials.js";
 import { probePostgresStore } from "./store.js";
@@ -61,12 +61,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
 
   let writeOk = true;
   let writeDetail = "state dir writable (created on first run)";
-  let stateRoot = dir;
-  try {
-    stateRoot = resolve(dir, loadConfig(dir).stateDir);
-  } catch {
-    stateRoot = resolve(dir, ".agent");
-  }
+  let stateRoot = resolveMemoryRoot(dir);
   const probeTarget = existsSync(stateRoot) ? stateRoot : dir;
   try {
     accessSync(probeTarget, constants.W_OK);
@@ -76,6 +71,8 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
     writeDetail = `${probeTarget} not writable`;
   }
   checks.push({ name: "state writable", ok: writeOk, detail: writeDetail });
+
+  checks.push(...gatherMemoryEnvChecks(dir));
 
   const cronPath = cronJobsPath(dir);
   if (existsSync(cronPath)) {
@@ -95,6 +92,46 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
       ok: gwErrs.length === 0,
       detail: gwErrs.length ? gwErrs.join("; ") : "gateway.json valid",
     });
+  }
+
+  return checks;
+}
+
+function gatherMemoryEnvChecks(dir: string): DoctorCheck[] {
+  const checks: DoctorCheck[] = [];
+  const pg = process.env.CSAGENT_DATABASE_URL?.trim();
+  const home = process.env.CSAGENT_HOME?.trim();
+  const canonical = resolveMemoryRoot(dir);
+
+  checks.push({
+    name: "memory root",
+    ok: true,
+    detail: `${canonical}/memory`,
+  });
+
+  if (pg && !home) {
+    checks.push({
+      name: "memory env",
+      ok: false,
+      detail: "CSAGENT_DATABASE_URL set without CSAGENT_HOME — dev may read a different silo than gateway",
+    });
+  }
+
+  const repoMemory = resolve(dir, ".agent", "memory");
+  if (home && canonical !== resolve(dir, ".agent") && existsSync(repoMemory)) {
+    let count = 0;
+    try {
+      count = readdirSync(repoMemory).filter((f) => f.endsWith(".md")).length;
+    } catch {
+      count = 0;
+    }
+    if (count > 0) {
+      checks.push({
+        name: "memory silo",
+        ok: false,
+        detail: `${count} note(s) in repo ${repoMemory}; canonical is ${canonical}/memory`,
+      });
+    }
   }
 
   return checks;

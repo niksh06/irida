@@ -49,6 +49,8 @@ export interface AgentRotatedInfo {
 export interface ChatSessionOptions {
   sdk?: ChatSdk;
   dir?: string;
+  /** Agent working directory (defaults to config cwd). */
+  cwd?: string;
   skills?: string[];
   yesIUnderstand?: boolean;
   confirm?: Confirmer;
@@ -174,7 +176,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   let sessionId: string;
   let connectMode: ConnectMode | "fresh" = "fresh";
   let replayPrefix = "";
-  let sessionCwd = cfg.cwd;
+  let sessionCwd = opts.cwd ?? cfg.cwd;
   let sessionChannel = opts.channel ?? "";
 
   if (opts.resumeSessionId) {
@@ -265,7 +267,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       try {
         const sessionMemoryBlocks =
           firstTurn ? await sessionStartMemoryBlocks(dir, cfg) : [];
-        sendMsg = composePrompt({
+        sendMsg = await composePrompt({
           userPrompt: msg,
           cwd: sessionCwd,
           dir,

@@ -4,7 +4,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve, basename, extname } from "node:path";
-import { loadConfig, type AgentConfig } from "./config.js";
+import { loadConfig, resolveMemoryRoot, type AgentConfig } from "./config.js";
 import { createMemoryStore } from "./memoryStore.js";
 import { redact } from "./redact.js";
 
@@ -40,8 +40,7 @@ function sanitizeName(raw: string): string {
 }
 
 export function memoryDir(dir: string = process.cwd()): string {
-  const cfg = loadConfig(dir);
-  return resolve(dir, cfg.stateDir, MEMORY_SUBDIR);
+  return resolve(resolveMemoryRoot(dir), MEMORY_SUBDIR);
 }
 
 function ensureMemoryDir(dir: string): string {
@@ -189,35 +188,64 @@ export async function sessionStartMemoryBlocks(
   }
 }
 
-function loadMemoriesForToken(dir: string, tokenName: string): string[] {
-  if (!tokenName.trim()) {
-    const all = listMemories(dir);
-    if (all.length === 0) throw new MemoryError("no memories stored — use csagent memory add");
-    let total = 0;
-    const blocks: string[] = [];
-    for (const entry of all) {
-      const body = readMemory(dir, entry.name);
-      if (total + body.length > MAX_TOTAL_CHARS) break;
-      blocks.push(formatMemoryBlock(entry.name, body));
-      total += body.length;
+async function loadMemoriesForToken(dir: string, tokenName: string): Promise<string[]> {
+  const store = createMemoryStore(dir, loadConfig(dir).stateDir);
+  try {
+    const loadOne = async (name: string): Promise<string> => {
+      const note = await store.getNote(name);
+      if (note) return note.body;
+      return readMemory(dir, name);
+    };
+
+    if (!tokenName.trim()) {
+      const notes = await store.listNotes();
+      if (notes.length > 0) {
+        let total = 0;
+        const blocks: string[] = [];
+        for (const n of notes) {
+          if (total + n.body.length > MAX_TOTAL_CHARS) break;
+          blocks.push(formatMemoryBlock(n.name, n.body));
+          total += n.body.length;
+        }
+        if (blocks.length === 0) throw new MemoryError("memories exceed total size limit");
+        return blocks;
+      }
+      const all = listMemories(dir);
+      if (all.length === 0) throw new MemoryError("no memories stored — use csagent memory add");
+      let total = 0;
+      const blocks: string[] = [];
+      for (const entry of all) {
+        const body = readMemory(dir, entry.name);
+        if (total + body.length > MAX_TOTAL_CHARS) break;
+        blocks.push(formatMemoryBlock(entry.name, body));
+        total += body.length;
+      }
+      if (blocks.length === 0) throw new MemoryError("memories exceed total size limit");
+      return blocks;
     }
-    if (blocks.length === 0) throw new MemoryError("memories exceed total size limit");
-    return blocks;
+
+    const name = sanitizeName(tokenName);
+    try {
+      return [formatMemoryBlock(name, await loadOne(name))];
+    } catch (e) {
+      if (e instanceof MemoryError) throw e;
+      throw new MemoryError(`memory not found: ${name}`);
+    }
+  } finally {
+    await store.close();
   }
-  const name = sanitizeName(tokenName);
-  return [formatMemoryBlock(name, readMemory(dir, name))];
 }
 
 /** Replace @memory: tokens; optional prepend blocks (session start). */
-export function expandMemoryRefs(
+export async function expandMemoryRefs(
   prompt: string,
   dir: string = process.cwd(),
   prependBlocks: string[] = []
-): string {
+): Promise<string> {
   const tokens = listMemoryRefs(prompt);
   const blocks: string[] = [...prependBlocks];
   for (const t of tokens) {
-    blocks.push(...loadMemoriesForToken(dir, t.name));
+    blocks.push(...(await loadMemoriesForToken(dir, t.name)));
   }
   if (blocks.length === 0) return prompt;
 
@@ -230,8 +258,27 @@ export function expandMemoryRefs(
   return header + blocks.join("\n\n") + "\n\n# Task\n\n" + task;
 }
 
-export function probeMemoryRef(dir: string, token: MemoryRefToken): "ok" | "missing" {
-  if (!token.name.trim()) return listMemories(dir).length > 0 ? "ok" : "missing";
-  const path = resolve(memoryDir(dir), `${sanitizeName(token.name)}.md`);
+export async function probeMemoryRef(
+  dir: string,
+  token: MemoryRefToken
+): Promise<"ok" | "missing"> {
+  if (!token.name.trim()) {
+    const store = createMemoryStore(dir, loadConfig(dir).stateDir);
+    try {
+      const notes = await store.listNotes();
+      if (notes.length > 0) return "ok";
+    } finally {
+      await store.close();
+    }
+    return listMemories(dir).length > 0 ? "ok" : "missing";
+  }
+  const name = sanitizeName(token.name);
+  const store = createMemoryStore(dir, loadConfig(dir).stateDir);
+  try {
+    if (await store.getNote(name)) return "ok";
+  } finally {
+    await store.close();
+  }
+  const path = resolve(memoryDir(dir), `${name}.md`);
   return existsSync(path) ? "ok" : "missing";
 }

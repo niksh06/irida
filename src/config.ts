@@ -67,6 +67,16 @@ export function defaultStateDir(_dir: string): string {
   return ".agent";
 }
 
+/** Canonical `.agent` directory for memory, credentials, cron state. */
+export function resolveMemoryRoot(projectDir: string = process.cwd()): string {
+  const home = csagentHome();
+  if (home) return resolve(home, ".agent");
+  const cfg = loadConfig(projectDir);
+  const stateDir = cfg.stateDir;
+  if (stateDir.startsWith("/") || /^[A-Za-z]:[\\/]/.test(stateDir)) return stateDir;
+  return resolve(projectDir, stateDir);
+}
+
 export function defaults(dir: string): AgentConfig {
   return {
     model: "composer-2.5",

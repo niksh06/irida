@@ -20,6 +20,8 @@ import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 export interface RunOptions {
   sdk?: SdkLike;
   dir?: string;
+  /** Agent working directory (defaults to config cwd). */
+  cwd?: string;
   skills?: string[];
   yesIUnderstand?: boolean;
 }
@@ -56,6 +58,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     console.error("run: " + (e instanceof ConfigError ? e.message : String(e)));
     return { exitCode: EXIT.config, text: "" };
   }
+  const agentCwd = opts.cwd ?? cfg.cwd;
   if (cfg.runtime === "cloud" && !cfg.safety.allowCloud) {
     console.error("run: cloud runtime requires safety.allowCloud=true (MVP is local-first)");
     return { exitCode: EXIT.config, text: "" };
@@ -73,9 +76,9 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     const skills = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
     const sessionMemoryBlocks = await sessionStartMemoryBlocks(dir, cfg);
     mcpServers = resolveMcpServers(cfg, dir);
-    finalPrompt = composePrompt({
+    finalPrompt = await composePrompt({
       userPrompt: prompt,
-      cwd: cfg.cwd,
+      cwd: agentCwd,
       dir,
       skills,
       sessionMemoryBlocks,
@@ -101,7 +104,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       prompt: finalPrompt,
       apiKey,
       model: cfg.model,
-      cwd: cfg.cwd,
+      cwd: agentCwd,
       mcpServers,
     });
     console.error(`[run] agentId=${r.agentId ?? "-"} runId=${r.runId ?? "-"} status=${r.status}`);
@@ -109,7 +112,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     await store.upsertSession({
       id: sessionId,
       title: preview(prompt, 60),
-      cwd: cfg.cwd,
+      cwd: agentCwd,
       runtime: cfg.runtime,
       sdk_agent_id: r.agentId,
       last_status: r.status,
@@ -126,7 +129,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       error_kind: failed ? "run_error" : null,
       started_at: startedAt,
       finished_at: nowIso(),
-      cwd: cfg.cwd,
+      cwd: agentCwd,
       runtime: cfg.runtime,
       model: cfg.model,
     });
@@ -143,7 +146,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       await store.upsertSession({
         id: sessionId,
         title: preview(prompt, 60),
-        cwd: cfg.cwd,
+        cwd: agentCwd,
         runtime: cfg.runtime,
         sdk_agent_id: null,
         last_status: "startup_error",
@@ -160,7 +163,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
         error_kind: "startup",
         started_at: startedAt,
         finished_at: nowIso(),
-        cwd: cfg.cwd,
+        cwd: agentCwd,
         runtime: cfg.runtime,
         model: cfg.model,
       });

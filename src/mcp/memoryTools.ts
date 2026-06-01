@@ -3,7 +3,7 @@
  */
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { loadConfig } from "../config.js";
+import { resolveMemoryRoot } from "../config.js";
 import { saveMemory } from "../memory.js";
 import { createMemoryStore } from "../memoryStore.js";
 
@@ -14,8 +14,7 @@ export interface MemoryMcpContext {
 
 export function resolveMemoryMcpContext(): MemoryMcpContext {
   const dir = process.env.CSAGENT_MEMORY_DIR?.trim() || process.cwd();
-  const stateDir =
-    process.env.CSAGENT_STATE_DIR?.trim() || loadConfig(dir).stateDir;
+  const stateDir = process.env.CSAGENT_STATE_DIR?.trim() || resolveMemoryRoot(dir);
   return { dir, stateDir };
 }
 
