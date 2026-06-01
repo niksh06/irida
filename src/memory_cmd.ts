@@ -169,20 +169,32 @@ export async function cmdMemoryImportMd(
   opts: MemoryCmdOptions = {}
 ): Promise<ExitCode> {
   let memoryDir = opts.dir ?? process.cwd();
-  let kbRoot = memoryDir;
+  let kbRoot = process.env.CSAGENT_KB_ROOT?.trim() ?? "";
   let dryRun = false;
+  const domains: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dry-run") dryRun = true;
-    else if (a === "--dir" && argv[i + 1]) {
-      memoryDir = argv[++i]!;
-      kbRoot = memoryDir;
-    } else if (a === "--kb-root" && argv[i + 1]) {
-      kbRoot = argv[++i]!;
+    else if (a === "--dir" && argv[i + 1]) memoryDir = argv[++i]!;
+    else if (a === "--kb-root" && argv[i + 1]) kbRoot = argv[++i]!;
+    else if ((a === "--domains" || a === "--domain") && argv[i + 1]) {
+      for (const d of argv[++i]!.split(",")) {
+        const t = d.trim();
+        if (t) domains.push(t);
+      }
     }
   }
+  if (!kbRoot) {
+    console.error("memory import-md: --kb-root PATH required (or set CSAGENT_KB_ROOT)");
+    return EXIT.usage;
+  }
   try {
-    const result = await importHappyinKb({ kbRoot, memoryDir, dryRun });
+    const result = await importHappyinKb({
+      kbRoot,
+      memoryDir,
+      dryRun,
+      domains: domains.length ? domains : undefined,
+    });
     if (dryRun) {
       console.log(
         `dry-run: ${result.imported} notes, commit=${result.commit}, aliases=${result.aliases}`
@@ -291,7 +303,7 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory add <name> [--wing W] [--stdin]
   csagent memory search <query>            search note bodies
   csagent memory rm <name>
-  csagent memory import-md --dir PATH [--kb-root PATH] [--dry-run]
+  csagent memory import-md --kb-root PATH [--dir CSAGENT_ROOT] [--domains kafka,python] [--dry-run]
   csagent memory fact add|query|invalidate …
 
 In chat/TUI, inject with @memory:<name> or @memory: for all.

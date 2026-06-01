@@ -29,9 +29,11 @@ function sanitizeSlug(slug: string): string {
 export interface ImportHappyinOptions {
   /** Root of agent_tutorial / knowledge-space docs mirror. */
   kbRoot: string;
-  /** csagent memory root (usually same as kbRoot). */
+  /** csagent project dir for store resolution (not kb path). */
   memoryDir?: string;
   stateDir?: string;
+  /** Import only these top-level domain folders (e.g. kafka, python). */
+  domains?: string[];
   /** Git commit from .kb-sync; auto-read when omitted. */
   commit?: string;
   dryRun?: boolean;
@@ -107,7 +109,12 @@ export async function importHappyinKb(opts: ImportHappyinOptions): Promise<Impor
   const cfg = loadConfig(memoryDir);
   const stateDir = opts.stateDir ?? cfg.stateDir;
   const commit = opts.commit?.trim() || readKbSyncCommit(kbRoot);
-  const files = listKbMarkdownFiles(kbRoot);
+  const domainFilter = opts.domains?.map((d) => d.trim()).filter(Boolean);
+  let files = listKbMarkdownFiles(kbRoot);
+  if (domainFilter?.length) {
+    const allowed = new Set(domainFilter);
+    files = files.filter((f) => allowed.has(f.domain));
+  }
 
   if (opts.dryRun) {
     let aliases = 0;
