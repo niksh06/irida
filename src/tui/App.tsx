@@ -230,8 +230,7 @@ export function App(props: TuiOptions) {
       }
       return next;
     });
-    setThinkingText("");
-    setActivityLog([]);
+    setThinkingText("Retrying after agent rotation…");
   }, []);
 
   const bootSession = useCallback(
@@ -261,6 +260,12 @@ export function App(props: TuiOptions) {
           pushMessage({
             role: "system",
             text: `· SDK agent reinitialized · ${replay}agent ${from}… → ${to}…`,
+          });
+          noteActivity({
+            label: "retrying after rotation",
+            kind: "other",
+            command: "SDK agent reinitialized",
+            phase: "call",
           });
           setMeta((m) => (m ? { ...m, agentId: info.newAgentId } : m));
         },
@@ -658,7 +663,23 @@ export function App(props: TuiOptions) {
       const out = await session.sendTurn(text);
       finishStreaming();
 
-      if (out.kind === "ok") setLastTurnStats(out.stats);
+      if (out.kind === "ok") {
+        setLastTurnStats(out.stats);
+        if (!out.assistantText.trim()) {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last?.role === "assistant" && !last.text.trim()) {
+              next[next.length - 1] = {
+                ...last,
+                text: "Turn завершился без текста (только tools или сбой SDK). Смотри /tools или переформулируй вопрос.",
+                streaming: false,
+              };
+            }
+            return next;
+          });
+        }
+      }
 
       if (out.kind === "blocked") {
         setMessages((prev) => {

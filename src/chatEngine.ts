@@ -300,15 +300,15 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           mcpServers: mcpServers,
         });
         session.agentId = agent.agentId ?? null;
-        const replayTurns = (await store.listRuns(sessionId)).slice(-10).length;
-        const prefix = await replayPreamble(store, sessionId);
+        const replayRuns = Math.min(4, (await store.listRuns(sessionId)).length);
+        const prefix = await replayPreamble(store, sessionId, replayRuns, 12_000);
         log(
-          `[chat] agent rotated old=${previousAgentId ?? "-"} new=${agent.agentId ?? "-"} replay=${replayTurns}`
+          `[chat] agent rotated old=${previousAgentId ?? "-"} new=${agent.agentId ?? "-"} replay=${replayRuns}`
         );
         opts.onAgentRotated?.({
           previousAgentId,
           newAgentId: agent.agentId ?? null,
-          replayTurns,
+          replayTurns: replayRuns,
         });
         await store.upsertSession({
           id: sessionId,

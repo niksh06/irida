@@ -25,12 +25,21 @@ export interface ConnectResult {
   liveResumeError: string;
 }
 
-export async function replayPreamble(store: IStore, sessionId: string, max = 10): Promise<string> {
-  const runs = (await store.listRuns(sessionId)).slice(-max);
+export async function replayPreamble(
+  store: IStore,
+  sessionId: string,
+  maxRuns = 10,
+  maxChars = 24_000
+): Promise<string> {
+  const runs = (await store.listRuns(sessionId)).slice(-maxRuns);
   if (runs.length === 0) return "";
-  const turns = runs
+  let turns = runs
     .map((r) => `User: ${r.prompt_preview}\nAssistant: ${r.result_preview || "(no stored output)"}`)
     .join("\n\n");
+  if (turns.length > maxChars) {
+    turns = turns.slice(turns.length - maxChars);
+    turns = "…(transcript truncated)\n\n" + turns;
+  }
   return `Earlier in this session (transcript, may be truncated):\n\n${turns}\n\n`;
 }
 
