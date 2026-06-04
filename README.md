@@ -34,19 +34,142 @@ export CURSOR_API_KEY="cursor_..."   # Dashboard → Integrations
 
 ## Install
 
+Оба варианта используют **Node.js ≥ 20** и **Cursor API key** (см. [Requirements](#requirements)). Выберите store:
+
+| | **Вариант 1 — SQLite** | **Вариант 2 — Postgres** |
+|---|------------------------|---------------------------|
+| Сложность | Проще, без Docker | Docker + `CSAGENT_DATABASE_URL` |
+| Данные | `~/.csagent/.agent/state.sqlite` (или `./.agent/` в клоне) | Postgres `:5435`, sessions + memory в PG |
+| Когда | Локальная разработка, TUI/CLI, мало заметок | Production home, Telegram gateway, cron, KB 800+ notes |
+| Паритет dev↔gateway | Только если везде один `CSAGENT_HOME` и **без** PG URL | Один PG — один источник для TUI, gateway, cron |
+
+Общий шаг (оба варианта):
+
 ```bash
+git clone <repo-url> csagent && cd csagent
 npm install
 npm run build      # compile to dist/ (also runs on npm install via prepare)
+npm link           # optional: global `csagent` command
 ```
 
-For a global **`csagent`** command, link after build:
+Dev без `npm link`: **`npm run tui`** или **`npm run dev -- <subcommand>`** — всегда из текущего `src/`.
+
+Env подхватывается автоматически: `~/.csagent/csagent.env`, затем repo `.env` (см. `src/loadEnv.ts`).
+
+---
+
+### Вариант 1 — SQLite (упрощённый)
+
+Сессии, runs и memory notes хранятся в **SQLite** под каталогом `.agent/`. **Не задавайте** `CSAGENT_DATABASE_URL`.
+
+#### 1a. Быстрый старт в клоне репозитория
+
+Подходит для правок кода и TUI без `~/.csagent`:
 
 ```bash
-npm link
-csagent tui        # launcher rebuilds dist automatically if src/ changed
+cd csagent
+printf '%s' "cursor_..." | npx tsx src/cli.ts auth login --stdin
+npx tsx src/cli.ts doctor
+npx tsx src/cli.ts tui
 ```
 
-Dev without linking: **`npm run tui`** or **`npm run dev -- tui`** always use current `src/`.
+Состояние: `./.agent/state.sqlite`, `./.agent/credentials.json`, `./.agent/memory/*.md`.
+
+#### 1b. Home-установка `~/.csagent` (без Postgres)
+
+Тот же runtime layout, что у launchd, но store — только SQLite:
+
+```bash
+cd csagent
+bash deploy/setup-home.sh
+# Убедитесь, что в ~/.csagent/csagent.env НЕТ строки CSAGENT_DATABASE_URL
+# (setup-home.sh сохраняет уже заданный URL; для SQLite удалите export вручную)
+
+printf '%s' "cursor_..." | ~/.csagent/csagent/scripts/csagent-run.sh auth login --stdin
+~/.csagent/csagent/scripts/csagent-run.sh doctor
+~/.csagent/csagent/scripts/csagent-run.sh tui
+```
+
+Опционально Telegram gateway + cron (macOS):
+
+```bash
+# TELEGRAM_BOT_TOKEN в csagent.env или: auth telegram login --stdin
+cp deploy/gateway.json.example ~/.csagent/.agent/gateway.json   # правьте allowedChatIds
+bash ~/.csagent/csagent/deploy/install-launchd.sh
+```
+
+Проверка: `launchctl list | grep csagent`, логи в `~/.csagent/logs/`.
+
+---
+
+### Вариант 2 — Postgres (полный)
+
+**Sessions, runs и memory** в Postgres; удобно для **Telegram gateway + cron + большой KB** и одного store для всех процессов.
+
+#### 2.1. Postgres в Docker
+
+Из клона репозитория (порт **5435** по умолчанию, не конфликтует с TParser на :5433):
+
+```bash
+cd csagent
+docker compose -f deploy/docker-compose.csagent-postgres.yml up -d
+docker compose -f deploy/docker-compose.csagent-postgres.yml ps   # healthy
+```
+
+#### 2.2. Home + env
+
+```bash
+bash deploy/setup-home.sh
+```
+
+В `~/.csagent/csagent.env` задайте (или раскомментируйте после `setup-home`):
+
+```bash
+export CSAGENT_DATABASE_URL="postgresql://csagent:csagent@127.0.0.1:5435/csagent"
+# export CSAGENT_LOG=1   # опционально: stderr-диагностика chat/cron
+```
+
+Переустановите launchd, если сервисы уже стояли — plist подхватывает env при `install-launchd.sh`:
+
+```bash
+printf '%s' "cursor_..." | ~/.csagent/csagent/scripts/csagent-run.sh auth login --stdin
+~/.csagent/csagent/scripts/csagent-run.sh doctor   # должен показать postgres store
+bash ~/.csagent/csagent/deploy/install-launchd.sh
+```
+
+Миграции (`deploy/postgres/migrations/*.sql`) применяются при первом подключении.
+
+#### 2.3. Memory / knowledge base (опционально)
+
+Импорт HappyIn KB в PG (пример):
+
+```bash
+~/.csagent/csagent/scripts/csagent-run.sh memory import-md \
+  --kb-root /path/to/agent_tutorial \
+  --domains kafka
+~/.csagent/csagent/scripts/csagent-run.sh memory list
+```
+
+Cron (пример TParser digest): скопируйте `deploy/cron.jobs.example.json` → `~/.csagent/.agent/cron.jobs.json`, настройте `notify.chatId`. Подробнее: `deploy/README.md` и локально `docs/deploy/TPARSER-BIHOURLY-CRON.md`.
+
+#### 2.4. Backup Postgres
+
+```bash
+docker exec deploy-csagent-postgres-1 pg_dump -U csagent -Fc csagent \
+  > ~/backups/csagent-$(date +%Y%m%d).dump
+```
+
+---
+
+### Переключение SQLite ↔ Postgres
+
+1. Остановите gateway/cron: `bash deploy/uninstall-launchd.sh` (или не запускайте launchd).
+2. **SQLite → Postgres:** поднимите контейнер, добавьте `CSAGENT_DATABASE_URL`, `doctor`, при необходимости `memory import-md` (данные из sqlite не мигрируются автоматически).
+3. **Postgres → SQLite:** удалите/закомментируйте `CSAGENT_DATABASE_URL` в `csagent.env`, перезапустите процессы — снова `~/.csagent/.agent/state.sqlite` (пустой или старый файл, если остался).
+
+После смены store: `bash deploy/setup-home.sh` и `install-launchd.sh` при использовании launchd.
+
+Подробный ops-гайд: [deploy/README.md](deploy/README.md).
 
 ## Commands
 
