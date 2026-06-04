@@ -68,6 +68,39 @@ export async function telegramGetUpdates(
   return telegramApiGet(token, "getUpdates", { offset, timeout: timeoutSec }, fetchFn);
 }
 
+/** Telegram Bot API `sendMessage` text limit. */
+export const TELEGRAM_MESSAGE_MAX = 4096;
+
+/** Reserve for multipart header `[999/999]\n`. */
+const TELEGRAM_PART_HEADER_SLACK = 20;
+
+export function splitTelegramMessages(text: string, maxLen = TELEGRAM_MESSAGE_MAX): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= maxLen) return [trimmed];
+  const chunks: string[] = [];
+  let rest = trimmed;
+  while (rest.length > maxLen) {
+    let cut = rest.lastIndexOf("\n", maxLen);
+    if (cut < maxLen * 0.5) cut = maxLen;
+    chunks.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+/** Split long text; prefix `[i/N]` when there is more than one part (each body ≤ limit). */
+export function formatTelegramMultipartBodies(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const rough = splitTelegramMessages(trimmed, TELEGRAM_MESSAGE_MAX);
+  if (rough.length === 1) return rough;
+  const bodyMax = TELEGRAM_MESSAGE_MAX - TELEGRAM_PART_HEADER_SLACK;
+  const parts = splitTelegramMessages(trimmed, bodyMax);
+  return parts.map((p, i) => `[${i + 1}/${parts.length}]\n${p}`);
+}
+
 export async function telegramSendMessage(
   token: string,
   chatId: string,
@@ -75,6 +108,20 @@ export async function telegramSendMessage(
   fetchFn: TelegramFetch = fetch
 ): Promise<void> {
   await telegramApiPost(token, "sendMessage", { chat_id: chatId, text }, fetchFn);
+}
+
+/** Send text as one or more Telegram messages (same chunking as cron digest). */
+export async function telegramSendLongMessage(
+  token: string,
+  chatId: string,
+  text: string,
+  fetchFn: TelegramFetch = fetch
+): Promise<number> {
+  const bodies = formatTelegramMultipartBodies(text);
+  for (const body of bodies) {
+    await telegramSendMessage(token, chatId, body, fetchFn);
+  }
+  return bodies.length;
 }
 
 export async function telegramSendChatAction(
@@ -186,10 +233,6 @@ export async function processTelegramUpdate(
     return { handled: true, chatId, error: "busy" };
   }
 
-  if (router.isBusy(chatId)) {
-    return { handled: true, chatId, error: "busy" };
-  }
-
   const token = opts.token;
   const fetchFn = opts.fetchFn ?? fetch;
   const quickCommand = text === "/new";
@@ -261,7 +304,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
         const result = await processTelegramUpdate(opts.cfg, opts.router, u, { token, fetchFn });
         if (!result.handled || !result.chatId) continue;
         if (result.reply) {
-          await telegramSendMessage(token, result.chatId, result.reply, fetchFn);
+          await telegramSendLongMessage(token, result.chatId, result.reply, fetchFn);
         } else if (result.error) {
           log(`[gateway] telegram chat=${result.chatId} error: ${result.error}`);
           if (result.error === "busy") {

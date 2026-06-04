@@ -50,6 +50,7 @@ import { useAltScreen } from "./terminal.js";
 import type { ActivityDetail } from "../host.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, TurnStats } from "./types.js";
 import type { SessionRecord } from "../store.js";
+import { resolveAgentLogger } from "../agentLog.js";
 
 let msgSeq = 0;
 function nextId(prefix: string): string {
@@ -114,6 +115,7 @@ export function App(props: TuiOptions) {
   const sessionRef = useRef<ChatSession | null>(null);
   const bootGen = useRef(0);
   const rowCacheRef = useRef<MessageRowCache>(new Map());
+  const agentLog = useMemo(() => resolveAgentLogger({ component: "tui" }), []);
 
   const [meta, setMeta] = useState<SessionMeta | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
@@ -257,9 +259,10 @@ export function App(props: TuiOptions) {
           const to = info.newAgentId?.slice(0, 6) ?? "-";
           const replay =
             info.replayTurns > 0 ? `replay ${info.replayTurns} turns · ` : "";
+          const why = info.reason ? ` (${info.reason})` : "";
           pushMessage({
             role: "system",
-            text: `· SDK agent reinitialized · ${replay}agent ${from}… → ${to}…`,
+            text: `· SDK agent reinitialized · ${replay}agent ${from}… → ${to}…${why}`,
           });
           noteActivity({
             label: "retrying after rotation",
@@ -269,7 +272,7 @@ export function App(props: TuiOptions) {
           });
           setMeta((m) => (m ? { ...m, agentId: info.newAgentId } : m));
         },
-        onLog: () => {},
+        onLog: agentLog,
       });
 
       if (gen !== bootGen.current) {
@@ -321,7 +324,7 @@ export function App(props: TuiOptions) {
       setRecentSessions(await listStoredSessions(dir));
       return opened;
     },
-    [dir, modelOverride, noteActivity, patchStreaming, patchThinking, props.skills, props.yesIUnderstand, pushMessage, resetTurnRetry]
+    [agentLog, dir, modelOverride, noteActivity, patchStreaming, patchThinking, props.skills, props.yesIUnderstand, pushMessage, resetTurnRetry]
   );
 
   useEffect(() => {

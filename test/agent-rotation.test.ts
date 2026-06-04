@@ -77,6 +77,7 @@ describe("in-session agent rotation", () => {
       assert.equal(rotated.length, 1);
       assert.equal(rotated[0]?.previousAgentId, "agent-old");
       assert.equal(rotated[0]?.newAgentId, "agent-new");
+      assert.match(rotated[0]?.reason ?? "", /run_error|exception/);
       assert.equal(opened.session.agentId, "agent-new");
       await opened.session.close();
     });

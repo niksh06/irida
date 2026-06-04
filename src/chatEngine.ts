@@ -36,7 +36,8 @@ import { EXIT, type ExitCode } from "./exit.js";
 import type { ActivityDetail } from "./host.js";
 import { consumeRunStream, formatSdkError, isAgentRotatableError } from "./sdkErrors.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
-import { formatRunErrorMessage } from "./runErrors.js";
+import { formatRunErrorMessage, pickRunErrorDetail } from "./runErrors.js";
+import { agentLogVerbose, resolveAgentLogger } from "./agentLog.js";
 
 type ChatSdk = SdkCreateLike & SdkResumeLike;
 
@@ -44,6 +45,8 @@ export interface AgentRotatedInfo {
   previousAgentId: string | null;
   newAgentId: string | null;
   replayTurns: number;
+  /** Why rotation happened (SDK run_error, stale handle, …). */
+  reason?: string;
 }
 
 export interface ChatSessionOptions {
@@ -119,7 +122,7 @@ export type OpenChatResult =
 export async function openChatSession(opts: ChatSessionOptions = {}): Promise<OpenChatResult> {
   const dir = opts.dir ?? process.cwd();
   const interactive = opts.interactive ?? true;
-  const log = opts.onLog ?? ((s: string) => console.error(s));
+  const log = resolveAgentLogger({ component: "chat", onLog: opts.onLog });
 
   const { key: apiKey } = resolveApiKey(dir);
   if (!apiKey) {
@@ -288,10 +291,15 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       let attemptSendMsg = sendMsg;
       let rotated = false;
 
-      const tryRotateAgent = async (): Promise<boolean> => {
+      log(
+        `[chat] sendTurn session=${sessionId} agent=${agent.agentId ?? "-"} userChars=${msg.length} composedChars=${sendMsg.length} replayPrefixChars=${replayPrefix.length}`
+      );
+
+      const tryRotateAgent = async (reason: string): Promise<boolean> => {
         if (rotated) return false;
         rotated = true;
         const previousAgentId = agent.agentId ?? null;
+        log(`[chat] rotate start reason=${reason} oldAgent=${previousAgentId ?? "-"}`);
         await disposeAgent(agent);
         agent = await createSession(sdk, {
           apiKey,
@@ -303,12 +311,13 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         const replayRuns = Math.min(4, (await store.listRuns(sessionId)).length);
         const prefix = await replayPreamble(store, sessionId, replayRuns, 12_000);
         log(
-          `[chat] agent rotated old=${previousAgentId ?? "-"} new=${agent.agentId ?? "-"} replay=${replayRuns}`
+          `[chat] rotate done reason=${reason} old=${previousAgentId ?? "-"} new=${agent.agentId ?? "-"} replayRuns=${replayRuns} replayPrefixChars=${prefix.length} basePromptChars=${baseSendMsg.length}`
         );
         opts.onAgentRotated?.({
           previousAgentId,
           newAgentId: agent.agentId ?? null,
           replayTurns: replayRuns,
+          reason,
         });
         await store.upsertSession({
           id: sessionId,
@@ -333,12 +342,22 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         let toolCalls = 0;
         let usage: StreamUsage = {};
         let turnText = "";
+        const attempt = rotated ? 2 : 1;
+        log(
+          `[chat] run send attempt=${attempt} runId=${runId} promptChars=${attemptSendMsg.length} agent=${agent.agentId ?? "-"}`
+        );
         try {
           const run: RunLike = await agent.send(attemptSendMsg);
           await consumeRunStream(run, (ev) => {
             const activity = eventActivityDetail(ev);
             if (activity) {
               if (activity.phase === "call") toolCalls++;
+              if (agentLogVerbose() && activity.phase === "call") {
+                const cmd = activity.command?.trim();
+                log(
+                  `[chat] tool call #${toolCalls} ${activity.toolName ?? activity.label}${cmd ? ` cmd=${preview(cmd, 120)}` : ""}`
+                );
+              }
               onActivity?.(activity);
             }
             const u = parseStreamUsage(ev);
@@ -359,7 +378,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             inputTokens: usage.inputTokens,
             outputTokens: usage.outputTokens,
           };
-          log(`[chat] runId=${res.id ?? "-"} status=${lastStatus} tools=${toolCalls} ${stats.durationMs}ms`);
+          log(
+            `[chat] run done sdkRun=${res.id ?? "-"} status=${lastStatus} tools=${toolCalls} assistantChars=${turnText.length} ${stats.durationMs}ms in=${usage.inputTokens ?? "-"} out=${usage.outputTokens ?? "-"}`
+          );
           await store.recordRun({
             id: runId,
             session_id: sessionId,
@@ -385,8 +406,19 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             channel: sessionChannel,
           });
           if (lastStatus === "error") {
-            if (await tryRotateAgent()) continue;
+            const detail = pickRunErrorDetail(res);
+            const rotateReason = [
+              "run_error",
+              `status=${lastStatus}`,
+              detail ? `detail=${detail}` : "",
+              `tools=${toolCalls}`,
+              `partialChars=${turnText.length}`,
+            ]
+              .filter(Boolean)
+              .join(" ");
+            if (await tryRotateAgent(rotateReason)) continue;
             const failed = formatRunErrorMessage({ res, toolCalls, turnText });
+            log(`[chat] sendTurn failed (no retry) ${failed.message}`);
             return {
               kind: "error",
               message: failed.message,
@@ -394,12 +426,14 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
               partialAssistantText: failed.partialAssistantText,
             };
           }
+          log(`[chat] sendTurn ok status=${lastStatus} assistantChars=${turnText.length}`);
           return { kind: "ok", status: lastStatus, assistantText: turnText, stats };
         } catch (e) {
-          if (isAgentRotatableError(e) && (await tryRotateAgent())) continue;
-
           const formatted = formatSdkError(e);
-          log(`[chat] turn error kind=${formatted.errorKind} ${formatted.message}`);
+          const rotateReason = `exception kind=${formatted.errorKind} ${formatted.message}`;
+          if (isAgentRotatableError(e) && (await tryRotateAgent(rotateReason))) continue;
+
+          log(`[chat] sendTurn error kind=${formatted.errorKind} ${formatted.message}`);
           await store.recordRun({
             id: runId,
             session_id: sessionId,

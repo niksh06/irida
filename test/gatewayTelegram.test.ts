@@ -7,10 +7,14 @@ import {
   processTelegramUpdate,
   telegramGetUpdates,
   telegramSendMessage,
+  telegramSendLongMessage,
   telegramSendChatAction,
   startTelegramPoller,
   formatTelegramToolProgressLine,
+  formatTelegramMultipartBodies,
   shouldEmitTelegramToolProgress,
+  splitTelegramMessages,
+  TELEGRAM_MESSAGE_MAX,
 } from "../src/gatewayTelegram.js";
 import { writeExampleGatewayConfig } from "../src/gateway_cmd.js";
 import { GatewaySessionRouter } from "../src/gatewayRouter.js";
@@ -146,6 +150,33 @@ test("processTelegramUpdate sends typing and tool progress", async () => {
   });
 });
 
+test("splitTelegramMessages and formatTelegramMultipartBodies respect limit", () => {
+  const long = "a".repeat(5000);
+  const parts = splitTelegramMessages(long, TELEGRAM_MESSAGE_MAX);
+  assert.ok(parts.length >= 2);
+  assert.ok(parts.every((p) => p.length <= TELEGRAM_MESSAGE_MAX));
+  const bodies = formatTelegramMultipartBodies(long);
+  assert.ok(bodies.length >= 2);
+  assert.ok(bodies.every((b) => b.length <= TELEGRAM_MESSAGE_MAX));
+  assert.match(bodies[0]!, /^\[1\/\d+\]\n/);
+});
+
+test("telegramSendLongMessage posts multiple sendMessage calls", async () => {
+  const posts: string[] = [];
+  const fetchFn = async (url: string, init?: RequestInit) => {
+    if (url.includes("sendMessage")) {
+      const body = JSON.parse(String(init?.body)) as { text: string };
+      posts.push(body.text);
+      return new Response(JSON.stringify({ ok: true }));
+    }
+    return new Response(JSON.stringify({ ok: false }));
+  };
+  const n = await telegramSendLongMessage("tok", "42", "b".repeat(5000), fetchFn);
+  assert.ok(n >= 2);
+  assert.equal(posts.length, n);
+  assert.match(posts[0]!, /^\[1\/\d+\]\n/);
+});
+
 test("telegramGetUpdates and sendMessage use fetch mock", async () => {
   const calls: string[] = [];
   const fetchFn = async (url: string, init?: RequestInit) => {
@@ -209,6 +240,68 @@ test("startTelegramPoller processes update and replies", async () => {
     await poller.stop();
     await router.closeAll();
     assert.ok(pollCount >= 1);
+    if (prev === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prev;
+  });
+});
+
+test("startTelegramPoller splits long model replies", async () => {
+  await withKey("k", async () => {
+    const prev = process.env.TELEGRAM_BOT_TOKEN;
+    process.env.TELEGRAM_BOT_TOKEN = "test-token";
+    const dir = tmp();
+    const cfg = writeExampleGatewayConfig(dir, {
+      adapter: "telegram",
+      allowedChatIds: ["99"],
+      telegramPollIntervalMs: 500,
+    });
+    const longReply = "z".repeat(5000);
+    const disposed = { v: false };
+    const stream: RunLike["stream"] = async function* () {
+      yield { type: "assistant", message: { content: [{ type: "text", text: longReply }] } };
+    };
+    const router = new GatewaySessionRouter({
+      dir,
+      adapter: "telegram",
+      sdk: mockSdk(disposed, stream),
+    });
+    const sent: string[] = [];
+    let pollCount = 0;
+    const fetchFn = async (url: string, init?: RequestInit) => {
+      if (url.includes("getUpdates")) {
+        pollCount++;
+        if (pollCount === 1) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: [{ update_id: 8, message: { message_id: 2, chat: { id: 99 }, text: "long" } }],
+            })
+          );
+        }
+        return new Response(JSON.stringify({ ok: true, result: [] }));
+      }
+      if (url.includes("sendMessage")) {
+        const body = JSON.parse(String(init?.body)) as { text: string };
+        sent.push(body.text);
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      if (url.includes("sendChatAction")) {
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      return new Response(JSON.stringify({ ok: false }));
+    };
+    const poller = startTelegramPoller({
+      cfg,
+      router,
+      fetchFn,
+      pollIntervalMs: 20,
+    });
+    await new Promise((r) => setTimeout(r, 120));
+    await poller.stop();
+    await router.closeAll();
+    assert.ok(sent.length >= 2);
+    assert.ok(sent.every((t) => t.length <= TELEGRAM_MESSAGE_MAX));
+    assert.match(sent[0]!, /^\[1\/\d+\]\n/);
     if (prev === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = prev;
   });

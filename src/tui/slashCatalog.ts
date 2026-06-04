@@ -28,7 +28,12 @@ export function slashHelpLines(): string[] {
     const usage = c.args ? `/${c.cmd} ${c.args}` : `/${c.cmd}`;
     return `${usage.padEnd(18)} — ${c.desc}`;
   });
-  return [...rows, "", "trackpad scroll · @memory: · /rename · Ctrl+T · @file:<Tab> · Ctrl+O scroll"];
+  return [
+    ...rows,
+    "",
+    "trackpad scroll · @memory: · /rename · Ctrl+T · @file:<Tab> · Ctrl+O scroll",
+    "CSAGENT_LOG=1 → stderr diagnostics (rotation, runs); CSAGENT_LOG_VERBOSE=1 → each tool",
+  ];
 }
 
 /** Match slash command prefixes for autocomplete (first token only). */

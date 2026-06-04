@@ -2,7 +2,7 @@
  * Optional cron completion notifications (webhook or direct Telegram).
  */
 import { resolveTelegramBotToken } from "./credentials.js";
-import { telegramSendMessage } from "./gatewayTelegram.js";
+import { telegramSendLongMessage } from "./gatewayTelegram.js";
 import type { CronJob } from "./cronJobs.js";
 import type { CronExecuteResult } from "./cronEngine.js";
 
@@ -37,8 +37,7 @@ export interface CronNotifyPayload {
 
 export type CronNotifyHook = (payload: CronNotifyPayload) => void | Promise<void>;
 
-/** Telegram Bot API message length limit. */
-export const TELEGRAM_MESSAGE_MAX = 4096;
+export { TELEGRAM_MESSAGE_MAX, splitTelegramMessages } from "./gatewayTelegram.js";
 
 let customHook: CronNotifyHook | null = null;
 
@@ -81,22 +80,6 @@ export function resolveJobNotify(job: CronJob): CronJobNotifyConfig | null {
   return { chatId: t.chatId, webhookUrl: t.webhookUrl, secretEnv: t.secretEnv };
 }
 
-export function splitTelegramMessages(text: string, maxLen = TELEGRAM_MESSAGE_MAX): string[] {
-  const trimmed = text.trim();
-  if (!trimmed) return [""];
-  if (trimmed.length <= maxLen) return [trimmed];
-  const chunks: string[] = [];
-  let rest = trimmed;
-  while (rest.length > maxLen) {
-    let cut = rest.lastIndexOf("\n", maxLen);
-    if (cut < maxLen * 0.5) cut = maxLen;
-    chunks.push(rest.slice(0, cut).trimEnd());
-    rest = rest.slice(cut).trimStart();
-  }
-  if (rest) chunks.push(rest);
-  return chunks;
-}
-
 function formatNotifyText(payload: CronNotifyPayload, exec: CronExecuteResult): string {
   if (exec.output?.trim()) return exec.output.trim();
   const status = payload.ok ? "OK" : "FAILED";
@@ -129,12 +112,7 @@ export async function sendCronJobNotify(
         console.error(`[cron] notify telegram: ${target.tokenEnv} unset job=${job.id}`);
         return;
       }
-      const parts = splitTelegramMessages(text);
-      for (let i = 0; i < parts.length; i++) {
-        const body =
-          parts.length > 1 ? `[${i + 1}/${parts.length}]\n${parts[i]}` : parts[i]!;
-        await telegramSendMessage(token, target.chatId, body);
-      }
+      await telegramSendLongMessage(token, target.chatId, text);
       return;
     }
     const secret = resolveEnv(target.secretEnv);
