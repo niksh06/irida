@@ -6,31 +6,37 @@ import { stdin as input, stdout as output } from "node:process";
 import {
   API_KEY_HELP,
   TELEGRAM_TOKEN_HELP,
-  clearCredentials,
-  clearTelegramBotToken,
+  apiKeySourceLabel,
+  clearAllStoredCredentials,
+  clearStoredTelegramToken,
   credentialsPath,
   hasStoredCredentials,
   hasStoredTelegramToken,
+  persistCursorApiKey,
+  persistTelegramBotToken,
+  pgSecretsEnabled,
   resolveApiKey,
   resolveTelegramBotToken,
   saveCredentials,
   saveTelegramBotToken,
   telegramTokenSourceLabel,
+  warmCredentialsCache,
 } from "./credentials.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
-const AUTH_HELP = `csagent auth — local secrets storage (.agent/credentials.json, mode 600)
+const AUTH_HELP = `csagent auth — local secrets storage (.agent/credentials.json or postgres pgcrypto)
 
 Usage:
   csagent auth login --stdin              Cursor API key (stdin or prompt)
   csagent auth login --from-env           copy CURSOR_API_KEY from environment to file
   csagent auth telegram login --stdin     Telegram bot token
   csagent auth telegram login --from-env  copy TELEGRAM_BOT_TOKEN from environment
-  csagent auth logout                     remove entire credentials file
+  csagent auth logout                     remove stored secrets
   csagent auth telegram logout            remove telegram token only
   csagent auth status                     key + telegram configured? (never prints secrets)
 
-Environment overrides file for both CURSOR_API_KEY and TELEGRAM_BOT_TOKEN.
+Environment overrides stored secrets for both CURSOR_API_KEY and TELEGRAM_BOT_TOKEN.
+With CSAGENT_DATABASE_URL + CSAGENT_SECRETS_KEY, secrets are encrypted in Postgres (pgcrypto).
 `;
 
 async function readStdinLine(): Promise<string> {
@@ -91,13 +97,18 @@ async function cmdAuthTelegram(args: string[], dir: string): Promise<ExitCode> {
         return EXIT.usage;
       }
 
-      saveTelegramBotToken(token, dir);
-      console.log(`auth: telegram token saved to ${credentialsPath(dir)} (mode 600)`);
+      if (pgSecretsEnabled()) await persistTelegramBotToken(token, dir);
+      else saveTelegramBotToken(token, dir);
+      console.log(
+        pgSecretsEnabled()
+          ? "auth: telegram token saved (postgres credential_secrets, pgcrypto)"
+          : `auth: telegram token saved to ${credentialsPath(dir)} (mode 600)`
+      );
       return EXIT.ok;
     }
     case "logout": {
-      if (clearTelegramBotToken(dir)) {
-        console.log("auth: telegram token removed from credentials file");
+      if (await clearStoredTelegramToken(dir)) {
+        console.log("auth: telegram token removed");
       } else {
         console.log("auth: no stored telegram token");
       }
@@ -152,12 +163,17 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
         return EXIT.usage;
       }
 
-      saveCredentials(key, dir);
-      console.log(`auth: saved to ${credentialsPath(dir)} (mode 600)`);
+      if (pgSecretsEnabled()) await persistCursorApiKey(key, dir);
+      else saveCredentials(key, dir);
+      console.log(
+        pgSecretsEnabled()
+          ? "auth: cursor API key saved (postgres credential_secrets, pgcrypto)"
+          : `auth: saved to ${credentialsPath(dir)} (mode 600)`
+      );
       return EXIT.ok;
     }
     case "logout": {
-      if (clearCredentials(dir)) {
+      if (await clearAllStoredCredentials(dir)) {
         console.log("auth: credentials removed");
       } else {
         console.log("auth: no stored credentials");
@@ -165,16 +181,21 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
       return EXIT.ok;
     }
     case "status": {
+      await warmCredentialsCache(dir);
       const api = resolveApiKey(dir);
       const tg = resolveTelegramBotToken(dir);
-      console.log(`auth: CURSOR_API_KEY — ${api.source === "none" ? "not configured" : api.source === "env" ? "environment" : "local file"}`);
+      console.log(
+        `auth: CURSOR_API_KEY — ${api.source === "none" ? "not configured" : apiKeySourceLabel(api.source, dir)}`
+      );
       console.log(`auth: TELEGRAM_BOT_TOKEN — ${telegramTokenSourceLabel(tg.source, dir)}`);
-      if (hasStoredCredentials(dir)) console.log(`auth: file ${credentialsPath(dir)}`);
-      if (api.source === "file" && (process.env.CURSOR_API_KEY ?? "").trim()) {
-        console.log("auth: note — environment CURSOR_API_KEY overrides file at runtime");
+      if (hasStoredCredentials(dir) && !pgSecretsEnabled()) {
+        console.log(`auth: file ${credentialsPath(dir)}`);
       }
-      if (tg.source === "file" && (process.env.TELEGRAM_BOT_TOKEN ?? "").trim()) {
-        console.log("auth: note — environment TELEGRAM_BOT_TOKEN overrides file at runtime");
+      if ((api.source === "file" || api.source === "pg") && (process.env.CURSOR_API_KEY ?? "").trim()) {
+        console.log("auth: note — environment CURSOR_API_KEY overrides stored secret at runtime");
+      }
+      if ((tg.source === "file" || tg.source === "pg") && (process.env.TELEGRAM_BOT_TOKEN ?? "").trim()) {
+        console.log("auth: note — environment TELEGRAM_BOT_TOKEN overrides stored secret at runtime");
       }
       if (api.source === "none" && tg.source === "none") {
         console.log(API_KEY_HELP);

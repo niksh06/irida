@@ -1,15 +1,27 @@
 /**
  * Local API key storage under <stateDir>/credentials.json (default .agent/).
- * Env vars win for CI overrides. File is chmod 600; directory is gitignored.
+ * With CSAGENT_DATABASE_URL + CSAGENT_SECRETS_KEY: secrets live in Postgres (pgcrypto).
+ * Env vars win for CI overrides. Plaintext file is chmod 600; directory is gitignored.
  */
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, chmodSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
+import {
+  CREDENTIAL_SECRET_NAMES,
+  type CredentialSecretName,
+  clearPgCredentialSecrets,
+  deletePgCredentialSecret,
+  loadPgCredentialSecrets,
+  pgSecretsEnabled,
+  setPgCredentialSecret,
+} from "./credentialsPg.js";
+
+export { pgSecretsEnabled, SECRETS_KEY_ENV } from "./credentialsPg.js";
 
 export const CREDENTIALS_FILE = "credentials.json";
 export const CREDENTIALS_VERSION = 1;
 
-export type SecretSource = "env" | "file" | "none";
+export type SecretSource = "env" | "file" | "pg" | "none";
 
 /** @deprecated use SecretSource */
 export type ApiKeySource = SecretSource;
@@ -26,6 +38,7 @@ export interface ResolvedSecret {
 
 export interface CredentialsFile {
   version: number;
+  storage?: "pg";
   cursor_api_key?: string;
   telegram_bot_token?: string;
 }
@@ -36,18 +49,22 @@ export const API_KEY_HELP =
 export const TELEGRAM_TOKEN_HELP =
   "Set TELEGRAM_BOT_TOKEN in the environment or run: csagent auth telegram login --stdin";
 
+let pgSecretsCache: Partial<Record<CredentialSecretName, string>> | null = null;
+let pgCacheReady = false;
+
 /** Absolute path to the credentials file for a project. */
 export function credentialsPath(dir: string = process.cwd()): string {
   const cfg = loadConfig(dir);
   return resolve(dir, cfg.stateDir, CREDENTIALS_FILE);
 }
 
-export function readCredentialsFile(dir: string = process.cwd()): CredentialsFile {
+function readCredentialsFileFromDisk(dir: string = process.cwd()): CredentialsFile {
   const path = credentialsPath(dir);
   if (!existsSync(path)) return { version: CREDENTIALS_VERSION };
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<CredentialsFile>;
     const out: CredentialsFile = { version: CREDENTIALS_VERSION };
+    if (parsed.storage === "pg") out.storage = "pg";
     if (typeof parsed.cursor_api_key === "string" && parsed.cursor_api_key.trim()) {
       out.cursor_api_key = parsed.cursor_api_key.trim();
     }
@@ -58,6 +75,11 @@ export function readCredentialsFile(dir: string = process.cwd()): CredentialsFil
   } catch {
     return { version: CREDENTIALS_VERSION };
   }
+}
+
+/** Read credentials.json from disk (plaintext fields only; does not hit Postgres). */
+export function readCredentialsFile(dir: string = process.cwd()): CredentialsFile {
+  return readCredentialsFileFromDisk(dir);
 }
 
 function writeCredentialsFile(dir: string, data: CredentialsFile): void {
@@ -72,10 +94,11 @@ function writeCredentialsFile(dir: string, data: CredentialsFile): void {
 
   const path = resolve(stateRoot, CREDENTIALS_FILE);
   const body: CredentialsFile = { version: CREDENTIALS_VERSION };
+  if (data.storage === "pg") body.storage = "pg";
   if (data.cursor_api_key?.trim()) body.cursor_api_key = data.cursor_api_key.trim();
   if (data.telegram_bot_token?.trim()) body.telegram_bot_token = data.telegram_bot_token.trim();
 
-  if (!body.cursor_api_key && !body.telegram_bot_token) {
+  if (!body.cursor_api_key && !body.telegram_bot_token && body.storage !== "pg") {
     if (existsSync(path)) unlinkSync(path);
     return;
   }
@@ -88,16 +111,83 @@ function writeCredentialsFile(dir: string, data: CredentialsFile): void {
   }
 }
 
-/** Resolve API key: environment overrides local file. */
+function stripPlaintextSecretFromFile(dir: string, name: CredentialSecretName): void {
+  const existing = readCredentialsFileFromDisk(dir);
+  const next: CredentialsFile = { version: CREDENTIALS_VERSION };
+  if (pgSecretsEnabled()) next.storage = "pg";
+  if (name !== "cursor_api_key" && existing.cursor_api_key) next.cursor_api_key = existing.cursor_api_key;
+  if (name !== "telegram_bot_token" && existing.telegram_bot_token) {
+    next.telegram_bot_token = existing.telegram_bot_token;
+  }
+  writeCredentialsFile(dir, next);
+}
+
+function pgCachedSecret(name: CredentialSecretName): string {
+  if (!pgSecretsEnabled() || !pgCacheReady || !pgSecretsCache) return "";
+  return pgSecretsCache[name] ?? "";
+}
+
+/** Load encrypted secrets from Postgres; migrate plaintext file on first run. */
+export async function warmCredentialsCache(dir: string = process.cwd()): Promise<void> {
+  if (!pgSecretsEnabled()) {
+    pgSecretsCache = null;
+    pgCacheReady = false;
+    return;
+  }
+  try {
+    const loaded = await loadPgCredentialSecrets();
+    const file = readCredentialsFileFromDisk(dir);
+    let migrated = false;
+    for (const name of CREDENTIAL_SECRET_NAMES) {
+      if (!loaded[name] && file[name]) {
+        await setPgCredentialSecret(name, file[name]!);
+        loaded[name] = file[name];
+        migrated = true;
+      }
+    }
+    if (migrated) {
+      writeCredentialsFile(dir, { version: CREDENTIALS_VERSION, storage: "pg" });
+    } else if (Object.keys(loaded).length > 0 || file.storage === "pg") {
+      const hasPlain = Boolean(file.cursor_api_key || file.telegram_bot_token);
+      if (!hasPlain && file.storage !== "pg") {
+        writeCredentialsFile(dir, { version: CREDENTIALS_VERSION, storage: "pg" });
+      }
+    }
+    pgSecretsCache = loaded;
+    pgCacheReady = true;
+  } catch {
+    // Postgres unavailable — fall back to plaintext credentials.json if present.
+    pgSecretsCache = null;
+    pgCacheReady = false;
+  }
+}
+
+async function persistSecret(name: CredentialSecretName, value: string, dir: string): Promise<void> {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("secret must be a non-empty string");
+  if (pgSecretsEnabled()) {
+    await setPgCredentialSecret(name, trimmed);
+    pgSecretsCache = { ...(pgSecretsCache ?? {}), [name]: trimmed };
+    pgCacheReady = true;
+    stripPlaintextSecretFromFile(dir, name);
+    return;
+  }
+  const existing = readCredentialsFileFromDisk(dir);
+  writeCredentialsFile(dir, { ...existing, [name]: trimmed });
+}
+
+/** Resolve API key: environment overrides postgres/file. */
 export function resolveApiKey(dir: string = process.cwd()): ResolvedApiKey {
   const fromEnv = (process.env.CURSOR_API_KEY ?? "").trim();
   if (fromEnv) return { key: fromEnv, source: "env" };
-  const fromFile = readCredentialsFile(dir).cursor_api_key ?? "";
+  const fromPg = pgCachedSecret("cursor_api_key");
+  if (fromPg) return { key: fromPg, source: "pg" };
+  const fromFile = readCredentialsFileFromDisk(dir).cursor_api_key ?? "";
   if (fromFile) return { key: fromFile, source: "file" };
   return { key: "", source: "none" };
 }
 
-/** Resolve Telegram bot token: environment overrides local file. */
+/** Resolve Telegram bot token: environment overrides postgres/file. */
 export function resolveTelegramBotToken(
   dir: string = process.cwd(),
   envName: string = "TELEGRAM_BOT_TOKEN"
@@ -105,44 +195,91 @@ export function resolveTelegramBotToken(
   const name = envName.trim() || "TELEGRAM_BOT_TOKEN";
   const fromEnv = (process.env[name] ?? "").trim();
   if (fromEnv) return { value: fromEnv, source: "env" };
-  const fromFile = readCredentialsFile(dir).telegram_bot_token ?? "";
+  const fromPg = pgCachedSecret("telegram_bot_token");
+  if (fromPg) return { value: fromPg, source: "pg" };
+  const fromFile = readCredentialsFileFromDisk(dir).telegram_bot_token ?? "";
   if (fromFile) return { value: fromFile, source: "file" };
   return { value: "", source: "none" };
 }
 
+export function hasPlaintextCredentialsOnDisk(dir: string = process.cwd()): boolean {
+  const file = readCredentialsFileFromDisk(dir);
+  return Boolean(file.cursor_api_key || file.telegram_bot_token);
+}
+
 export function hasStoredCredentials(dir: string = process.cwd()): boolean {
+  if (pgSecretsEnabled() && pgCacheReady && pgSecretsCache && Object.keys(pgSecretsCache).length > 0) {
+    return true;
+  }
   return existsSync(credentialsPath(dir));
 }
 
 export function hasStoredTelegramToken(dir: string = process.cwd()): boolean {
-  return Boolean(readCredentialsFile(dir).telegram_bot_token);
+  if (pgCachedSecret("telegram_bot_token")) return true;
+  return Boolean(readCredentialsFileFromDisk(dir).telegram_bot_token);
 }
 
-/** Persist Cursor API key; preserves other secrets in the same file. */
+/** Persist Cursor API key; preserves other secrets. */
 export function saveCredentials(apiKey: string, dir: string = process.cwd()): void {
   const key = apiKey.trim();
   if (!key) throw new Error("API key must be a non-empty string");
-  const existing = readCredentialsFile(dir);
+  if (pgSecretsEnabled()) {
+    throw new Error("saveCredentials: use persistCursorApiKey when CSAGENT_SECRETS_KEY is set");
+  }
+  const existing = readCredentialsFileFromDisk(dir);
   writeCredentialsFile(dir, { ...existing, cursor_api_key: key });
 }
 
-/** Persist Telegram bot token; preserves other secrets in the same file. */
+export async function persistCursorApiKey(apiKey: string, dir: string = process.cwd()): Promise<void> {
+  await persistSecret("cursor_api_key", apiKey, dir);
+}
+
+/** Persist Telegram bot token; preserves other secrets. */
 export function saveTelegramBotToken(token: string, dir: string = process.cwd()): void {
   const value = token.trim();
   if (!value) throw new Error("Telegram bot token must be a non-empty string");
-  const existing = readCredentialsFile(dir);
+  if (pgSecretsEnabled()) {
+    throw new Error("saveTelegramBotToken: use persistTelegramBotToken when CSAGENT_SECRETS_KEY is set");
+  }
+  const existing = readCredentialsFileFromDisk(dir);
   writeCredentialsFile(dir, { ...existing, telegram_bot_token: value });
 }
 
+export async function persistTelegramBotToken(token: string, dir: string = process.cwd()): Promise<void> {
+  await persistSecret("telegram_bot_token", token, dir);
+}
+
 export function clearCredentials(dir: string = process.cwd()): boolean {
+  if (pgSecretsEnabled()) {
+    throw new Error("clearCredentials: use clearAllStoredCredentials when CSAGENT_SECRETS_KEY is set");
+  }
   const path = credentialsPath(dir);
   if (!existsSync(path)) return false;
   unlinkSync(path);
   return true;
 }
 
+export async function clearAllStoredCredentials(dir: string = process.cwd()): Promise<boolean> {
+  let removed = false;
+  if (pgSecretsEnabled()) {
+    const n = await clearPgCredentialSecrets();
+    pgSecretsCache = {};
+    pgCacheReady = true;
+    removed = n > 0;
+  }
+  const path = credentialsPath(dir);
+  if (existsSync(path)) {
+    unlinkSync(path);
+    removed = true;
+  }
+  return removed;
+}
+
 export function clearTelegramBotToken(dir: string = process.cwd()): boolean {
-  const existing = readCredentialsFile(dir);
+  if (pgSecretsEnabled()) {
+    throw new Error("clearTelegramBotToken: use clearStoredTelegramToken when CSAGENT_SECRETS_KEY is set");
+  }
+  const existing = readCredentialsFileFromDisk(dir);
   if (!existing.telegram_bot_token) return false;
   const next = { ...existing };
   delete next.telegram_bot_token;
@@ -150,8 +287,24 @@ export function clearTelegramBotToken(dir: string = process.cwd()): boolean {
   return true;
 }
 
+export async function clearStoredTelegramToken(dir: string = process.cwd()): Promise<boolean> {
+  let removed = false;
+  if (pgSecretsEnabled()) {
+    removed = (await deletePgCredentialSecret("telegram_bot_token")) || removed;
+    if (pgSecretsCache) delete pgSecretsCache.telegram_bot_token;
+    pgCacheReady = true;
+    stripPlaintextSecretFromFile(dir, "telegram_bot_token");
+  } else {
+    removed = clearTelegramBotToken(dir);
+  }
+  return removed;
+}
+
 export function clearCursorApiKey(dir: string = process.cwd()): boolean {
-  const existing = readCredentialsFile(dir);
+  if (pgSecretsEnabled()) {
+    throw new Error("clearCursorApiKey: use clearStoredCursorApiKey when CSAGENT_SECRETS_KEY is set");
+  }
+  const existing = readCredentialsFileFromDisk(dir);
   if (!existing.cursor_api_key) return false;
   const next = { ...existing };
   delete next.cursor_api_key;
@@ -159,11 +312,26 @@ export function clearCursorApiKey(dir: string = process.cwd()): boolean {
   return true;
 }
 
+export async function clearStoredCursorApiKey(dir: string = process.cwd()): Promise<boolean> {
+  let removed = false;
+  if (pgSecretsEnabled()) {
+    removed = (await deletePgCredentialSecret("cursor_api_key")) || removed;
+    if (pgSecretsCache) delete pgSecretsCache.cursor_api_key;
+    pgCacheReady = true;
+    stripPlaintextSecretFromFile(dir, "cursor_api_key");
+  } else {
+    removed = clearCursorApiKey(dir);
+  }
+  return removed;
+}
+
 /** Doctor-friendly label without exposing the secret. */
 export function apiKeySourceLabel(source: SecretSource, dir: string = process.cwd()): string {
   switch (source) {
     case "env":
       return "set (environment)";
+    case "pg":
+      return "set (postgres credential_secrets, pgcrypto)";
     case "file":
       return `set (${loadConfig(dir).stateDir}/${CREDENTIALS_FILE})`;
     case "none":
@@ -179,6 +347,8 @@ export function telegramTokenSourceLabel(
   switch (source) {
     case "env":
       return `set (environment ${envName})`;
+    case "pg":
+      return "set (postgres credential_secrets, pgcrypto)";
     case "file":
       return `set (${loadConfig(dir).stateDir}/${CREDENTIALS_FILE})`;
     case "none":

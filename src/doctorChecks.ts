@@ -5,7 +5,13 @@ import { accessSync, constants, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { CONFIG_FILE, ConfigError, loadConfig, resolveMemoryRoot, validateMcpServers } from "./config.js";
 import { resolveMcpServers } from "./mcpServers.js";
-import { resolveApiKey, apiKeySourceLabel } from "./credentials.js";
+import {
+  apiKeySourceLabel,
+  hasPlaintextCredentialsOnDisk,
+  pgSecretsEnabled,
+  resolveApiKey,
+} from "./credentials.js";
+import { probePgCredentialStore, SECRETS_KEY_ENV, secretsKey } from "./credentialsPg.js";
 import { probePostgresStore } from "./store.js";
 import { validateCronJobsFile, cronJobsPath } from "./cronJobs.js";
 import { validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
@@ -73,6 +79,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   checks.push({ name: "state writable", ok: writeOk, detail: writeDetail });
 
   checks.push(...gatherMemoryEnvChecks(dir));
+  checks.push(...gatherCredentialsEnvChecks(dir));
 
   const cronPath = cronJobsPath(dir);
   if (existsSync(cronPath)) {
@@ -94,6 +101,31 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
     });
   }
 
+  return checks;
+}
+
+function gatherCredentialsEnvChecks(dir: string): DoctorCheck[] {
+  const checks: DoctorCheck[] = [];
+  const pg = process.env.CSAGENT_DATABASE_URL?.trim();
+  const key = secretsKey();
+  if (pg && !key) {
+    checks.push({
+      name: "credentials store",
+      ok: true,
+      detail: `plaintext ${loadConfig(dir).stateDir}/credentials.json (set ${SECRETS_KEY_ENV} for pgcrypto)`,
+    });
+    return checks;
+  }
+  if (pg && key) {
+    const plain = hasPlaintextCredentialsOnDisk(dir);
+    checks.push({
+      name: "credentials plaintext",
+      ok: !plain,
+      detail: plain
+        ? "credentials.json still has plaintext — run auth login to migrate"
+        : "no plaintext secrets on disk",
+    });
+  }
   return checks;
 }
 
@@ -148,8 +180,14 @@ export async function gatherDoctorStoreChecks(_dir: string = process.cwd()): Pro
   if (!url) {
     return [{ name: "store", ok: true, detail: "sqlite (CSAGENT_DATABASE_URL unset)" }];
   }
+  const checks: DoctorCheck[] = [];
   const probe = await probePostgresStore(url);
-  return [{ name: "CSAGENT_DATABASE_URL", ok: probe.ok, detail: probe.detail }];
+  checks.push({ name: "CSAGENT_DATABASE_URL", ok: probe.ok, detail: probe.detail });
+  if (pgSecretsEnabled()) {
+    const cred = await probePgCredentialStore(url, secretsKey());
+    checks.push({ name: "credential_secrets", ok: cred.ok, detail: cred.detail });
+  }
+  return checks;
 }
 
 /** Tier-1 Cursor API probe (models list). Skipped when key is unset. */

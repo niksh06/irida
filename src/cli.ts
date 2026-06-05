@@ -5,6 +5,7 @@
  * implemented. See docs/reviews/mvp-p0-review.md for status and limitations.
  */
 import { loadCsagentEnv } from "./loadEnv.js";
+import { warmCredentialsCache } from "./credentials.js";
 loadCsagentEnv();
 
 import { cmdDoctor } from "./doctor.js";
@@ -60,6 +61,7 @@ function extractFlags(args: string[]): { skills: string[]; yes: boolean; rest: s
 }
 
 async function main(argv: string[]): Promise<number> {
+  await warmCredentialsCache(process.cwd());
   const [cmd, ...rest] = argv;
   switch (cmd) {
     case "doctor":
