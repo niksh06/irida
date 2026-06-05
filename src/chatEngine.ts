@@ -38,6 +38,7 @@ import { consumeRunStream, formatSdkError, isAgentRotatableError } from "./sdkEr
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 import { formatRunErrorMessage, pickRunErrorDetail } from "./runErrors.js";
 import { agentLogVerbose, resolveAgentLogger } from "./agentLog.js";
+import { isAgentIdle, resolveAgentIdleMs } from "./agentIdle.js";
 
 type ChatSdk = SdkCreateLike & SdkResumeLike;
 
@@ -68,8 +69,8 @@ export interface ChatSessionOptions {
   onAssistantDelta?: (delta: string) => void;
   onThinkingDelta?: (chunk: string) => void;
   onActivity?: (entry: ActivityDetail) => void;
-  /** Fired once before retrying a turn after in-session agent rotation. */
-  onTurnRetry?: () => void;
+  /** Fired before resending a turn after agent rotation (idle refresh or run_error). */
+  onTurnRetry?: (reason?: string) => void;
   /** Fired when SDK agent is replaced inside the same csagent session. */
   onAgentRotated?: (info: AgentRotatedInfo) => void;
 }
@@ -181,6 +182,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   let replayPrefix = "";
   let sessionCwd = opts.cwd ?? cfg.cwd;
   let sessionChannel = opts.channel ?? "";
+  let lastAgentTouchAt = Date.now();
 
   if (opts.resumeSessionId) {
     const existing = await store.getSession(opts.resumeSessionId);
@@ -188,6 +190,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       await store.close();
       return { ok: false, code: EXIT.usage, message: `session '${opts.resumeSessionId}' not found` };
     }
+    const resumedAt = Date.parse(existing.updated_at);
+    if (Number.isFinite(resumedAt)) lastAgentTouchAt = resumedAt;
     if (!sessionAllowedForChannel(existing, opts.channel, gatewayPeerIds)) {
       await store.close();
       return {
@@ -331,9 +335,16 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         attemptSendMsg = prefix
           ? prefix + "Continue. New request:\n\n" + baseSendMsg
           : baseSendMsg;
-        opts.onTurnRetry?.();
+        opts.onTurnRetry?.(reason);
         return true;
       };
+
+      if (isAgentIdle(lastAgentTouchAt)) {
+        log(
+          `[chat] idle refresh due lastTouch=${lastAgentTouchAt} idleMs=${resolveAgentIdleMs()} agoMs=${Date.now() - lastAgentTouchAt}`
+        );
+        await tryRotateAgent(`idle_ttl ${resolveAgentIdleMs()}ms`);
+      }
 
       for (;;) {
         const runId = newId("run");
@@ -427,6 +438,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             };
           }
           log(`[chat] sendTurn ok status=${lastStatus} assistantChars=${turnText.length}`);
+          lastAgentTouchAt = Date.now();
           return { kind: "ok", status: lastStatus, assistantText: turnText, stats };
         } catch (e) {
           const formatted = formatSdkError(e);

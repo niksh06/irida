@@ -32,7 +32,7 @@ export function slashHelpLines(): string[] {
     ...rows,
     "",
     "trackpad scroll · @memory: · /rename · Ctrl+T · @file:<Tab> · Ctrl+O scroll",
-    "CSAGENT_LOG=1 → stderr diagnostics (rotation, runs); CSAGENT_LOG_VERBOSE=1 → each tool",
+    "CSAGENT_LOG=1 → stderr diagnostics (rotation, runs); CSAGENT_AGENT_IDLE_MS=0 disables idle refresh",
   ];
 }
 

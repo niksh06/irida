@@ -223,16 +223,9 @@ export function App(props: TuiOptions) {
     setMessages((prev) => [...prev, { ...msg, id: nextId(msg.role) }]);
   }, []);
 
-  const resetTurnRetry = useCallback(() => {
-    setMessages((prev) => {
-      const next = [...prev];
-      const last = next[next.length - 1];
-      if (last?.role === "assistant" && last.streaming) {
-        next[next.length - 1] = { ...last, text: "" };
-      }
-      return next;
-    });
-    setThinkingText("Retrying after agent rotation…");
+  const resetTurnRetry = useCallback((reason?: string) => {
+    const idle = reason?.startsWith("idle_ttl");
+    setThinkingText(idle ? "Refreshing agent after idle…" : "Continuing after refresh…");
   }, []);
 
   const bootSession = useCallback(
@@ -259,15 +252,22 @@ export function App(props: TuiOptions) {
           const to = info.newAgentId?.slice(0, 6) ?? "-";
           const replay =
             info.replayTurns > 0 ? `replay ${info.replayTurns} turns · ` : "";
-          const why = info.reason ? ` (${info.reason})` : "";
+          const idle = info.reason?.startsWith("idle_ttl");
+          const why = idle
+            ? " (session idle — proactive refresh)"
+            : info.reason
+              ? ` (${info.reason})`
+              : "";
           pushMessage({
             role: "system",
-            text: `· SDK agent reinitialized · ${replay}agent ${from}… → ${to}…${why}`,
+            text: idle
+              ? `· Session idle · refreshed agent · ${replay}agent ${from}… → ${to}…`
+              : `· SDK agent reinitialized · ${replay}agent ${from}… → ${to}…${why}`,
           });
           noteActivity({
-            label: "retrying after rotation",
+            label: idle ? "refreshing after idle" : "continuing after rotation",
             kind: "other",
-            command: "SDK agent reinitialized",
+            command: idle ? "Proactive agent refresh" : "SDK agent reinitialized",
             phase: "call",
           });
           setMeta((m) => (m ? { ...m, agentId: info.newAgentId } : m));
