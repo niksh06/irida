@@ -15,6 +15,7 @@ import {
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { startWebhookServer, type WebhookServer } from "./gatewayWebhook.js";
 import { startTelegramPoller, type TelegramPoller } from "./gatewayTelegram.js";
+import { gatherGatewayStatus } from "./gatewayStatus.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
 export interface GatewayRunOptions {
@@ -115,9 +116,23 @@ export async function cmdGatewayRun(opts: GatewayRunOptions = {}): Promise<ExitC
   });
 }
 
+export function cmdGatewayStatus(opts: GatewayRunOptions = {}): ExitCode {
+  const dir = opts.dir ?? process.cwd();
+  const rows = gatherGatewayStatus(dir);
+  let ok = true;
+  for (const r of rows) {
+    const mark = r.ok ? "ok" : "FAIL";
+    if (!r.ok) ok = false;
+    console.log(`${mark.padEnd(5)} ${r.name.padEnd(18)} ${r.detail}`);
+  }
+  return ok ? EXIT.ok : EXIT.config;
+}
+
 export async function cmdGateway(argv: string[], opts: GatewayRunOptions = {}): Promise<ExitCode> {
   const [sub, ...rest] = argv;
   switch (sub) {
+    case "status":
+      return cmdGatewayStatus(opts);
     case "run": {
       let adapter: string | undefined;
       let port: number | undefined;
@@ -132,6 +147,7 @@ export async function cmdGateway(argv: string[], opts: GatewayRunOptions = {}): 
     case "--help":
     case "help":
       console.log(`Usage:
+  csagent gateway status          launchd + log probe (no server start)
   csagent gateway run [--adapter webhook|telegram] [--port 18789]
 
 Config: .agent/gateway.json

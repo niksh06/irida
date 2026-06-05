@@ -15,6 +15,13 @@
         "telegram": true
       },
       "promptFile": "deploy/prompts/tparser-bi-hourly.prompt.txt"
+    },
+    {
+      "id": "happyin-kb-weekly",
+      "cron": "0 3 * * 0",
+      "enabled": false,
+      "yesIUnderstand": true,
+      "promptFile": "deploy/prompts/kb-import-weekly.prompt.txt"
     }
   ]
 }

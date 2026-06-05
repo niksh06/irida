@@ -294,11 +294,15 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   let offset = 0;
   let running = true;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let consecutiveErrors = 0;
+  const maxBackoffMs = 60_000;
 
   const tick = async () => {
     if (!running) return;
+    let nextDelayMs = pollMs;
     try {
       const updates = await telegramGetUpdates(token, offset, Math.min(50, Math.max(1, Math.floor(pollMs / 1000))), fetchFn);
+      consecutiveErrors = 0;
       for (const u of updates) {
         offset = Math.max(offset, u.update_id + 1);
         const result = await processTelegramUpdate(opts.cfg, opts.router, u, { token, fetchFn });
@@ -319,9 +323,13 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
         }
       }
     } catch (e) {
-      log(`[gateway] telegram poll error: ${e instanceof Error ? e.message : String(e)}`);
+      consecutiveErrors++;
+      nextDelayMs = Math.min(pollMs * 2 ** (consecutiveErrors - 1), maxBackoffMs);
+      log(
+        `[gateway] telegram poll error (#${consecutiveErrors}): ${e instanceof Error ? e.message : String(e)}; retry in ${nextDelayMs}ms`
+      );
     }
-    if (running) timer = setTimeout(() => void tick(), pollMs);
+    if (running) timer = setTimeout(() => void tick(), nextDelayMs);
   };
 
   log(`[gateway] telegram long-poll started (interval=${pollMs}ms)`);

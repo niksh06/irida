@@ -111,6 +111,17 @@ test("GatewaySessionRouter maps peer to stable sess_", async () => {
   });
 });
 
+test("GatewaySessionRouter maps digest follow-up to expanded prompt", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+    const out = await router.handleInbound("u1", "топ-50");
+    assert.match(out.reply, /\[digest-followup\]/);
+    assert.match(out.reply, /top-50/);
+    await router.closeAll();
+  });
+});
+
 test("GatewaySessionRouter /new resets peer to fresh sess_", async () => {
   await withKey("k", async () => {
     const dir = tmp();

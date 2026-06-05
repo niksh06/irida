@@ -2,7 +2,7 @@
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
-> **Local-first** (no cloud runs yet). **Cron** · **Gateway** (webhook + Telegram) · **Ink TUI** · **233 tests** green.
+> **Local-first** (no cloud runs yet). **Cron** · **Gateway** (webhook + Telegram) · **Ink TUI** · **241 tests** green.
 
 ## Feature overview
 
@@ -200,6 +200,7 @@ csagent auth logout                  # remove credentials file
 csagent memory list|show|add|search|rm|import-md …
 csagent memory fact add|query|invalidate …
 csagent cron list|run <id>|tick
+csagent gateway status         # launchd + log probe
 csagent gateway run [--adapter webhook|telegram] [--port 18789]
 ```
 
@@ -413,7 +414,7 @@ Auth errors (`ERROR_NOT_LOGGED_IN`) are **not** fixed by rotation — refresh th
 
 ```bash
 npm run typecheck
-npm test            # 233 tests, mocked SDK
+npm test            # 241 tests, mocked SDK
 npm run accept      # MVP acceptance harness
 npm run smoke       # live SDK (needs key)
 ```

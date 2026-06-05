@@ -10,6 +10,7 @@ import {
   type GatewayPeersFile,
 } from "./gatewayPeers.js";
 import type { SessionChannel } from "./sessionChannel.js";
+import { parseDigestFollowup } from "./gatewayDigestFollowup.js";
 
 export { GATEWAY_PEERS_FILE, loadGatewayPeers, saveGatewayPeers, peerKey } from "./gatewayPeers.js";
 export type { GatewayPeersFile } from "./gatewayPeers.js";
@@ -110,7 +111,12 @@ export class GatewaySessionRouter {
         };
       }
       const session = await this.getOrCreateSession(chatId);
-      const out = await session.sendTurn(text, hooks);
+      const followup = parseDigestFollowup(text);
+      const turnText = followup?.prompt ?? text;
+      if (followup) {
+        this.onLog(`[gateway] digest follow-up ${followup.label} chat=${chatId}`);
+      }
+      const out = await session.sendTurn(turnText, hooks);
       if (out.kind === "ok") return { reply: out.assistantText };
       if (out.kind === "blocked") throw new GatewayRouterError(out.reason);
       const partial = out.partialAssistantText?.trim();

@@ -13,7 +13,8 @@ import {
 } from "./credentials.js";
 import { probePgCredentialStore, SECRETS_KEY_ENV, secretsKey } from "./credentialsPg.js";
 import { probePostgresStore } from "./store.js";
-import { validateCronJobsFile, cronJobsPath } from "./cronJobs.js";
+import { loadCronJobs, validateCronJobsFile, cronJobsPath } from "./cronJobs.js";
+import { gatherCronPromptDrift } from "./cronPromptDrift.js";
 import { validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
 
 export interface DoctorCheck {
@@ -89,6 +90,14 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
       ok: cronErrs.length === 0,
       detail: cronErrs.length ? cronErrs.join("; ") : "cron.jobs.json valid",
     });
+    if (cronErrs.length === 0) {
+      const drift = gatherCronPromptDrift(dir);
+      checks.push({
+        name: "cron prompts",
+        ok: drift.ok,
+        detail: drift.ok ? "deploy/runtime prompts aligned" : drift.warnings.join("; "),
+      });
+    }
   }
 
   const gwPath = gatewayConfigPath(dir);
@@ -163,6 +172,26 @@ function gatherMemoryEnvChecks(dir: string): DoctorCheck[] {
         ok: false,
         detail: `${count} note(s) in repo ${repoMemory}; canonical is ${canonical}/memory`,
       });
+    }
+  }
+
+  if (home) {
+    try {
+      for (const job of loadCronJobs(dir)) {
+        if (!job.cwd?.trim()) continue;
+        const silo = resolve(job.cwd.trim(), ".agent", "memory");
+        if (!existsSync(silo)) continue;
+        const count = readdirSync(silo).filter((f) => f.endsWith(".md")).length;
+        if (count > 0) {
+          checks.push({
+            name: "memory silo (cron cwd)",
+            ok: false,
+            detail: `${count} note(s) in ${silo} (job ${job.id}) — canonical ${canonical}/memory`,
+          });
+        }
+      }
+    } catch {
+      /* cron file optional */
     }
   }
 
