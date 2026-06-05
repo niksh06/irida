@@ -51,6 +51,7 @@ import type { ActivityDetail } from "../host.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, TurnStats } from "./types.js";
 import type { SessionRecord } from "../store.js";
 import { resolveAgentLogger } from "../agentLog.js";
+import { indexOfLastAssistant, indexOfStreamingAssistant } from "./streamingTarget.js";
 
 let msgSeq = 0;
 function nextId(prefix: string): string {
@@ -199,22 +200,22 @@ export function App(props: TuiOptions) {
 
   const patchStreaming = useCallback((delta: string) => {
     setMessages((prev) => {
+      const idx = indexOfStreamingAssistant(prev);
+      if (idx < 0) return prev;
       const next = [...prev];
-      const last = next[next.length - 1];
-      if (last?.role === "assistant" && last.streaming) {
-        next[next.length - 1] = { ...last, text: last.text + delta };
-      }
+      const cur = next[idx]!;
+      next[idx] = { ...cur, text: cur.text + delta };
       return next;
     });
   }, []);
 
   const finishStreaming = useCallback(() => {
     setMessages((prev) => {
+      const idx = indexOfStreamingAssistant(prev);
+      if (idx < 0) return prev;
       const next = [...prev];
-      const last = next[next.length - 1];
-      if (last?.streaming) {
-        next[next.length - 1] = { ...last, streaming: false };
-      }
+      const cur = next[idx]!;
+      next[idx] = { ...cur, streaming: false };
       return next;
     });
   }, []);
@@ -670,15 +671,16 @@ export function App(props: TuiOptions) {
         setLastTurnStats(out.stats);
         if (!out.assistantText.trim()) {
           setMessages((prev) => {
+            const idx = indexOfLastAssistant(prev);
+            if (idx < 0) return prev;
+            const cur = prev[idx]!;
+            if (cur.text.trim()) return prev;
             const next = [...prev];
-            const last = next[next.length - 1];
-            if (last?.role === "assistant" && !last.text.trim()) {
-              next[next.length - 1] = {
-                ...last,
-                text: "Turn завершился без текста (только tools или сбой SDK). Смотри /tools или переформулируй вопрос.",
-                streaming: false,
-              };
-            }
+            next[idx] = {
+              ...cur,
+              text: "Turn завершился без текста (только tools или сбой SDK). Смотри /tools или переформулируй вопрос.",
+              streaming: false,
+            };
             return next;
           });
         }
@@ -693,17 +695,19 @@ export function App(props: TuiOptions) {
       }
       if (out.kind === "error") {
         setMessages((prev) => {
-          const next = [...prev];
-          const last = next[next.length - 1];
-          if (out.partialAssistantText && last?.role === "assistant") {
-            next[next.length - 1] = {
-              ...last,
+          const idx = indexOfLastAssistant(prev);
+          if (out.partialAssistantText && idx >= 0) {
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx]!,
               text: out.partialAssistantText,
               streaming: false,
             };
             return [...next, { id: nextId("err"), role: "error", text: out.message }];
           }
-          return [...prev.slice(0, -1), { id: nextId("err"), role: "error", text: out.message }];
+          const drop = indexOfStreamingAssistant(prev);
+          if (drop >= 0) return [...prev.slice(0, drop), ...prev.slice(drop + 1), { id: nextId("err"), role: "error", text: out.message }];
+          return [...prev, { id: nextId("err"), role: "error", text: out.message }];
         });
         if (out.fatal) setFatal(out.message);
       }
