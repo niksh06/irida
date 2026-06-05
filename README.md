@@ -2,7 +2,7 @@
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
-> **Local-first** (no cloud runs yet). **Cron** · **Gateway** (webhook + Telegram) · **Ink TUI** · **217 tests** green.
+> **Local-first** (no cloud runs yet). **Cron** · **Gateway** (webhook + Telegram) · **Ink TUI** · **222 tests** green.
 
 ## Feature overview
 
@@ -360,9 +360,10 @@ Project-local `agent.config.json`. **Secrets never go here.**
 
 | Secret | Use when |
 |--------|----------|
-| `csagent auth login --stdin` | Cursor API key → `.agent/credentials.json` |
-| `csagent auth telegram login --stdin` | Telegram bot token (same file) |
-| `export CURSOR_API_KEY=…` / `TELEGRAM_BOT_TOKEN=…` | CI override (wins over file) |
+| `csagent auth login --stdin` | Cursor API key → `.agent/credentials.json` or Postgres (pgcrypto) |
+| `csagent auth telegram login --stdin` | Telegram bot token (same stores) |
+| `export CSAGENT_SECRETS_KEY=…` | With `CSAGENT_DATABASE_URL` — encrypt tokens in `credential_secrets` |
+| `export CURSOR_API_KEY=…` / `TELEGRAM_BOT_TOKEN=…` | CI override (wins over stored secrets) |
 
 ```json
 {
@@ -412,12 +413,14 @@ Auth errors (`ERROR_NOT_LOGGED_IN`) are **not** fixed by rotation — refresh th
 
 ```bash
 npm run typecheck
-npm test            # 217 tests, mocked SDK
+npm test            # 222 tests, mocked SDK
 npm run accept      # MVP acceptance harness
 npm run smoke       # live SDK (needs key)
 ```
 
 Optional diagnostics: `CSAGENT_LOG=1` in `csagent.env` (rotation, runs); `CSAGENT_LOG_VERBOSE=1` for per-tool lines.
+
+Idle sessions: `CSAGENT_AGENT_IDLE_MS` (default `1200000` = 20 min) proactively refreshes the SDK agent before the next turn; set `0` to disable.
 
 ## Architecture
 
