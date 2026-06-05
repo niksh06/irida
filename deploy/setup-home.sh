@@ -58,10 +58,12 @@ sync_install() {
 sync_install
 
 PRESERVE_DATABASE_URL=""
+PRESERVE_SECRETS_KEY=""
 if [[ -f "$CSAGENT_HOME/csagent.env" ]]; then
   # shellcheck disable=SC1090
   source "$CSAGENT_HOME/csagent.env"
   PRESERVE_DATABASE_URL="${CSAGENT_DATABASE_URL:-}"
+  PRESERVE_SECRETS_KEY="${CSAGENT_SECRETS_KEY:-}"
 fi
 
 cat > "$CSAGENT_HOME/csagent.env" <<EOF
@@ -71,8 +73,10 @@ export CSAGENT_HOME="$CSAGENT_HOME"
 export CSAGENT_ROOT="$CSAGENT_ROOT"
 # Hybrid store (Phase 1): unset = sqlite in \$CSAGENT_HOME/.agent/
 ${PRESERVE_DATABASE_URL:+export CSAGENT_DATABASE_URL="$PRESERVE_DATABASE_URL"}
+${PRESERVE_SECRETS_KEY:+export CSAGENT_SECRETS_KEY="$PRESERVE_SECRETS_KEY"}
 # Optional overrides:
 # export CSAGENT_DATABASE_URL="postgresql://csagent:csagent@127.0.0.1:5435/csagent"
+# export CSAGENT_SECRETS_KEY="change-me-long-random-passphrase"  # pgcrypto for cursor/telegram tokens in PG
 # export CURSOR_API_KEY=
 # export TELEGRAM_BOT_TOKEN=
 EOF
