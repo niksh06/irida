@@ -106,11 +106,12 @@ Migrations run automatically on first connect (`deploy/postgres/migrations/*.sql
 ### Backup
 
 ```bash
-docker exec deploy-csagent-postgres-1 pg_dump -U csagent -Fc csagent \
-  > ~/backups/csagent-$(date +%Y%m%d).dump
+docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-postgres \
+  pg_dump -U csagent -Fc csagent > ~/backups/csagent-$(date +%Y%m%d).dump
 
-# restore
-pg_restore -U csagent -d csagent --clean --if-exists ~/backups/csagent-YYYYMMDD.dump
+# restore (from host, with pg client)
+docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-postgres \
+  pg_restore -U csagent -d csagent --clean --if-exists < ~/backups/csagent-YYYYMMDD.dump
 ```
 
 ## Memory (Phase 2, MCP-first)

@@ -1,4 +1,4 @@
-# cursor-agent
+# csagent
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
@@ -11,13 +11,11 @@ Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/s
 | **CLI** | `doctor`, `run`, `chat`, `sessions`, `resume`, `config`, `skills` |
 | **TUI** | `csagent tui` — tabs, slash cmds, overlays, scroll, `@file` complete |
 | **Auth** | `csagent auth login` + `auth telegram login` → `.agent/credentials.json` (600) |
-| **Memory** | `@memory:name` + `/memory` + `csagent memory …` |
+| **Memory** | `@memory:name`, MCP tools, `memory import-md`, `memory fact …` |
 | **Cron** | `.agent/cron.jobs.json` + `cron tick` from OS scheduler |
 | **Gateway** | Webhook or Telegram → stable `sess_` per chat id |
 | **Resilience** | SDK agent rotation in-session; auth errors surfaced clearly |
 | **Safety** | Destructive prompt gate, secret redaction, BSD exit codes |
-
-Full capability report: [Reports/projects/csagent-capabilities-2026-05-31.md](Reports/projects/csagent-capabilities-2026-05-31.md).
 
 ## Requirements
 
@@ -34,16 +32,16 @@ export CURSOR_API_KEY="cursor_..."   # Dashboard → Integrations
 
 ## Install
 
-Оба варианта используют **Node.js ≥ 20** и **Cursor API key** (см. [Requirements](#requirements)). Выберите store:
+Both paths need **Node.js ≥ 20** and a **Cursor API key** (see [Requirements](#requirements)). Pick a store:
 
-| | **Вариант 1 — SQLite** | **Вариант 2 — Postgres** |
+| | **Option 1 — SQLite** | **Option 2 — Postgres** |
 |---|------------------------|---------------------------|
-| Сложность | Проще, без Docker | Docker + `CSAGENT_DATABASE_URL` |
-| Данные | `~/.csagent/.agent/state.sqlite` (или `./.agent/` в клоне) | Postgres `:5435`, sessions + memory в PG |
-| Когда | Локальная разработка, TUI/CLI, мало заметок | Production home, Telegram gateway, cron, KB 800+ notes |
-| Паритет dev↔gateway | Только если везде один `CSAGENT_HOME` и **без** PG URL | Один PG — один источник для TUI, gateway, cron |
+| Complexity | Simpler, no Docker | Docker + `CSAGENT_DATABASE_URL` |
+| Data | `~/.csagent/.agent/state.sqlite` (or `./.agent/` in a clone) | Postgres on `:5435`, sessions + memory in PG |
+| Best for | Local dev, TUI/CLI, small note sets | Production home, Telegram gateway, cron, 800+ KB notes |
+| Dev ↔ gateway parity | Only with one `CSAGENT_HOME` and **no** PG URL | One PG — single source for TUI, gateway, cron |
 
-Общий шаг (оба варианта):
+Shared steps (both options):
 
 ```bash
 git clone <repo-url> csagent && cd csagent
@@ -52,19 +50,19 @@ npm run build      # compile to dist/ (also runs on npm install via prepare)
 npm link           # optional: global `csagent` command
 ```
 
-Dev без `npm link`: **`npm run tui`** или **`npm run dev -- <subcommand>`** — всегда из текущего `src/`.
+Without `npm link`: **`npm run tui`** or **`npm run dev -- <subcommand>`** always runs from current `src/`.
 
-Env подхватывается автоматически: `~/.csagent/csagent.env`, затем repo `.env` (см. `src/loadEnv.ts`).
+Env is loaded automatically from `~/.csagent/csagent.env`, then repo `.env` (see `src/loadEnv.ts`).
 
 ---
 
-### Вариант 1 — SQLite (упрощённый)
+### Option 1 — SQLite (simple)
 
-Сессии, runs и memory notes хранятся в **SQLite** под каталогом `.agent/`. **Не задавайте** `CSAGENT_DATABASE_URL`.
+Sessions, runs, and memory notes live in **SQLite** under `.agent/`. **Do not set** `CSAGENT_DATABASE_URL`.
 
-#### 1a. Быстрый старт в клоне репозитория
+#### 1a. Quick start in a repo clone
 
-Подходит для правок кода и TUI без `~/.csagent`:
+Good for hacking on the code and TUI without `~/.csagent`:
 
 ```bash
 cd csagent
@@ -73,42 +71,42 @@ npx tsx src/cli.ts doctor
 npx tsx src/cli.ts tui
 ```
 
-Состояние: `./.agent/state.sqlite`, `./.agent/credentials.json`, `./.agent/memory/*.md`.
+State: `./.agent/state.sqlite`, `./.agent/credentials.json`, `./.agent/memory/*.md`.
 
-#### 1b. Home-установка `~/.csagent` (без Postgres)
+#### 1b. Home install at `~/.csagent` (no Postgres)
 
-Тот же runtime layout, что у launchd, но store — только SQLite:
+Same runtime layout as launchd, but SQLite-only store:
 
 ```bash
 cd csagent
 bash deploy/setup-home.sh
-# Убедитесь, что в ~/.csagent/csagent.env НЕТ строки CSAGENT_DATABASE_URL
-# (setup-home.sh сохраняет уже заданный URL; для SQLite удалите export вручную)
+# Ensure ~/.csagent/csagent.env has NO CSAGENT_DATABASE_URL line
+# (setup-home.sh preserves an existing URL; remove the export manually for SQLite)
 
 printf '%s' "cursor_..." | ~/.csagent/csagent/scripts/csagent-run.sh auth login --stdin
 ~/.csagent/csagent/scripts/csagent-run.sh doctor
 ~/.csagent/csagent/scripts/csagent-run.sh tui
 ```
 
-Опционально Telegram gateway + cron (macOS):
+Optional Telegram gateway + cron (macOS):
 
 ```bash
-# TELEGRAM_BOT_TOKEN в csagent.env или: auth telegram login --stdin
-cp deploy/gateway.json.example ~/.csagent/.agent/gateway.json   # правьте allowedChatIds
+# TELEGRAM_BOT_TOKEN in csagent.env or: auth telegram login --stdin
+cp deploy/gateway.json.example ~/.csagent/.agent/gateway.json   # edit allowedChatIds
 bash ~/.csagent/csagent/deploy/install-launchd.sh
 ```
 
-Проверка: `launchctl list | grep csagent`, логи в `~/.csagent/logs/`.
+Verify: `launchctl list | grep csagent`, logs in `~/.csagent/logs/`.
 
 ---
 
-### Вариант 2 — Postgres (полный)
+### Option 2 — Postgres (full)
 
-**Sessions, runs и memory** в Postgres; удобно для **Telegram gateway + cron + большой KB** и одного store для всех процессов.
+**Sessions, runs, and memory** in Postgres — best for **Telegram gateway + cron + large KB** with one store for all processes.
 
-#### 2.1. Postgres в Docker
+#### 2.1. Postgres in Docker
 
-Из клона репозитория (порт **5435** по умолчанию, не конфликтует с TParser на :5433):
+From the repo clone (default port **5435**, avoids TParser on :5433):
 
 ```bash
 cd csagent
@@ -122,26 +120,26 @@ docker compose -f deploy/docker-compose.csagent-postgres.yml ps   # healthy
 bash deploy/setup-home.sh
 ```
 
-В `~/.csagent/csagent.env` задайте (или раскомментируйте после `setup-home`):
+In `~/.csagent/csagent.env`, set (or uncomment after `setup-home`):
 
 ```bash
 export CSAGENT_DATABASE_URL="postgresql://csagent:csagent@127.0.0.1:5435/csagent"
-# export CSAGENT_LOG=1   # опционально: stderr-диагностика chat/cron
+# export CSAGENT_LOG=1   # optional: stderr diagnostics for chat/cron
 ```
 
-Переустановите launchd, если сервисы уже стояли — plist подхватывает env при `install-launchd.sh`:
+Re-run launchd install if services already exist — plists pick up env from `install-launchd.sh`:
 
 ```bash
 printf '%s' "cursor_..." | ~/.csagent/csagent/scripts/csagent-run.sh auth login --stdin
-~/.csagent/csagent/scripts/csagent-run.sh doctor   # должен показать postgres store
+~/.csagent/csagent/scripts/csagent-run.sh doctor   # should report postgres store
 bash ~/.csagent/csagent/deploy/install-launchd.sh
 ```
 
-Миграции (`deploy/postgres/migrations/*.sql`) применяются при первом подключении.
+Migrations (`deploy/postgres/migrations/*.sql`) run on first connect.
 
-#### 2.3. Memory / knowledge base (опционально)
+#### 2.3. Memory / knowledge base (optional)
 
-Импорт HappyIn KB в PG (пример):
+Import a markdown KB into PG (example):
 
 ```bash
 ~/.csagent/csagent/scripts/csagent-run.sh memory import-md \
@@ -150,26 +148,26 @@ bash ~/.csagent/csagent/deploy/install-launchd.sh
 ~/.csagent/csagent/scripts/csagent-run.sh memory list
 ```
 
-Cron (пример TParser digest): скопируйте `deploy/cron.jobs.example.json` → `~/.csagent/.agent/cron.jobs.json`, настройте `notify.chatId`. Подробнее: `deploy/README.md` и локально `docs/deploy/TPARSER-BIHOURLY-CRON.md`.
+Cron (TParser digest example): copy `deploy/cron.jobs.example.json` → `~/.csagent/.agent/cron.jobs.json`, set `notify.chatId`. See [deploy/README.md](deploy/README.md).
 
-#### 2.4. Backup Postgres
+#### 2.4. Postgres backup
 
 ```bash
-docker exec deploy-csagent-postgres-1 pg_dump -U csagent -Fc csagent \
-  > ~/backups/csagent-$(date +%Y%m%d).dump
+docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-postgres \
+  pg_dump -U csagent -Fc csagent > ~/backups/csagent-$(date +%Y%m%d).dump
 ```
 
 ---
 
-### Переключение SQLite ↔ Postgres
+### Switching SQLite ↔ Postgres
 
-1. Остановите gateway/cron: `bash deploy/uninstall-launchd.sh` (или не запускайте launchd).
-2. **SQLite → Postgres:** поднимите контейнер, добавьте `CSAGENT_DATABASE_URL`, `doctor`, при необходимости `memory import-md` (данные из sqlite не мигрируются автоматически).
-3. **Postgres → SQLite:** удалите/закомментируйте `CSAGENT_DATABASE_URL` в `csagent.env`, перезапустите процессы — снова `~/.csagent/.agent/state.sqlite` (пустой или старый файл, если остался).
+1. Stop gateway/cron: `bash deploy/uninstall-launchd.sh` (or skip launchd).
+2. **SQLite → Postgres:** start the container, add `CSAGENT_DATABASE_URL`, run `doctor`, optionally `memory import-md` (sqlite data is **not** migrated automatically).
+3. **Postgres → SQLite:** remove or comment `CSAGENT_DATABASE_URL` in `csagent.env`, restart processes — back to `~/.csagent/.agent/state.sqlite` (empty or a leftover file).
 
-После смены store: `bash deploy/setup-home.sh` и `install-launchd.sh` при использовании launchd.
+After changing store: `bash deploy/setup-home.sh` and `install-launchd.sh` if you use launchd.
 
-Подробный ops-гайд: [deploy/README.md](deploy/README.md).
+Ops guide: [deploy/README.md](deploy/README.md).
 
 ## Commands
 
@@ -199,7 +197,8 @@ csagent auth logout                  # remove credentials file
 ### Memory, cron, gateway
 
 ```bash
-csagent memory list|show|add|rm …
+csagent memory list|show|add|search|rm|import-md …
+csagent memory fact add|query|invalidate …
 csagent cron list|run <id>|tick
 csagent gateway run [--adapter webhook|telegram] [--port 18789]
 ```
@@ -211,7 +210,7 @@ During development: `npm run dev -- <subcommand>` (same as above).
 ### TUI (`csagent tui`)
 
 - **Session tabs** — recent `sess_` in the header; **Ctrl+[** / **Ctrl+]** switch (empty composer).
-- **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/new`, `/resume <id>`, …
+- **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/new`, `/resume <id>`, `/clear`, `/copy`, `/rename`, `/exit`, …
 - **Overlays** — `/sessions`, `/skills`, `/memory`, `/model`, `/mcp` (Esc closes; scroll preserved).
 - **Composer** — multiline, `@file` Tab-complete, `@memory:` refs.
 - **Activity** — tool call banner during turns; thinking strip when model streams reasoning (Ctrl+T).
@@ -264,7 +263,7 @@ In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
 ### Cron (scheduled jobs)
 
-`.agent/cron.jobs.json` (five-field cron, local time):
+`.agent/cron.jobs.json` (five-field cron, local time). Full TParser digest example: `deploy/cron.jobs.example.json`.
 
 ```json
 {
@@ -276,7 +275,7 @@ In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
       "prompt": "Summarize open issues @memory:project",
       "skills": ["review"],
       "yesIUnderstand": false,
-      "notify": { "chatId": "u1", "webhookUrl": "http://127.0.0.1:18789/hook" }
+      "notify": { "chatId": "YOUR_CHAT_ID", "telegram": true }
     }
   ]
 }
@@ -302,6 +301,16 @@ Optional `sessionId` binds to existing `sess_`. Destructive prompts denied unles
 
 **Webhook:**
 
+```json
+{
+  "version": 1,
+  "adapter": "webhook",
+  "listen": { "host": "127.0.0.1", "port": 18789 },
+  "webhook": { "path": "/hook", "secretEnv": "GATEWAY_WEBHOOK_SECRET" },
+  "allowedChatIds": ["u1"]
+}
+```
+
 ```bash
 export GATEWAY_WEBHOOK_SECRET=your-secret
 csagent gateway run
@@ -317,11 +326,13 @@ curl -X POST http://127.0.0.1:18789/hook \
 {
   "version": 1,
   "adapter": "telegram",
-  "telegram": { "tokenEnv": "TELEGRAM_BOT_TOKEN", "pollIntervalMs": 1500 },
-  "allowedChatIds": ["123456789"],
+  "telegram": { "tokenEnv": "TELEGRAM_BOT_TOKEN", "pollIntervalMs": 2000 },
+  "allowedChatIds": ["YOUR_CHAT_ID"],
   "skills": ["memory-ops"]
 }
 ```
+
+Copy from `deploy/gateway.json.example` and set your chat id.
 
 ```bash
 csagent auth telegram login --stdin   # or --from-env
@@ -365,7 +376,7 @@ Project-local `agent.config.json`. **Secrets never go here.**
 }
 ```
 
-State: `<stateDir>/state.sqlite`. Previews redacted; no secrets stored.
+State: SQLite at `<stateDir>/state.sqlite` by default, or Postgres when `CSAGENT_DATABASE_URL` is set. Previews redacted; no secrets stored.
 
 **Cloud (016):** `runtime: "cloud"` + `safety.allowCloud` only gate today — **no real cloud SDK path yet**.
 
@@ -373,7 +384,7 @@ State: `<stateDir>/state.sqlite`. Previews redacted; no secrets stored.
 
 - `run` / `resume` / cron: non-interactive destructive prompts **denied** (exit 77); `--yes-i-understand` overrides.
 - `chat` / `tui`: interactive confirm (or `--yes-i-understand`).
-- Redaction in logs and SQLite.
+- Redaction in logs and persisted store (SQLite or Postgres).
 
 > Destructive detection is a **regex denylist**, not a sandbox.
 
@@ -392,7 +403,7 @@ State: `<stateDir>/state.sqlite`. Previews redacted; no secrets stored.
 ### Three layers (auth vs session vs SDK handle)
 
 1. **`CURSOR_API_KEY`** — API access.
-2. **`sess_…`** — conversation (SQLite); survives rotation.
+2. **`sess_…`** — conversation (SQLite or Postgres); survives rotation.
 3. **`sdk_agent_id`** — ephemeral SDK handle; may be replaced mid-session + turn retry.
 
 Auth errors (`ERROR_NOT_LOGGED_IN`) are **not** fixed by rotation — refresh the key.
@@ -406,18 +417,26 @@ npm run accept      # MVP acceptance harness
 npm run smoke       # live SDK (needs key)
 ```
 
+Optional diagnostics: `CSAGENT_LOG=1` in `csagent.env` (rotation, runs); `CSAGENT_LOG_VERBOSE=1` for per-tool lines.
+
 ## Architecture
 
-See `docs/adr/0001-cursor-sdk-agent-runtime.md`.
+Cursor SDK is the sole agent runtime (no parallel model/provider loop). Shared chat engine powers CLI, TUI, cron, and gateway.
 
 | Module | Role |
 |--------|------|
 | `src/cli.ts` | command dispatch |
 | `src/chatEngine.ts` | shared chat + rotation |
 | `src/tui/` | Ink TUI |
-| `src/store.ts` | SQLite |
+| `src/store.ts` | SQLite or Postgres store |
 | `src/memory.ts` `src/cron*.ts` `src/gateway*.ts` | automation surfaces |
 | `src/safety.ts` `src/redact.ts` | gate + redaction |
+
+## Support the author
+
+If you find **csagent** useful, you can optionally support development on Boosty — entirely voluntary, no perks or obligations:
+
+**[Donate on Boosty](https://boosty.to/niksh612/donate)**
 
 ## License
 
@@ -438,6 +457,8 @@ Direct npm dependencies with permissive licenses (MIT unless noted):
 | Package | Role |
 |---------|------|
 | `ink`, `ink-text-input`, `react` | Terminal UI |
+| `pg` | Postgres store (optional) |
+| `@modelcontextprotocol/sdk` | Built-in `csagent-memory` MCP server |
 | `@cursor/sdk` | Agent runtime (**proprietary**, see above) |
 
 Transitive licenses are listed in `package-lock.json` (`npm licenses` / `license-checker`).
