@@ -21,7 +21,10 @@ export interface CronJobNotify {
 export interface CronJob {
   id: string;
   cron: string;
-  prompt: string;
+  /** Inline prompt text (optional if promptFile is set). */
+  prompt?: string;
+  /** Path to prompt file relative to cwd, config dir, or CSAGENT_ROOT. */
+  promptFile?: string;
   cwd?: string;
   sessionId?: string;
   skills?: string[];
@@ -65,17 +68,25 @@ function validateJob(raw: unknown, index: number): CronJob {
   const id = typeof o.id === "string" ? o.id.trim() : "";
   const cron = typeof o.cron === "string" ? o.cron.trim() : "";
   const prompt = typeof o.prompt === "string" ? o.prompt.trim() : "";
+  const promptFile = typeof o.promptFile === "string" ? o.promptFile.trim() : "";
   if (!id || !/^[a-zA-Z0-9._-]+$/.test(id)) {
     throw new CronJobsError(`jobs[${index}].id must be a non-empty slug`);
   }
   if (!cron) throw new CronJobsError(`jobs[${index}].cron is required`);
-  if (!prompt) throw new CronJobsError(`jobs[${index}].prompt is required`);
+  if (!prompt && !promptFile) {
+    throw new CronJobsError(`jobs[${index}] requires prompt or promptFile`);
+  }
+  if (prompt && promptFile) {
+    throw new CronJobsError(`jobs[${index}] cannot set both prompt and promptFile`);
+  }
   try {
     validateCronExpression(cron);
   } catch (e) {
     throw new CronJobsError(`jobs[${index}].cron: ${e instanceof CronError ? e.message : String(e)}`);
   }
-  const job: CronJob = { id, cron, prompt };
+  const job: CronJob = { id, cron };
+  if (prompt) job.prompt = prompt;
+  if (promptFile) job.promptFile = promptFile;
   if (typeof o.cwd === "string" && o.cwd.trim()) job.cwd = o.cwd.trim();
   if (typeof o.sessionId === "string" && o.sessionId.trim()) job.sessionId = o.sessionId.trim();
   if (Array.isArray(o.skills)) {

@@ -10,6 +10,7 @@ import pg from "pg";
 import { redact } from "./redact.js";
 import { newId, nowIso } from "./util.js";
 import { resolveMemoryRoot } from "./config.js";
+import { postgresFtsQuery, sqliteFtsMatchQuery } from "./memorySearch.js";
 
 export interface MemoryNote {
   name: string;
@@ -69,6 +70,10 @@ const MEMORY_MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/003_memory.sql"),
   "utf8"
 );
+const MEMORY_FTS_MIGRATION = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/006_memory_fts.sql"),
+  "utf8"
+);
 
 function titleFromBody(name: string, body: string): string {
   const m = body.match(/^#\s+(.+)$/m);
@@ -97,7 +102,23 @@ const SQLITE_MEMORY_DDL = `
   );
   CREATE INDEX IF NOT EXISTS idx_memory_facts_subject ON memory_facts(subject, predicate);
   CREATE INDEX IF NOT EXISTS idx_memory_facts_lookup ON memory_facts(subject, predicate, object);
+  CREATE VIRTUAL TABLE IF NOT EXISTS memory_notes_fts USING fts5(
+    name UNINDEXED,
+    title,
+    body,
+    tokenize='porter ascii'
+  );
 `;
+
+function syncSqliteNoteFts(
+  db: DatabaseSync,
+  name: string,
+  title: string,
+  body: string
+): void {
+  db.prepare(`DELETE FROM memory_notes_fts WHERE name=?`).run(name);
+  db.prepare(`INSERT INTO memory_notes_fts (name, title, body) VALUES (?, ?, ?)`).run(name, title, body);
+}
 
 export class SqliteMemoryStore implements IMemoryStore {
   private db: DatabaseSync;
@@ -107,6 +128,12 @@ export class SqliteMemoryStore implements IMemoryStore {
     mkdirSync(target, { recursive: true });
     this.db = new DatabaseSync(resolve(target, "state.sqlite"));
     this.db.exec(SQLITE_MEMORY_DDL);
+    const existing = this.db.prepare(`SELECT name, title, body FROM memory_notes`).all() as Array<{
+      name: string;
+      title: string;
+      body: string;
+    }>;
+    for (const row of existing) syncSqliteNoteFts(this.db, row.name, row.title, row.body);
   }
 
   async upsertNote(input: UpsertNoteInput): Promise<MemoryNote> {
@@ -124,6 +151,7 @@ export class SqliteMemoryStore implements IMemoryStore {
            wing=excluded.wing, title=excluded.title, body=excluded.body, updated_at=excluded.updated_at`
       )
       .run(name, wing, title, body, existing?.created_at ?? now, now);
+    syncSqliteNoteFts(this.db, name, title, body);
     return (await this.getNote(name))!;
   }
 
@@ -143,11 +171,28 @@ export class SqliteMemoryStore implements IMemoryStore {
   }
 
   async deleteNote(name: string): Promise<boolean> {
-    const r = this.db.prepare(`DELETE FROM memory_notes WHERE name=?`).run(name.trim());
+    const trimmed = name.trim();
+    const r = this.db.prepare(`DELETE FROM memory_notes WHERE name=?`).run(trimmed);
+    if (r.changes > 0) this.db.prepare(`DELETE FROM memory_notes_fts WHERE name=?`).run(trimmed);
     return r.changes > 0;
   }
 
   async searchNotes(query: string, limit = 20): Promise<MemoryNote[]> {
+    const ftsQ = sqliteFtsMatchQuery(query);
+    if (ftsQ) {
+      try {
+        return this.db
+          .prepare(
+            `SELECT n.* FROM memory_notes_fts f
+             JOIN memory_notes n ON n.name = f.name
+             WHERE memory_notes_fts MATCH ?
+             ORDER BY n.updated_at DESC LIMIT ?`
+          )
+          .all(ftsQ, limit) as unknown as MemoryNote[];
+      } catch {
+        /* fall through to LIKE */
+      }
+    }
     const q = `%${query.trim()}%`;
     return this.db
       .prepare(
@@ -232,6 +277,7 @@ export class PostgresMemoryStore implements IMemoryStore {
   private async ensureMigrated(): Promise<void> {
     if (this.migrated) return;
     await this.pool.query(MEMORY_MIGRATION);
+    await this.pool.query(MEMORY_FTS_MIGRATION);
     this.migrated = true;
   }
 
@@ -280,6 +326,21 @@ export class PostgresMemoryStore implements IMemoryStore {
 
   async searchNotes(query: string, limit = 20): Promise<MemoryNote[]> {
     await this.ensureMigrated();
+    const ftsQ = postgresFtsQuery(query);
+    if (ftsQ.length >= 2) {
+      try {
+        const res = await this.pool.query(
+          `SELECT * FROM memory_notes
+           WHERE search_vector @@ plainto_tsquery('simple', $1)
+           ORDER BY ts_rank(search_vector, plainto_tsquery('simple', $1)) DESC, updated_at DESC
+           LIMIT $2`,
+          [ftsQ, limit]
+        );
+        if (res.rows.length > 0) return res.rows as MemoryNote[];
+      } catch {
+        /* fall through to ILIKE */
+      }
+    }
     const res = await this.pool.query(
       `SELECT * FROM memory_notes
        WHERE name ILIKE $1 OR title ILIKE $1 OR body ILIKE $1

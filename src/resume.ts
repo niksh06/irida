@@ -21,6 +21,8 @@ import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js"
 import { sessionStartMemoryBlocks } from "./memory.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
+import { pickRunErrorDetail } from "./runErrors.js";
+import { formatErrorDetail } from "./runErrorDetail.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { connectAgentForSession } from "./sessionConnect.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
@@ -151,6 +153,10 @@ export async function cmdResume(
         result_preview: resultPreview(turnText),
         status,
         error_kind: status === "error" ? "run_error" : null,
+        error_detail:
+          status === "error"
+            ? formatErrorDetail([pickRunErrorDetail(res), `partialChars=${turnText.length}`])
+            : null,
         started_at: startedAt,
         finished_at: nowIso(),
         cwd: session.cwd || cfg.cwd,

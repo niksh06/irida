@@ -37,6 +37,7 @@ import type { ActivityDetail } from "./host.js";
 import { consumeRunStream, formatSdkError, isAgentRotatableError } from "./sdkErrors.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 import { formatRunErrorMessage, pickRunErrorDetail } from "./runErrors.js";
+import { formatErrorDetail } from "./runErrorDetail.js";
 import { agentLogVerbose, resolveAgentLogger } from "./agentLog.js";
 import { isAgentIdle, resolveAgentIdleMs } from "./agentIdle.js";
 
@@ -392,6 +393,14 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           log(
             `[chat] run done sdkRun=${res.id ?? "-"} status=${lastStatus} tools=${toolCalls} assistantChars=${turnText.length} ${stats.durationMs}ms in=${usage.inputTokens ?? "-"} out=${usage.outputTokens ?? "-"}`
           );
+          const runErrorDetail =
+            lastStatus === "error"
+              ? formatErrorDetail([
+                  pickRunErrorDetail(res),
+                  `tools=${toolCalls}`,
+                  `partialChars=${turnText.length}`,
+                ])
+              : null;
           await store.recordRun({
             id: runId,
             session_id: sessionId,
@@ -401,6 +410,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             result_preview: resultPreview(turnText),
             status: lastStatus,
             error_kind: lastStatus === "error" ? "run_error" : null,
+            error_detail: runErrorDetail,
             started_at: startedAt,
             finished_at: nowIso(),
             cwd: sessionCwd,
@@ -455,6 +465,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             result_preview: resultPreview(turnText),
             status: "error",
             error_kind: formatted.errorKind,
+            error_detail: formatErrorDetail([formatted.message]),
             started_at: startedAt,
             finished_at: nowIso(),
             cwd: sessionCwd,

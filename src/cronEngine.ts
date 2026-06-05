@@ -17,6 +17,7 @@ import {
   saveCronState,
 } from "./cronJobs.js";
 import { buildSeenPostsPromptSection } from "./memoryDedup.js";
+import { loadCronJobPromptText } from "./cronPrompt.js";
 import type { SdkLike } from "./host.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
@@ -35,12 +36,9 @@ export interface CronExecuteResult {
   output?: string;
 }
 
-function cronPrompt(job: CronJob): string {
-  return `[cron:${job.id}] ${job.prompt}`;
-}
-
 async function resolveCronPrompt(job: CronJob, dir: string): Promise<string> {
-  let body = cronPrompt(job);
+  const text = loadCronJobPromptText(job, dir);
+  let body = `[cron:${job.id}] ${text}`;
   if (job.memoryFactsSubject === "seen_post") {
     const block = await buildSeenPostsPromptSection(dir, { limit: job.memoryFactsLimit ?? 80 });
     body = `${block}\n\n${body}`;
@@ -70,10 +68,11 @@ export async function executeCronJob(
     };
   }
 
+  const promptBody = loadCronJobPromptText(job, configDir);
   const prompt = await resolveCronPrompt(job, configDir);
   if (opts.checkSafety !== false) {
     const gate = await safetyGate({
-      prompt: job.prompt,
+      prompt: promptBody,
       interactive: false,
       override: job.yesIUnderstand,
     });

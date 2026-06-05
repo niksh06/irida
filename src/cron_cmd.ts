@@ -45,7 +45,7 @@ export function cmdCronList(opts: CronCmdOptions = {}): ExitCode {
     const nextStr = next ? formatCronWhen(next) : "—";
     const on = cronJobEnabled(j) ? "yes" : "no";
     console.log(
-      `${j.id.padEnd(16)} ${j.cron.padEnd(15)} ${nextStr.padEnd(18)} ${on.padEnd(4)} ${j.prompt.slice(0, 40)}`
+      `${j.id.padEnd(16)} ${j.cron.padEnd(15)} ${nextStr.padEnd(18)} ${on.padEnd(4)} ${(j.prompt ?? j.promptFile ?? "").slice(0, 40)}`
     );
   }
   return EXIT.ok;

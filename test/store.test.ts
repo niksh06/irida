@@ -47,6 +47,32 @@ test("recordRun stores metadata and redacts secrets in preview", async () => {
   await s.close();
 });
 
+test("recordRun stores error_detail redacted", async () => {
+  const dir = tmp();
+  const s = new SqliteStore(dir, ".agent");
+  await s.upsertSession({ id: "sess_e", title: "t", cwd: dir, runtime: "local" });
+  await s.recordRun({
+    id: "run_err",
+    session_id: "sess_e",
+    sdk_agent_id: null,
+    sdk_run_id: null,
+    prompt_preview: "p",
+    result_preview: "",
+    status: "error",
+    error_kind: "run_error",
+    error_detail: "failed: CURSOR_API_KEY=secret_key_abcdef123456",
+    started_at: new Date().toISOString(),
+    finished_at: new Date().toISOString(),
+    cwd: dir,
+    runtime: "local",
+    model: "composer-2.5",
+  });
+  const runs = await s.listRuns("sess_e");
+  assert.equal(runs[0]!.error_detail?.includes("secret_key"), false);
+  assert.match(runs[0]!.error_detail ?? "", /<redacted>/);
+  await s.close();
+});
+
 test("createStore defaults to sqlite", async () => {
   const prev = process.env.CSAGENT_DATABASE_URL;
   delete process.env.CSAGENT_DATABASE_URL;

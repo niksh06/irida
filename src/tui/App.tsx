@@ -52,6 +52,7 @@ import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, Tu
 import type { SessionRecord } from "../store.js";
 import { resolveAgentLogger } from "../agentLog.js";
 import { indexOfLastAssistant, indexOfStreamingAssistant } from "./streamingTarget.js";
+import { formatToolProgressLine } from "./toolProgress.js";
 
 let msgSeq = 0;
 function nextId(prefix: string): string {
@@ -182,6 +183,20 @@ export function App(props: TuiOptions) {
       durationMs: entry.durationMs,
       stdoutPreview: entry.stdoutPreview,
     });
+    if (entry.phase === "call") {
+      const line = formatToolProgressLine(entry);
+      if (line) {
+        setMessages((prev) => {
+          const idx = indexOfStreamingAssistant(prev);
+          if (idx < 0) return prev;
+          const cur = prev[idx]!;
+          if (cur.text.trim()) return prev;
+          const next = [...prev];
+          next[idx] = { ...cur, text: line };
+          return next;
+        });
+      }
+    }
   }, []);
 
   useEffect(() => {

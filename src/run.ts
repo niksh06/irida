@@ -16,6 +16,7 @@ import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
+import { formatErrorDetail } from "./runErrorDetail.js";
 
 export interface RunOptions {
   sdk?: SdkLike;
@@ -127,6 +128,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       result_preview: resultPreview(r.text),
       status: r.status,
       error_kind: failed ? "run_error" : null,
+      error_detail: failed ? formatErrorDetail([r.text]) : null,
       started_at: startedAt,
       finished_at: nowIso(),
       cwd: agentCwd,
@@ -161,6 +163,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
         result_preview: "",
         status: "startup_error",
         error_kind: "startup",
+        error_detail: formatErrorDetail([e.message]),
         started_at: startedAt,
         finished_at: nowIso(),
         cwd: agentCwd,

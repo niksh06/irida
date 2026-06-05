@@ -5,6 +5,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryStore } from "../src/memoryStore.js";
 
+test("memory store FTS search ranks token matches", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "memfts-"));
+  const store = createMemoryStore(dir, ".agent");
+  try {
+    await store.upsertNote({ name: "alpha", body: "# Alpha\nlaunchd gateway digest.", wing: "ops" });
+    await store.upsertNote({ name: "beta", body: "# Beta\nunrelated kafka notes.", wing: "ops" });
+    const hits = await store.searchNotes("launchd digest");
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0]!.name, "alpha");
+  } finally {
+    await store.close();
+  }
+});
+
 test("memory store notes CRUD", async () => {
   const dir = mkdtempSync(join(tmpdir(), "memstore-"));
   const store = createMemoryStore(dir, ".agent");

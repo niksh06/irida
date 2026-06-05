@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
   parseCronExpression,
   nextCronRun,
@@ -109,6 +109,17 @@ test("isJobDue catches bi-hourly slot up to 10 min after launchd tick", () => {
   assert.ok(isJobDue(job, tick, state));
 });
 
+test("loadCronJobs accepts promptFile without inline prompt", () => {
+  const dir = tmp();
+  const prompts = join(dir, "prompts");
+  mkdirSync(prompts, { recursive: true });
+  writeFileSync(join(prompts, "job.txt"), "from file");
+  writeExampleCronJobs(dir, [{ id: "filejob", cron: "0 9 * * *", promptFile: "prompts/job.txt" }]);
+  const jobs = loadCronJobs(dir);
+  assert.equal(jobs[0]!.promptFile, "prompts/job.txt");
+  assert.equal(jobs[0]!.prompt, undefined);
+});
+
 test("executeCronJob runs with mocked SDK", async () => {
   await withKey("k", async () => {
     const dir = tmp();
@@ -116,6 +127,18 @@ test("executeCronJob runs with mocked SDK", async () => {
     const result = await executeCronJob(loadCronJobs(dir)[0]!, { dir, sdk: fakeSdk() });
     assert.equal(result.ok, true);
     assert.equal(result.exitCode, 0);
+  });
+});
+
+test("executeCronJob loads promptFile", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const prompts = join(dir, "prompts");
+    mkdirSync(prompts, { recursive: true });
+    writeFileSync(join(prompts, "digest.txt"), "digest from file");
+    writeExampleCronJobs(dir, [{ id: "filejob", cron: "0 9 * * *", promptFile: "prompts/digest.txt" }]);
+    const result = await executeCronJob(loadCronJobs(dir)[0]!, { dir, sdk: fakeSdk() });
+    assert.equal(result.ok, true);
   });
 });
 

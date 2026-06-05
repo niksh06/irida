@@ -41,6 +41,8 @@ export interface RunRecord {
   result_preview: string;
   status: string;
   error_kind: string | null;
+  /** Redacted SDK/run failure detail (rotation debugging). */
+  error_detail?: string | null;
   started_at: string;
   finished_at: string | null;
   cwd: string;
@@ -74,6 +76,10 @@ const SESSIONS_RUNS_MIGRATION = readFileSync(
 );
 const SESSIONS_CHANNEL_MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/002_sessions_channel.sql"),
+  "utf8"
+);
+const RUNS_ERROR_DETAIL_MIGRATION = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/005_runs_error_detail.sql"),
   "utf8"
 );
 
@@ -162,6 +168,7 @@ export class SqliteStore implements IStore {
         result_preview TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT '',
         error_kind TEXT,
+        error_detail TEXT,
         started_at TEXT NOT NULL,
         finished_at TEXT,
         cwd TEXT NOT NULL DEFAULT '',
@@ -185,6 +192,11 @@ export class SqliteStore implements IStore {
       this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_channel ON sessions(channel, updated_at DESC)`);
     } catch {
       /* index exists */
+    }
+    try {
+      this.db.exec(`ALTER TABLE runs ADD COLUMN error_detail TEXT`);
+    } catch {
+      /* column exists */
     }
   }
 
@@ -221,11 +233,12 @@ export class SqliteStore implements IStore {
       ...r,
       prompt_preview: redact(r.prompt_preview),
       result_preview: redact(r.result_preview ?? ""),
+      error_detail: r.error_detail ? redact(r.error_detail) : null,
     };
     this.db
       .prepare(
-        `INSERT INTO runs (id,session_id,sdk_agent_id,sdk_run_id,prompt_preview,result_preview,status,error_kind,started_at,finished_at,cwd,runtime,model)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        `INSERT INTO runs (id,session_id,sdk_agent_id,sdk_run_id,prompt_preview,result_preview,status,error_kind,error_detail,started_at,finished_at,cwd,runtime,model)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .run(
         rec.id,
@@ -236,6 +249,7 @@ export class SqliteStore implements IStore {
         rec.result_preview,
         rec.status,
         rec.error_kind,
+        rec.error_detail,
         rec.started_at,
         rec.finished_at,
         rec.cwd,
@@ -297,6 +311,7 @@ export class PostgresStore implements IStore {
     if (this.migrated) return;
     await this.pool.query(SESSIONS_RUNS_MIGRATION);
     await this.pool.query(SESSIONS_CHANNEL_MIGRATION);
+    await this.pool.query(RUNS_ERROR_DETAIL_MIGRATION);
     this.migrated = true;
   }
 
@@ -334,10 +349,11 @@ export class PostgresStore implements IStore {
       ...r,
       prompt_preview: redact(r.prompt_preview),
       result_preview: redact(r.result_preview ?? ""),
+      error_detail: r.error_detail ? redact(r.error_detail) : null,
     };
     await this.pool.query(
-      `INSERT INTO runs (id,session_id,sdk_agent_id,sdk_run_id,prompt_preview,result_preview,status,error_kind,started_at,finished_at,cwd,runtime,model)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      `INSERT INTO runs (id,session_id,sdk_agent_id,sdk_run_id,prompt_preview,result_preview,status,error_kind,error_detail,started_at,finished_at,cwd,runtime,model)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         rec.id,
         rec.session_id,
@@ -347,6 +363,7 @@ export class PostgresStore implements IStore {
         rec.result_preview,
         rec.status,
         rec.error_kind,
+        rec.error_detail,
         rec.started_at,
         rec.finished_at,
         rec.cwd,
