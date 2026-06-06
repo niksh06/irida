@@ -481,7 +481,6 @@ Cursor SDK is the sole agent runtime (no parallel model/provider loop). Shared c
 | `src/memory*.ts` `src/cron*.ts` `src/gateway*.ts` | automation surfaces |
 | `src/browser/` `src/mcp/browser*.ts` | stealth browser MCP |
 | `src/gatewaySlash.ts` `src/gatewayPairing.ts` | Telegram slash + pairing |
-| `issues/` | tracked specs (039, I-22…I-30, 040) — see `issues/README.md` |
 | `src/safety.ts` `src/redact.ts` | gate + redaction |
 
 ## Support the author
