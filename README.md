@@ -2,18 +2,19 @@
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
-> **Local-first** (no cloud runs yet). **Cron** · **Gateway** (webhook + Telegram) · **Ink TUI** · **241 tests** green.
+> **Local-first** (no cloud runs yet). **Cron** · **Gateway** (webhook + Telegram) · **Browser MCP** · **Ink TUI** · **262 tests** green.
 
 ## Feature overview
 
 | Area | What you get |
 |------|----------------|
-| **CLI** | `doctor`, `run`, `chat`, `sessions`, `resume`, `config`, `skills` |
-| **TUI** | `csagent tui` — tabs, slash cmds, overlays, scroll, `@file` complete |
-| **Auth** | `csagent auth login` + `auth telegram login` → `.agent/credentials.json` (600) |
-| **Memory** | `@memory:name`, MCP tools, `memory import-md`, `memory fact …` |
-| **Cron** | `.agent/cron.jobs.json` + `cron tick` from OS scheduler |
-| **Gateway** | Webhook or Telegram → stable `sess_` per chat id |
+| **CLI** | `doctor`, `run`, `chat`, `sessions`, `resume`, `config`, `skills`, `store migrate` |
+| **TUI** | `csagent tui` — tabs, slash cmds (`/delegate`), overlays, scroll, `@file` complete |
+| **Auth** | `csagent auth login` + `auth telegram login` → `.agent/credentials.json` or PG (pgcrypto) |
+| **Memory** | `@memory:name`, MCP tools, `memory align-silo`, `import-md`, `memory fact …` |
+| **Browser** | `csagent-browser` MCP — stealth Chromium (`browser_navigate`, `browser_snapshot`, …) |
+| **Cron** | `.agent/cron.jobs.json` + `cron tick`; prompt injection guard in doctor |
+| **Gateway** | Webhook or Telegram → stable `sess_` per chat; csagent slash catalog + pairing |
 | **Resilience** | SDK agent rotation in-session; auth errors surfaced clearly |
 | **Safety** | Destructive prompt gate, secret redaction, BSD exit codes |
 
@@ -162,7 +163,7 @@ docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-pos
 ### Switching SQLite ↔ Postgres
 
 1. Stop gateway/cron: `bash deploy/uninstall-launchd.sh` (or skip launchd).
-2. **SQLite → Postgres:** start the container, add `CSAGENT_DATABASE_URL`, run `doctor`, optionally `memory import-md` (sqlite data is **not** migrated automatically).
+2. **SQLite → Postgres:** start the container, add `CSAGENT_DATABASE_URL`, run `doctor`, then `csagent store migrate` (sessions/runs) and optionally `memory import-md` for notes.
 3. **Postgres → SQLite:** remove or comment `CSAGENT_DATABASE_URL` in `csagent.env`, restart processes — back to `~/.csagent/.agent/state.sqlite` (empty or a leftover file).
 
 After changing store: `bash deploy/setup-home.sh` and `install-launchd.sh` if you use launchd.
@@ -181,7 +182,9 @@ csagent run "summarize repo"         # one-shot (Agent.prompt)
 csagent chat                         # interactive multi-turn (Agent.create)
 csagent tui                          # Ink TUI (recommended)
 csagent sessions                     # list sess_ (newest first)
+csagent sessions search <query>      # filter by id / title / cwd
 csagent resume <sess_id> "follow up" # live resume or transcript replay
+csagent store migrate [pg-url]       # one-shot sqlite → postgres (sessions/runs)
 csagent config                       # print non-secret config
 csagent skills list|search <q>       # local Markdown skills
 ```
@@ -198,6 +201,7 @@ csagent auth logout                  # remove credentials file
 
 ```bash
 csagent memory list|show|add|search|rm|import-md …
+csagent memory align-silo [--dry-run]   # merge repo/cron silos → CSAGENT_HOME memory
 csagent memory fact add|query|invalidate …
 csagent cron list|run <id>|tick
 csagent gateway status         # launchd + log probe
@@ -211,7 +215,7 @@ During development: `npm run dev -- <subcommand>` (same as above).
 ### TUI (`csagent tui`)
 
 - **Session tabs** — recent `sess_` in the header; **Ctrl+[** / **Ctrl+]** switch (empty composer).
-- **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/new`, `/resume <id>`, `/clear`, `/copy`, `/rename`, `/exit`, …
+- **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/delegate <prompt>`, `/new`, `/resume <id>`, `/clear`, `/copy`, `/rename`, `/exit`, …
 - **Overlays** — `/sessions`, `/skills`, `/memory`, `/model`, `/mcp` (Esc closes; scroll preserved).
 - **Composer** — multiline, `@file` Tab-complete, `@memory:` refs.
 - **Activity** — tool call banner during turns; thinking strip when model streams reasoning (Ctrl+T).
@@ -254,7 +258,7 @@ EOF
 
 In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
-**Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, `memory_list`, `memory_save`, `memory_fact_query`, `memory_fact_add`. Enable skill `memory-ops` in `gateway.json` for Telegram so the model queries memory before guessing.
+**Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, `memory_list`, `memory_save`, `memory_fact_query`, `memory_fact_add`. Enable skill `memory-ops` in `gateway.json` for Telegram so the model queries memory before guessing. With `browser.mcp: true`, add skill `browser-ops` so gateway/cron use `browser_navigate` / `browser_snapshot` instead of guessing page content.
 
 ```json
 "memory": { "mcp": true }
@@ -329,7 +333,7 @@ curl -X POST http://127.0.0.1:18789/hook \
   "adapter": "telegram",
   "telegram": { "tokenEnv": "TELEGRAM_BOT_TOKEN", "pollIntervalMs": 2000 },
   "allowedChatIds": ["YOUR_CHAT_ID"],
-  "skills": ["memory-ops"]
+  "skills": ["memory-ops", "browser-ops"]
 }
 ```
 
@@ -340,20 +344,43 @@ csagent auth telegram login --stdin   # or --from-env
 csagent gateway run --adapter telegram
 ```
 
-Each `chatId` → stable `sess_` (visible in `csagent sessions` / TUI). Allowlist required. SIGINT disposes SDK agents.
+Each `chatId` → stable `sess_` (visible in `csagent sessions` / TUI). Allowlist required; unknown chats get a **pairing code** — admin in allowlist runs `/approve <code>`.
+
+**Telegram slash commands (csagent catalog, no LLM):**
+
+| Command | Action |
+|---------|--------|
+| `/help` | List commands (same as Bot menu) |
+| `/new` | Fresh session for this chat |
+| `/status` | Gateway + launchd status |
+| `/doctor` | Short environment check |
+| `/memory [q]` | List or search durable notes |
+| `/sessions [q]` | Recent sessions for this chat |
+| `/skills` | Skills from `gateway.json` |
+| `/approve <code>` | Approve pairing for new chatId |
+
+On gateway start, `setMyCommands` syncs this menu to Telegram (replaces stale Hermes entries). Free text → Cursor SDK agent turn.
+
+**Launchd + Postgres secrets:** when using `CSAGENT_DATABASE_URL`, also set `CSAGENT_SECRETS_KEY` in `~/.csagent/csagent.env` — `install-launchd.sh` injects both into gateway/cron plists.
+
+SIGINT disposes SDK agents.
 
 ### MCP servers
 
-In `agent.config.json` — passed to every SDK call:
+In `agent.config.json` — passed to every SDK call. Built-ins (when enabled): `csagent-memory`, `csagent-browser` (stealth Chromium via `puppeteer-extra`).
 
 ```json
 {
+  "memory": { "mcp": true },
+  "browser": { "mcp": true, "profile": "default", "headless": true },
   "mcpServers": {
     "fs":  { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
     "web": { "url": "https://example.com/mcp" }
   }
 }
 ```
+
+Browser tools: `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_save_session`, `browser_load_session`, `browser_close`. Profile data: `<stateDir>/browser/`. Set `CSAGENT_CHROME_PATH` or `browser.chromePath` if Puppeteer’s bundled Chromium is not installed.
 
 ## Configuration
 
@@ -374,6 +401,7 @@ Project-local `agent.config.json`. **Secrets never go here.**
   "stateDir": ".agent",
   "mcpServers": {},
   "memory": { "mcp": true },
+  "browser": { "mcp": false },
   "safety": { "allowCloud": false, "allowAutoPr": false }
 }
 ```
@@ -414,7 +442,7 @@ Auth errors (`ERROR_NOT_LOGGED_IN`) are **not** fixed by rotation — refresh th
 
 ```bash
 npm run typecheck
-npm test            # 241 tests, mocked SDK
+npm test            # 262 tests, mocked SDK
 npm run accept      # MVP acceptance harness
 npm run smoke       # live SDK (needs key)
 ```
@@ -433,7 +461,10 @@ Cursor SDK is the sole agent runtime (no parallel model/provider loop). Shared c
 | `src/chatEngine.ts` | shared chat + rotation |
 | `src/tui/` | Ink TUI |
 | `src/store.ts` | SQLite or Postgres store |
-| `src/memory.ts` `src/cron*.ts` `src/gateway*.ts` | automation surfaces |
+| `src/memory*.ts` `src/cron*.ts` `src/gateway*.ts` | automation surfaces |
+| `src/browser/` `src/mcp/browser*.ts` | stealth browser MCP |
+| `src/gatewaySlash.ts` `src/gatewayPairing.ts` | Telegram slash + pairing |
+| `issues/` | tracked specs for roadmap slices (039, I-22…I-28, 040) |
 | `src/safety.ts` `src/redact.ts` | gate + redaction |
 
 ## Support the author
