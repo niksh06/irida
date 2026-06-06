@@ -16,10 +16,13 @@ Hermes-style home: **`~/.csagent`**. Code in **`~/.csagent/csagent`**, runtime i
 
 ## Prod health (personal ops)
 
+Runbook: **[deploy/PERSONAL-OPS.md](PERSONAL-OPS.md)** (digest, backup, weekly curator).
+
 After deploy or `setup-home.sh`:
 
 ```bash
 bash ~/.csagent/csagent/deploy/prod-check.sh
+bash ~/.csagent/csagent/deploy/backup-personal.sh   # optional snapshot
 ```
 
 Manual digest smoke (before trusting 23:59 cron):

@@ -27,7 +27,6 @@
     {
       "id": "memory-curator-weekly",
       "cron": "0 4 * * 0",
-      "enabled": false,
       "skills": ["memory-ops"],
       "notify": {
         "chatId": "YOUR_CHAT_ID",

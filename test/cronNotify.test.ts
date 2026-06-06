@@ -60,6 +60,46 @@ test("splitTelegramMessages chunks long text", () => {
   assert.ok(parts.every((p) => p.length <= 4096));
 });
 
+test("sendCronJobNotify sends digest post-mortem for topicDelegates", async () => {
+  const posts: Array<Record<string, unknown>> = [];
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    return new Response(JSON.stringify({ ok: true, result: {} }));
+  };
+  const job: CronJob = {
+    id: "tparser-daily-digest",
+    cron: "59 23 * * *",
+    topicDelegates: true,
+    notify: { chatId: "123456789", telegram: true, tokenEnv: "TELEGRAM_BOT_TOKEN" },
+  };
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  await sendCronJobNotify(
+    job,
+    {
+      ok: true,
+      exitCode: 0,
+      message: "finished",
+      output: "📬 digest body",
+      durationMs: 90_000,
+      topicSummaries: [
+        { topicId: "ai-ml", title: "AI/ML", ok: true, summary: "a" },
+        { topicId: "devops", title: "DevOps", ok: true, summary: "b" },
+      ],
+    },
+    new Date(),
+    process.cwd()
+  );
+  assert.equal(posts.length, 2);
+  assert.match(String(posts[0]!.text), /digest body/);
+  assert.match(String(posts[1]!.text), /post-mortem/);
+  assert.match(String(posts[1]!.text), /topics: 2\/2/);
+  globalThis.fetch = prevFetch;
+  if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+  else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+});
+
 test("sendCronJobNotify sends digest via telegram API", async () => {
   const posts: Array<Record<string, unknown>> = [];
   const prevFetch = globalThis.fetch;

@@ -270,7 +270,7 @@ In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
 `.agent/cron.jobs.json` (five-field cron, **local time**). Examples: `deploy/cron.jobs.example.json`.
 
-**TParser daily digest** (`topicDelegates: true`) — five isolated `runDelegate` passes (AI/ML, AISec, InfoSec, Programming, DevOps) over a 24h window, then a synthesizer `runPrompt` → one Telegram message. Default schedule: **`59 23 * * *`** (23:59). Prompts: `deploy/prompts/tparser-daily-topic.prompt.txt`, `tparser-daily-synthesize.prompt.txt`.
+**TParser daily digest** (`topicDelegates: true`) — five isolated `runDelegate` passes (AI/ML, AISec, InfoSec, Programming, DevOps) over a 24h window, then a synthesizer `runPrompt` → Telegram digest + **post-mortem** (`status`, duration, topics). Default schedule: **`59 23 * * *`** (23:59). Prompts: `deploy/prompts/tparser-daily-topic.prompt.txt`, `tparser-daily-synthesize.prompt.txt`. Personal ops: [deploy/PERSONAL-OPS.md](deploy/PERSONAL-OPS.md).
 
 ```json
 {

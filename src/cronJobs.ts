@@ -48,10 +48,22 @@ export interface CronJobsFile {
   jobs: CronJob[];
 }
 
+export interface CronJobLastResult {
+  at: string;
+  ok: boolean;
+  durationMs: number;
+  message: string;
+  topicOk?: number;
+  topicTotal?: number;
+  topics?: Array<{ id: string; title: string; ok: boolean }>;
+}
+
 export interface CronStateFile {
   version: number;
   /** job id → last executed minute key (local). */
   lastRun: Record<string, string>;
+  /** job id → last run outcome (ops post-mortem / /status). */
+  lastResult?: Record<string, CronJobLastResult>;
 }
 
 export class CronJobsError extends Error {}
@@ -167,9 +179,12 @@ export function loadCronState(dir: string = process.cwd()): CronStateFile {
   if (!existsSync(path)) return { version: 1, lastRun: {} };
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<CronStateFile>;
+    const lastResult =
+      parsed.lastResult && typeof parsed.lastResult === "object" ? { ...parsed.lastResult } : {};
     return {
       version: 1,
       lastRun: parsed.lastRun && typeof parsed.lastRun === "object" ? { ...parsed.lastRun } : {},
+      lastResult: Object.keys(lastResult).length ? lastResult : undefined,
     };
   } catch {
     return { version: 1, lastRun: {} };

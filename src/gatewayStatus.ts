@@ -7,6 +7,8 @@ import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
 import { assessGatewayServiceHealth, tailLogLines } from "./gatewayLogHealth.js";
+import { loadCronJobs, loadCronState } from "./cronJobs.js";
+import { formatCronLastResultSummary } from "./cronRunRecord.js";
 
 export interface GatewayStatusLine {
   name: string;
@@ -116,6 +118,25 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
     ok: existsSync(cronPath),
     detail: existsSync(cronPath) ? cronPath : "cron.jobs.json missing",
   });
+
+  try {
+    const state = loadCronState(dir);
+    const jobs = loadCronJobs(dir).filter((j) => j.topicDelegates);
+    for (const job of jobs) {
+      const last = state.lastResult?.[job.id];
+      if (!last) {
+        rows.push({ name: `cron ${job.id}`, ok: false, detail: "no runs recorded yet" });
+        continue;
+      }
+      rows.push({
+        name: `cron ${job.id}`,
+        ok: last.ok,
+        detail: formatCronLastResultSummary(job.id, last),
+      });
+    }
+  } catch {
+    // cron config optional for status
+  }
 
   return rows;
 }

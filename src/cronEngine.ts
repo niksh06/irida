@@ -20,6 +20,11 @@ import { buildSeenPostsPromptSection } from "./memoryDedup.js";
 import { loadCronJobPromptText } from "./cronPrompt.js";
 import { validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
+import {
+  saveCronJobResult,
+  type CronExecuteResult,
+  type CronTopicSummary,
+} from "./cronRunRecord.js";
 import type { SdkLike } from "./host.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
@@ -30,13 +35,7 @@ export interface CronExecuteOptions {
   checkSafety?: boolean;
 }
 
-export interface CronExecuteResult {
-  ok: boolean;
-  exitCode: ExitCode;
-  message: string;
-  /** Full agent output for notify (digest). */
-  output?: string;
-}
+export type { CronExecuteResult, CronTopicSummary } from "./cronRunRecord.js";
 
 async function resolveCronPrompt(job: CronJob, dir: string): Promise<string> {
   const text = loadCronJobPromptText(job, dir);
@@ -48,31 +47,36 @@ async function resolveCronPrompt(job: CronJob, dir: string): Promise<string> {
   return body;
 }
 
+function withDuration<T extends CronExecuteResult>(started: number, result: T): T {
+  return { ...result, durationMs: Date.now() - started };
+}
+
 export async function executeCronJob(
   job: CronJob,
   opts: CronExecuteOptions = {}
 ): Promise<CronExecuteResult> {
+  const started = Date.now();
   const configDir = opts.dir ?? process.cwd();
   const workDir = job.cwd ?? configDir;
 
   const { key: apiKey } = resolveApiKey(configDir);
   if (!apiKey) {
-    return { ok: false, exitCode: EXIT.config, message: API_KEY_HELP };
+    return withDuration(started, { ok: false, exitCode: EXIT.config, message: API_KEY_HELP });
   }
 
   try {
     loadConfig(configDir);
   } catch (e) {
-    return {
+    return withDuration(started, {
       ok: false,
       exitCode: EXIT.config,
       message: e instanceof ConfigError ? e.message : String(e),
-    };
+    });
   }
 
   const guardErrs = validateCronJobPrompt(job, configDir);
   if (guardErrs.length) {
-    return { ok: false, exitCode: EXIT.noperm, message: guardErrs.join("; ") };
+    return withDuration(started, { ok: false, exitCode: EXIT.noperm, message: guardErrs.join("; ") });
   }
 
   const promptBody = job.topicDelegates
@@ -85,11 +89,11 @@ export async function executeCronJob(
       override: job.yesIUnderstand,
     });
     if (!gate.allowed) {
-      return {
+      return withDuration(started, {
         ok: false,
         exitCode: EXIT.noperm,
         message: `blocked — ${gate.reason}`,
-      };
+      });
     }
   }
 
@@ -98,12 +102,13 @@ export async function executeCronJob(
       sdk: opts.sdk,
       onLog: (line) => console.error(line),
     });
-    return {
+    return withDuration(started, {
       ok: digest.ok,
       exitCode: digest.exitCode,
       message: digest.message,
       output: digest.output,
-    };
+      topicSummaries: digest.topicSummaries,
+    });
   }
 
   const prompt = await resolveCronPrompt(job, configDir);
@@ -112,11 +117,11 @@ export async function executeCronJob(
     const store = createStore(configDir, loadConfig(configDir).stateDir);
     try {
       if (!(await store.getSession(job.sessionId))) {
-        return {
+        return withDuration(started, {
           ok: false,
           exitCode: EXIT.usage,
           message: `session '${job.sessionId}' not found`,
-        };
+        });
       }
     } finally {
       await store.close();
@@ -135,27 +140,27 @@ export async function executeCronJob(
       onLog: (line) => console.error(line),
     });
     if (!opened.ok) {
-      return { ok: false, exitCode: opened.code, message: opened.message };
+      return withDuration(started, { ok: false, exitCode: opened.code, message: opened.message });
     }
     try {
       const out = await opened.session.sendTurn(prompt);
       if (out.kind === "ok") {
         const text = out.assistantText;
-        return {
+        return withDuration(started, {
           ok: true,
           exitCode: EXIT.ok,
           message: text.slice(0, 200) || "finished",
           output: text,
-        };
+        });
       }
       if (out.kind === "blocked") {
-        return { ok: false, exitCode: EXIT.noperm, message: out.reason };
+        return withDuration(started, { ok: false, exitCode: EXIT.noperm, message: out.reason });
       }
-      return {
+      return withDuration(started, {
         ok: false,
         exitCode: EXIT.software,
         message: out.message,
-      };
+      });
     } finally {
       await opened.session.close();
     }
@@ -168,12 +173,12 @@ export async function executeCronJob(
     skills: job.skills,
     yesIUnderstand: job.yesIUnderstand,
   });
-  return {
+  return withDuration(started, {
     ok: run.exitCode === EXIT.ok,
     exitCode: run.exitCode,
     message: run.exitCode === EXIT.ok ? run.text.slice(0, 200) || "finished" : `run exited ${run.exitCode}`,
     output: run.text,
-  };
+  });
 }
 
 export interface CronTickResult {
@@ -213,6 +218,7 @@ export async function cronTick(
       const exec = await executeCronJob(job, opts);
       state.lastRun[job.id] = cronMinuteKey(slot);
       saveCronState(dir, state);
+      saveCronJobResult(dir, job.id, exec, slot);
       await sendCronJobNotify(job, exec, slot, dir);
       if (exec.ok) {
         result.ran.push(job.id);

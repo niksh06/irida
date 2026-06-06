@@ -2,6 +2,14 @@
 
 All notable changes to **csagent** are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- Cron digest **post-mortem** in Telegram (`status`, `duration`, `topics N/M`) after topic-delegate jobs
+- `cron.state.json` `lastResult` — surfaced in `/status` and `gateway status`
+- `deploy/PERSONAL-OPS.md` and `deploy/backup-personal.sh` for personal prod runbook
+
 ## [0.1.1] - 2026-05-29
 
 ### Fixed

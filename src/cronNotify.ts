@@ -4,7 +4,7 @@
 import { resolveTelegramBotToken } from "./credentials.js";
 import { telegramSendLongMessage } from "./gatewayTelegram.js";
 import type { CronJob } from "./cronJobs.js";
-import type { CronExecuteResult } from "./cronEngine.js";
+import { formatCronPostMortem, type CronExecuteResult } from "./cronRunRecord.js";
 
 export interface CronJobNotifyWebhook {
   mode: "webhook";
@@ -105,6 +105,7 @@ export async function sendCronJobNotify(
   const target = resolveJobNotifyTarget(job);
   if (!target) return;
   const text = formatNotifyText(payload, exec);
+  const postMortem = job.topicDelegates ? formatCronPostMortem(job.id, exec, at) : "";
   try {
     if (target.mode === "telegram") {
       const token = resolveTelegramBotToken(dir, target.tokenEnv).value;
@@ -112,13 +113,14 @@ export async function sendCronJobNotify(
         console.error(`[cron] notify telegram: ${target.tokenEnv} unset job=${job.id}`);
         return;
       }
-      await telegramSendLongMessage(token, target.chatId, text);
+      if (text) await telegramSendLongMessage(token, target.chatId, text);
+      if (postMortem) await telegramSendLongMessage(token, target.chatId, postMortem);
       return;
     }
     const secret = resolveEnv(target.secretEnv);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (secret) headers["X-Gateway-Secret"] = secret;
-    const webhookText = formatNotifyText(payload, exec);
+    const webhookText = postMortem ? `${text}\n\n---\n\n${postMortem}` : text;
     await fetch(target.webhookUrl, {
       method: "POST",
       headers,
