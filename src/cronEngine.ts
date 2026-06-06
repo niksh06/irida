@@ -18,6 +18,7 @@ import {
 } from "./cronJobs.js";
 import { buildSeenPostsPromptSection } from "./memoryDedup.js";
 import { loadCronJobPromptText } from "./cronPrompt.js";
+import { validateCronJobPrompt } from "./cronPromptGuard.js";
 import type { SdkLike } from "./host.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
@@ -66,6 +67,11 @@ export async function executeCronJob(
       exitCode: EXIT.config,
       message: e instanceof ConfigError ? e.message : String(e),
     };
+  }
+
+  const guardErrs = validateCronJobPrompt(job, configDir);
+  if (guardErrs.length) {
+    return { ok: false, exitCode: EXIT.noperm, message: guardErrs.join("; ") };
   }
 
   const promptBody = loadCronJobPromptText(job, configDir);

@@ -4,7 +4,8 @@
 import { accessSync, constants, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { CONFIG_FILE, ConfigError, loadConfig, resolveMemoryRoot, validateMcpServers } from "./config.js";
-import { resolveMcpServers } from "./mcpServers.js";
+import { browserMcpEnabled, resolveMcpServers } from "./mcpServers.js";
+import { resolveBrowserRoot } from "./mcp/browserContext.js";
 import {
   apiKeySourceLabel,
   hasPlaintextCredentialsOnDisk,
@@ -15,7 +16,10 @@ import { probePgCredentialStore, SECRETS_KEY_ENV, secretsKey } from "./credentia
 import { probePostgresStore } from "./store.js";
 import { loadCronJobs, validateCronJobsFile, cronJobsPath } from "./cronJobs.js";
 import { gatherCronPromptDrift } from "./cronPromptDrift.js";
-import { validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
+import { loadGatewayConfig, validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
+import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
+import { gatherCronPromptGuardIssues } from "./cronPromptGuard.js";
+import { skillExists } from "./skills.js";
 
 export interface DoctorCheck {
   name: string;
@@ -80,6 +84,8 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   checks.push({ name: "state writable", ok: writeOk, detail: writeDetail });
 
   checks.push(...gatherMemoryEnvChecks(dir));
+  checks.push(...gatherBrowserEnvChecks(dir));
+  checks.push(...gatherGatewaySkillsChecks(dir));
   checks.push(...gatherCredentialsEnvChecks(dir));
 
   const cronPath = cronJobsPath(dir);
@@ -96,6 +102,12 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
         name: "cron prompts",
         ok: drift.ok,
         detail: drift.ok ? "deploy/runtime prompts aligned" : drift.warnings.join("; "),
+      });
+      const guard = gatherCronPromptGuardIssues(dir);
+      checks.push({
+        name: "cron prompt guard",
+        ok: guard.length === 0,
+        detail: guard.length ? guard.join("; ") : "no injection patterns",
       });
     }
   }
@@ -138,6 +150,33 @@ function gatherCredentialsEnvChecks(dir: string): DoctorCheck[] {
   return checks;
 }
 
+function gatherBrowserEnvChecks(dir: string): DoctorCheck[] {
+  const checks: DoctorCheck[] = [];
+  let cfg;
+  try {
+    cfg = loadConfig(dir);
+  } catch {
+    return checks;
+  }
+  if (!browserMcpEnabled(cfg)) return checks;
+
+  const browserRoot = resolveBrowserRoot(dir);
+  let writable = true;
+  try {
+    accessSync(existsSync(browserRoot) ? browserRoot : resolveMemoryRoot(dir), constants.W_OK);
+  } catch {
+    writable = false;
+  }
+  checks.push({
+    name: "browser profile",
+    ok: writable,
+    detail: writable
+      ? `${browserRoot} (profile=${cfg.browser?.profile || "default"})`
+      : `${browserRoot} not writable`,
+  });
+  return checks;
+}
+
 function gatherMemoryEnvChecks(dir: string): DoctorCheck[] {
   const checks: DoctorCheck[] = [];
   const pg = process.env.CSAGENT_DATABASE_URL?.trim();
@@ -158,43 +197,59 @@ function gatherMemoryEnvChecks(dir: string): DoctorCheck[] {
     });
   }
 
-  const repoMemory = resolve(dir, ".agent", "memory");
-  if (home && canonical !== resolve(dir, ".agent") && existsSync(repoMemory)) {
-    let count = 0;
-    try {
-      count = readdirSync(repoMemory).filter((f) => f.endsWith(".md")).length;
-    } catch {
-      count = 0;
-    }
-    if (count > 0) {
-      checks.push({
-        name: "memory silo",
-        ok: false,
-        detail: `${count} note(s) in repo ${repoMemory}; canonical is ${canonical}/memory`,
-      });
-    }
+  const { canonical: memoryDir, silos } = gatherMemorySilos(dir);
+  for (const silo of silos) {
+    const aligned = siloIsAligned(silo.path, memoryDir);
+    checks.push({
+      name: silo.label === "repo" ? "memory silo" : `memory silo (${silo.label})`,
+      ok: aligned,
+      detail: aligned
+        ? `${silo.path} aligned with ${memoryDir}`
+        : `${silo.count} note(s) in ${silo.path} — run: csagent memory align-silo`,
+    });
   }
 
-  if (home) {
+  return checks;
+}
+
+function gatherGatewaySkillsChecks(dir: string): DoctorCheck[] {
+  const checks: DoctorCheck[] = [];
+  const gwPath = gatewayConfigPath(dir);
+  if (!existsSync(gwPath)) return checks;
+  try {
+    const gw = loadGatewayConfig(dir);
+    const cfg = loadConfig(dir);
+    const missing = gw.skills.filter((s) => !skillExists(dir, cfg.skillsPath, s));
+    if (gw.skills.length === 0) return checks;
+    checks.push({
+      name: "gateway skills",
+      ok: missing.length === 0,
+      detail:
+        missing.length === 0
+          ? `${gw.skills.join(", ")} present in skills/`
+          : `missing: ${missing.join(", ")} (run deploy/setup-home.sh)`,
+    });
+  } catch {
+    /* gateway parse errors surfaced elsewhere */
+  }
+  const root = process.env.CSAGENT_ROOT?.trim();
+  if (root && root !== dir) {
     try {
-      for (const job of loadCronJobs(dir)) {
-        if (!job.cwd?.trim()) continue;
-        const silo = resolve(job.cwd.trim(), ".agent", "memory");
-        if (!existsSync(silo)) continue;
-        const count = readdirSync(silo).filter((f) => f.endsWith(".md")).length;
-        if (count > 0) {
-          checks.push({
-            name: "memory silo (cron cwd)",
-            ok: false,
-            detail: `${count} note(s) in ${silo} (job ${job.id}) — canonical ${canonical}/memory`,
-          });
-        }
+      const gw = loadGatewayConfig(dir);
+      const missingRoot = gw.skills.filter(
+        (s) => !skillExists(root, loadConfig(root).skillsPath, s)
+      );
+      if (missingRoot.length) {
+        checks.push({
+          name: "CSAGENT_ROOT skills",
+          ok: false,
+          detail: `${root}/skills missing: ${missingRoot.join(", ")}`,
+        });
       }
     } catch {
-      /* cron file optional */
+      /* optional */
     }
   }
-
   return checks;
 }
 

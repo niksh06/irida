@@ -19,6 +19,7 @@ import { cmdAuth } from "./auth_cmd.js";
 import { cmdMemory } from "./memory_cmd.js";
 import { cmdCron } from "./cron_cmd.js";
 import { cmdGateway } from "./gateway_cmd.js";
+import { cmdStore } from "./store_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -30,6 +31,8 @@ Usage:
   csagent chat                interactive multi-turn session (Agent.create)
   csagent tui                 Hermes-style Ink TUI for chat
   csagent sessions            list stored sessions
+  csagent sessions search <q> filter by id/title/cwd
+  csagent store migrate       copy sqlite sessions/runs → postgres (CSAGENT_DATABASE_URL)
   csagent resume <id> "<p>"   continue a stored session (Agent.resume)
   csagent config              print non-secret config
   csagent auth login --stdin  save API key to .agent/credentials.json (600)
@@ -79,7 +82,9 @@ async function main(argv: string[]): Promise<number> {
       return cmdTui({ skills, yesIUnderstand: yes });
     }
     case "sessions":
-      return cmdSessions();
+      return cmdSessions(rest);
+    case "store":
+      return cmdStore(rest);
     case "skills":
       return cmdSkills(rest);
     case "resume": {

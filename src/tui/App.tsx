@@ -25,6 +25,7 @@ import { listPickerModelsFallback, listPickerModelsFromSdk, type ModelListSource
 import { formatTranscriptMarkdown, resolveExportPath, writeTranscriptExport, ExportPathError } from "./exportTranscript.js";
 import { listMcpEntries } from "./mcpView.js";
 import { lastAssistantText, osc52Copy } from "./clipboard.js";
+import { runDelegate } from "../delegateRun.js";
 import { parseSlash } from "./slash.js";
 import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
 import {
@@ -648,6 +649,23 @@ export function App(props: TuiOptions) {
           {
             const out = await bootSession(slash.sessionId);
             if (out && !out.ok) pushMessage({ role: "error", text: out.message });
+          }
+          setBusy(false);
+          return;
+        case "delegate":
+          setBusy(true);
+          pushMessage({ role: "system", text: "Delegate subagent running…" });
+          {
+            const out = await runDelegate({
+              dir,
+              prompt: slash.prompt,
+              skills: props.skills,
+              yesIUnderstand: props.yesIUnderstand,
+            });
+            pushMessage({
+              role: out.ok ? "assistant" : "error",
+              text: out.ok ? `[delegate]\n${out.summary}` : `Delegate failed: ${out.summary}`,
+            });
           }
           setBusy(false);
           return;

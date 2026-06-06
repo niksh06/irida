@@ -157,3 +157,8 @@ export function loadSkill(dir: string, skillsPath: string, name: string): Skill 
 export function loadSkills(dir: string, skillsPath: string, names: string[]): Skill[] {
   return names.map((n) => loadSkill(dir, skillsPath, n));
 }
+
+export function skillExists(dir: string, skillsPath: string, name: string): boolean {
+  const want = name.trim().toLowerCase();
+  return listSkills(dir, skillsPath).some((s) => s.name.toLowerCase() === want);
+}

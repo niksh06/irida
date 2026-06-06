@@ -16,6 +16,7 @@ export type SlashAction =
   | { type: "copy" }
   | { type: "export"; path?: string }
   | { type: "rename"; title: string }
+  | { type: "delegate"; prompt: string }
   | { type: "unknown"; command: string };
 
 export const SLASH_HELP = slashHelpLines().join("\n");
@@ -69,6 +70,9 @@ export function parseSlash(input: string): SlashAction | null {
     case "rename":
       if (!arg) return { type: "unknown", command: "/rename requires a title" };
       return { type: "rename", title: arg };
+    case "delegate":
+      if (!arg) return { type: "unknown", command: "/delegate requires a prompt" };
+      return { type: "delegate", prompt: arg };
     default:
       return { type: "unknown", command: cmd };
   }

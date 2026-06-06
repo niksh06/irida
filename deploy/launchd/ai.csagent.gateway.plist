@@ -27,6 +27,8 @@
         <string>__CSAGENT_ROOT__</string>
         <key>CSAGENT_DATABASE_URL</key>
         <string>__CSAGENT_DATABASE_URL__</string>
+        <key>CSAGENT_SECRETS_KEY</key>
+        <string>__CSAGENT_SECRETS_KEY__</string>
         <key>PATH</key>
         <string>__PATH_SNAPSHOT__</string>
     </dict>

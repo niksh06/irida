@@ -5,6 +5,7 @@ import { stdin as input } from "node:process";
 import { loadConfig, ConfigError } from "./config.js";
 import { importHappyinKb } from "./importHappyinKb.js";
 import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from "./memory.js";
+import { alignMemorySilos } from "./memorySiloOps.js";
 import { createMemoryStore } from "./memoryStore.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
@@ -264,9 +265,34 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
   }
 }
 
+export async function cmdMemoryAlignSilo(
+  argv: string[],
+  opts: MemoryCmdOptions = {}
+): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  const dryRun = argv.includes("--dry-run");
+  try {
+    loadConfig(dir);
+    const result = alignMemorySilos(dir, dryRun);
+    const mode = dryRun ? " (dry-run)" : "";
+    console.log(
+      `memory align-silo${mode}: copied=${result.copied} symlinked=${result.symlinked.length} skipped=${result.skipped.length}`
+    );
+    if (result.symlinked.length) {
+      for (const p of result.symlinked) console.log(`  silo: ${p}`);
+    }
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory align-silo: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
 export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
   const [sub, name, ...rest] = argv;
   switch (sub) {
+    case "align-silo":
+      return cmdMemoryAlignSilo(rest, opts);
     case "list":
       return cmdMemoryList(opts);
     case "show":
@@ -304,6 +330,7 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory search <query>            search note bodies
   csagent memory rm <name>
   csagent memory import-md --kb-root PATH [--dir CSAGENT_ROOT] [--domains kafka,python] [--dry-run]
+  csagent memory align-silo [--dry-run]   merge repo/cron silos → canonical ~/.csagent/.agent/memory
   csagent memory fact add|query|invalidate …
 
 In chat/TUI, inject with @memory:<name> or @memory: for all.

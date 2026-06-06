@@ -19,6 +19,7 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { cmd: "copy", desc: "Copy last reply (OSC52)" },
   { cmd: "export", desc: "Export transcript markdown", args: "[path]" },
   { cmd: "rename", desc: "Rename current session", args: "<title>" },
+  { cmd: "delegate", desc: "Isolated subagent run (summary only)", args: "<prompt>" },
   { cmd: "exit", desc: "Quit TUI" },
 ];
 

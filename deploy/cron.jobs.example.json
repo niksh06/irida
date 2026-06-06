@@ -22,6 +22,17 @@
       "enabled": false,
       "yesIUnderstand": true,
       "promptFile": "deploy/prompts/kb-import-weekly.prompt.txt"
+    },
+    {
+      "id": "memory-curator-weekly",
+      "cron": "0 4 * * 0",
+      "enabled": false,
+      "skills": ["memory-ops"],
+      "notify": {
+        "chatId": "YOUR_CHAT_ID",
+        "telegram": true
+      },
+      "promptFile": "deploy/prompts/memory-curator-weekly.prompt.txt"
     }
   ]
 }

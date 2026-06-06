@@ -16,6 +16,7 @@ fi
 CSAGENT_HOME="${CSAGENT_HOME:-$HOME/.csagent}"
 CSAGENT_ROOT="${CSAGENT_ROOT:-$CSAGENT_HOME/csagent}"
 CSAGENT_DATABASE_URL="${CSAGENT_DATABASE_URL:-}"
+CSAGENT_SECRETS_KEY="${CSAGENT_SECRETS_KEY:-}"
 LOG_DIR="$CSAGENT_HOME/logs"
 NODE_BIN="$(command -v node)"
 
@@ -38,6 +39,7 @@ render() {
     -e "s|__CSAGENT_HOME__|${CSAGENT_HOME//|/\\|}|g" \
     -e "s|__CSAGENT_ROOT__|${CSAGENT_ROOT//|/\\|}|g" \
     -e "s|__CSAGENT_DATABASE_URL__|${CSAGENT_DATABASE_URL//|/\\|}|g" \
+    -e "s|__CSAGENT_SECRETS_KEY__|${CSAGENT_SECRETS_KEY//|/\\|}|g" \
     -e "s|__CSAGENT_LOG_DIR__|${LOG_DIR//|/\\|}|g" \
     -e "s|__NODE_BIN__|${NODE_BIN//|/\\|}|g" \
     -e "s|__PATH_SNAPSHOT__|${PATH_SNAPSHOT//|/\\|}|g" \

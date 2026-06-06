@@ -57,6 +57,12 @@ sync_install() {
 
 sync_install
 
+if [[ -d "$SOURCE_ROOT/skills" ]]; then
+  mkdir -p "$CSAGENT_ROOT/skills"
+  rsync -a "$SOURCE_ROOT/skills/" "$CSAGENT_ROOT/skills/"
+  echo "Synced skills/ → $CSAGENT_ROOT/skills ($(find "$CSAGENT_ROOT/skills" -name '*.md' | wc -l | tr -d ' ') files)"
+fi
+
 PRESERVE_DATABASE_URL=""
 PRESERVE_SECRETS_KEY=""
 if [[ -f "$CSAGENT_HOME/csagent.env" ]]; then
