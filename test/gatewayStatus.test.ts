@@ -28,10 +28,11 @@ test("gatherGatewayStatus reads gateway.error.log not empty stdout", () => {
   const prev = process.env.CSAGENT_HOME;
   process.env.CSAGENT_HOME = home;
   writeExampleGatewayConfig(dir);
-  const logRow = gatherGatewayStatus(dir).find((r) => r.name === "gateway log");
-  assert.ok(logRow);
-  assert.match(logRow!.detail, /stderr/);
-  assert.match(logRow!.detail, /long-poll started/);
+  const health = gatherGatewayStatus(dir).find((r) => r.name === "gateway health");
+  assert.ok(health);
+  assert.equal(health!.ok, true);
+  assert.match(health!.detail, /stderr/);
+  assert.match(health!.detail, /long-poll started/);
   if (prev === undefined) delete process.env.CSAGENT_HOME;
   else process.env.CSAGENT_HOME = prev;
 });

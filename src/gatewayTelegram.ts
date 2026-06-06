@@ -284,6 +284,23 @@ export interface TelegramPollerOptions {
   onLog?: (line: string) => void;
 }
 
+/** Backoff for poll failures; honors Telegram `retry after N` seconds on 429. */
+export function telegramPollRetryDelayMs(
+  message: string,
+  consecutiveErrors: number,
+  pollMs: number,
+  maxBackoffMs: number
+): number {
+  const m = message.match(/retry after (\d+)/i);
+  if (m) {
+    const sec = parseInt(m[1]!, 10);
+    if (Number.isFinite(sec) && sec > 0) {
+      return Math.min(sec * 1000, maxBackoffMs);
+    }
+  }
+  return Math.min(pollMs * 2 ** Math.max(0, consecutiveErrors - 1), maxBackoffMs);
+}
+
 export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller {
   const dir = opts.dir ?? process.cwd();
   const token = telegramBotToken(opts.cfg, dir);
@@ -296,6 +313,8 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   let timer: ReturnType<typeof setTimeout> | undefined;
   let consecutiveErrors = 0;
   const maxBackoffMs = 60_000;
+  let lastHeartbeatLog = Date.now();
+  const heartbeatMs = 15 * 60 * 1000;
 
   const tick = async () => {
     if (!running) return;
@@ -303,6 +322,10 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
     try {
       const updates = await telegramGetUpdates(token, offset, Math.min(50, Math.max(1, Math.floor(pollMs / 1000))), fetchFn);
       consecutiveErrors = 0;
+      if (Date.now() - lastHeartbeatLog >= heartbeatMs) {
+        log(`[gateway] telegram poll ok (heartbeat offset=${offset})`);
+        lastHeartbeatLog = Date.now();
+      }
       for (const u of updates) {
         offset = Math.max(offset, u.update_id + 1);
         const result = await processTelegramUpdate(opts.cfg, opts.router, u, { token, fetchFn });
@@ -324,10 +347,9 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       }
     } catch (e) {
       consecutiveErrors++;
-      nextDelayMs = Math.min(pollMs * 2 ** (consecutiveErrors - 1), maxBackoffMs);
-      log(
-        `[gateway] telegram poll error (#${consecutiveErrors}): ${e instanceof Error ? e.message : String(e)}; retry in ${nextDelayMs}ms`
-      );
+      const msg = e instanceof Error ? e.message : String(e);
+      nextDelayMs = telegramPollRetryDelayMs(msg, consecutiveErrors, pollMs, maxBackoffMs);
+      log(`[gateway] telegram poll error (#${consecutiveErrors}): ${msg}; retry in ${nextDelayMs}ms`);
     }
     if (running) timer = setTimeout(() => void tick(), nextDelayMs);
   };

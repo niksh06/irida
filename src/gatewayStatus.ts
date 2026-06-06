@@ -6,6 +6,7 @@ import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
+import { assessGatewayLogHealth, tailLogLines } from "./gatewayLogHealth.js";
 
 export interface GatewayStatusLine {
   name: string;
@@ -39,11 +40,9 @@ function launchdRunning(label: string): { ok: boolean; detail: string } {
   }
 }
 
-function tailLog(path: string, lines = 5): string {
-  if (!existsSync(path)) return "(log missing)";
-  const raw = readFileSync(path, "utf8");
-  const rows = raw.trimEnd().split("\n").filter(Boolean).slice(-lines);
-  return rows.join(" | ") || "(empty)";
+function readLogTailLines(path: string, lines = 5): string[] {
+  if (!existsSync(path)) return [];
+  return tailLogLines(readFileSync(path, "utf8"), lines);
 }
 
 /** launchd: stdout → gateway.log, stderr (console.error) → gateway.error.log */
@@ -59,15 +58,6 @@ function resolveGatewayLogPath(logDir: string): { path: string; stream: "stderr"
   if (existsSync(errLog)) return { path: errLog, stream: "stderr" };
   if (existsSync(outLog)) return { path: outLog, stream: "stdout" };
   return null;
-}
-
-function gatewayLogHealthy(tail: string, ageMs: number, gatewayRunning: boolean): boolean {
-  const started = tail.includes("long-poll started") || tail.includes("webhook listening");
-  const recent = ageMs < 7 * 24 * 60 * 60 * 1000;
-  if (gatewayRunning) {
-    return recent || started || (tail !== "(empty)" && tail !== "(log missing)");
-  }
-  return started && recent;
 }
 
 export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusLine[] {
@@ -105,22 +95,28 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   const gwLogProbe = resolveGatewayLogPath(logDir);
   if (gwLogProbe) {
     const ageMs = Date.now() - statSync(gwLogProbe.path).mtimeMs;
-    const tail = tailLog(gwLogProbe.path, 3);
+    const tailLines = readLogTailLines(gwLogProbe.path, 5);
+    const health = assessGatewayLogHealth({
+      tailLines,
+      ageMs,
+      gatewayRunning: gwLaunch.ok,
+      stream: gwLogProbe.stream,
+    });
     rows.push({
-      name: "gateway log",
-      ok: gatewayLogHealthy(tail, ageMs, gwLaunch.ok),
-      detail: `${gwLogProbe.stream} · ${Math.round(ageMs / 60_000)}m ago · ${tail.slice(0, 200)}`,
+      name: "gateway health",
+      ok: health.ok,
+      detail: health.hint ? `${health.detail} → ${health.hint}` : health.detail,
     });
   } else {
     rows.push({
-      name: "gateway log",
+      name: "gateway health",
       ok: false,
       detail: `no logs in ${logDir} (expected gateway.error.log)`,
     });
   }
 
   if (existsSync(cronLog)) {
-    const tail = tailLog(cronLog, 2);
+    const tail = readLogTailLines(cronLog, 2).join(" | ") || "(empty)";
     rows.push({ name: "cron log", ok: true, detail: tail.slice(0, 160) });
   }
 
