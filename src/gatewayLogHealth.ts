@@ -28,7 +28,8 @@ export function assessGatewayLogHealth(opts: {
 }): GatewayLogHealth {
   const { tailLines, ageMs, gatewayRunning, stream } = opts;
   const ageMin = Math.round(ageMs / 60_000);
-  const tailPreview = tailLines.join(" | ").slice(0, 200);
+  const gwLines = tailLines.filter((l) => l.includes("[gateway]"));
+  const tailPreview = (gwLines.length ? gwLines : tailLines).join(" | ").slice(0, 200);
 
   if (tailLines.length === 0) {
     return {
@@ -46,9 +47,25 @@ export function assessGatewayLogHealth(opts: {
     };
   }
 
-  const recent = tailLines.slice(-3);
-  const recentPollErrors = recent.filter((l) => l.includes("poll error"));
-  if (recentPollErrors.length === recent.length && recent.length > 0) {
+  if (gwLines.length > 0) {
+    const lastGw = gwLines[gwLines.length - 1]!;
+    if (lastGw.includes("poll error")) {
+      return {
+        ok: false,
+        detail: `${stream} · ${ageMin}m ago · ${tailPreview}`,
+        hint: "telegram poll failing — restart gateway; check Hermes 409 / rate limits",
+      };
+    }
+    if (lastGw.includes("long-poll started") || lastGw.includes("poll ok")) {
+      return { ok: true, detail: `${stream} · ${ageMin}m ago · ${tailPreview}` };
+    }
+  }
+
+  const recentGw = gwLines.slice(-3);
+  if (
+    recentGw.length > 0 &&
+    recentGw.every((l) => l.includes("poll error"))
+  ) {
     return {
       ok: false,
       detail: `${stream} · ${ageMin}m ago · ${tailPreview}`,
@@ -56,11 +73,7 @@ export function assessGatewayLogHealth(opts: {
     };
   }
 
-  const ok =
-    !gatewayRunning ||
-    ageMs <= GATEWAY_LOG_STALE_MS ||
-    tailLines.some((l) => l.includes("long-poll started") || l.includes("poll ok"));
-
+  const ok = !gatewayRunning || ageMs <= GATEWAY_LOG_STALE_MS;
   return {
     ok,
     detail: `${stream} · ${ageMin}m ago · ${tailPreview}`,
