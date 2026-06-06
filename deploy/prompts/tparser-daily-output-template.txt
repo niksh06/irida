@@ -1,0 +1,42 @@
+# TParser daily — шаблон финального Telegram-тела
+
+📬 TParser · день · {window_end_utc}
+5 тем · {total_posts} постов
+
+## Сводка дня
+- …
+- **По темам:** AI/ML {n1} · AISec {n2} · InfoSec {n3} · Programming {n4} · DevOps {n5}
+
+---
+
+## AI / ML / LLM
+
+### 1. {channel} · `{priority}` · {tag}
+
+**Структура поста:**
+- …
+- URL: …
+
+**Вердикт агента:**
+…
+
+https://t.me/c/{short}/{post_id}
+**Источник:** …
+
+(repeat per post or top-N if space)
+
+## AISec / MLSec
+…
+
+## InfoSec / AppSec
+…
+
+## Programming / devtools
+…
+
+## DevSecOps / DevOps
+…
+
+---
+
+В чате: «топ-50», «только InfoSec», «только AI».

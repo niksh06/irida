@@ -14,5 +14,6 @@ Lightweight issue specs for roadmap slices. Full analysis lives in local `Report
 | [I-27](I-27-memory-curator-cron.md) | Memory curator cron (optional) | done |
 | [I-28](I-28-store-migrate.md) | Store migrate sqlite→postgres | done |
 | [I-29](I-29-obsidian-ops.md) | Obsidian vault skill (filesystem) | done |
+| [I-30](I-30-tparser-daily-delegates.md) | TParser daily 5-topic delegates | done |
 
 Next: [016 cloud runtime](../README.md#configuration) (not started).

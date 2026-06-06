@@ -1,0 +1,66 @@
+TParser **daily topic delegate** — topic `{TOPIC_ID}` / **{TOPIC_TITLE}**.
+Window: last {WINDOW_HOURS}h (`{WINDOW_START}` → `{WINDOW_END}` UTC). **Do not use /api/feed.**
+
+You are an isolated subagent. Return **only** the markdown section for this topic (Russian). Parent will merge five topics.
+
+## Setup
+
+1. `memory_get` name=`tparser-workflow` — tag/sphere rules and interests.
+2. Fetch posts:
+   - `GET http://127.0.0.1:8002/api/posts/recent-live?limit=300`
+   - Paginate `after_rowid` until posts are older than `{WINDOW_START}`.
+   - Keep items with `created_at` (or `date`) >= `{WINDOW_START}`.
+3. Hydrate: batch `GET /api/posts/by-keys?keys=channel_id:post_id,...` (max 50 keys).
+4. **Filter this topic only** — primary `topic_tags`, else summary keywords.
+   Tag hints for **{TOPIC_TITLE}**: {TAG_HINTS}
+5. Dedup: skip `seen_post` facts (`memory_fact_query` subject=seen_post).
+6. For **every** tag-matched post in window for this topic: `memory_fact_add` subject=seen_post predicate=channel_id object=post_id (full dedup).
+7. Sort by `priority` desc. Analyze **all** matched posts for this topic (not only top-N).
+
+## Per-post format (mandatory for each post)
+
+For each post in this topic (priority order):
+
+```
+### {n}. {channel_or_title} · `{priority}` · {primary_tag}
+
+**Структура поста:**
+- Bullet list preserving the post gist, key claims, named entities, and **all URLs** from `urls` / message (external links verbatim).
+
+**Вердикт агента:**
+2–4 предложения: что это значит в разрезе текущих интересов (из tparser-workflow). Если ссылок несколько — какая главная для понимания и почему.
+
+**Telegram:** https://t.me/c/{short}/{post_id}
+**Источник:** {best external URL or «(нет URL)»}
+```
+
+Link rules:
+- `short` = str(channel_id) with leading `-100` stripped.
+- Never `t.me/@channel` as tg link.
+- If several external URLs: pick the most relevant to the verdict; list others under Структура.
+
+## Deep check (when URLs exist)
+
+For posts with external http(s) links and thin summary:
+- Use `browser_navigate` + `browser_snapshot` (browser-ops) on **one** primary URL per post max.
+- Or `GET /api/posts/{post_id}/analysis?channel_id=` when browser unavailable.
+- Do not invent content.
+
+## Topic section header
+
+Start output with:
+
+`# {TOPIC_TITLE}`
+`Постов в теме: {count} · окно {WINDOW_HOURS}ч`
+
+If count=0:
+
+`# {TOPIC_TITLE}`
+`Постов в теме: 0 · окно {WINDOW_HOURS}ч`
+`(нет релевантных постов)`
+
+## Rules
+
+- Russian. No Obsidian writes. No wall of one-liners without вердикт.
+- Do not include posts from other topics.
+- Hard limit ~6000 chars for this topic section; if more posts, analyze all but compress вердикт to 1–2 sentences each.

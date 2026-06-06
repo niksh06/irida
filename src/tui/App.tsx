@@ -662,9 +662,14 @@ export function App(props: TuiOptions) {
               skills: props.skills,
               yesIUnderstand: props.yesIUnderstand,
             });
+            const delegateText = out.ok ? out.summary : `Delegate failed: ${out.summary}`;
+            const session = sessionRef.current;
+            if (session && out.ok) {
+              await session.injectContext(`[delegate] ${slash.prompt}`, delegateText);
+            }
             pushMessage({
               role: out.ok ? "assistant" : "error",
-              text: out.ok ? `[delegate]\n${out.summary}` : `Delegate failed: ${out.summary}`,
+              text: out.ok ? `[delegate]\n${delegateText}` : delegateText,
             });
           }
           setBusy(false);

@@ -35,6 +35,12 @@ export interface CronJob {
   /** Prepend recent memory_facts for this subject (e.g. seen_post). */
   memoryFactsSubject?: string;
   memoryFactsLimit?: number;
+  /** Run TParser-style topic delegates (5) + synthesizer instead of single prompt. */
+  topicDelegates?: boolean;
+  topicPromptFile?: string;
+  synthesizePromptFile?: string;
+  /** Hours for daily window (default 24). */
+  topicWindowHours?: number;
 }
 
 export interface CronJobsFile {
@@ -73,7 +79,14 @@ function validateJob(raw: unknown, index: number): CronJob {
     throw new CronJobsError(`jobs[${index}].id must be a non-empty slug`);
   }
   if (!cron) throw new CronJobsError(`jobs[${index}].cron is required`);
-  if (!prompt && !promptFile) {
+  const topicDelegates = o.topicDelegates === true;
+  if (topicDelegates) {
+    const tp = typeof o.topicPromptFile === "string" ? o.topicPromptFile.trim() : "";
+    const sp = typeof o.synthesizePromptFile === "string" ? o.synthesizePromptFile.trim() : "";
+    if (!tp || !sp) {
+      throw new CronJobsError(`jobs[${index}] topicDelegates requires topicPromptFile and synthesizePromptFile`);
+    }
+  } else if (!prompt && !promptFile) {
     throw new CronJobsError(`jobs[${index}] requires prompt or promptFile`);
   }
   if (prompt && promptFile) {
@@ -101,6 +114,14 @@ function validateJob(raw: unknown, index: number): CronJob {
   }
   if (typeof o.memoryFactsLimit === "number" && o.memoryFactsLimit > 0) {
     job.memoryFactsLimit = Math.min(o.memoryFactsLimit, 500);
+  }
+  if (topicDelegates) {
+    job.topicDelegates = true;
+    job.topicPromptFile = (o.topicPromptFile as string).trim();
+    job.synthesizePromptFile = (o.synthesizePromptFile as string).trim();
+  }
+  if (typeof o.topicWindowHours === "number" && o.topicWindowHours > 0) {
+    job.topicWindowHours = Math.min(o.topicWindowHours, 72);
   }
   if (o.notify && typeof o.notify === "object" && !Array.isArray(o.notify)) {
     const n = o.notify as Record<string, unknown>;

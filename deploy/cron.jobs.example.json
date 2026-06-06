@@ -2,19 +2,20 @@
   "version": 1,
   "jobs": [
     {
-      "id": "tparser-bi-hourly-digest",
-      "cron": "0 */2 * * *",
+      "id": "tparser-daily-digest",
+      "cron": "0 20 * * *",
       "cwd": "/path/to/TParser",
-      "skills": [
-        "memory-ops"
-      ],
+      "skills": ["memory-ops", "browser-ops"],
       "memoryFactsSubject": "seen_post",
-      "memoryFactsLimit": 50,
+      "memoryFactsLimit": 200,
+      "topicDelegates": true,
+      "topicWindowHours": 24,
+      "topicPromptFile": "deploy/prompts/tparser-daily-topic.prompt.txt",
+      "synthesizePromptFile": "deploy/prompts/tparser-daily-synthesize.prompt.txt",
       "notify": {
         "chatId": "YOUR_CHAT_ID",
         "telegram": true
-      },
-      "promptFile": "deploy/prompts/tparser-bi-hourly.prompt.txt"
+      }
     },
     {
       "id": "happyin-kb-weekly",

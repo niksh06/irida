@@ -27,15 +27,28 @@ export function scanPromptText(text: string): string[] {
 
 export function validateCronJobPrompt(job: CronJob, dir: string): string[] {
   const errs: string[] = [];
-  let text: string;
-  try {
-    text = loadCronJobPromptText(job, dir);
-  } catch (e) {
-    return [e instanceof Error ? e.message : String(e)];
+  const texts: string[] = [];
+  if (job.topicDelegates) {
+    for (const rel of [job.topicPromptFile, job.synthesizePromptFile]) {
+      if (!rel?.trim()) continue;
+      try {
+        texts.push(loadCronJobPromptText({ ...job, promptFile: rel.trim(), prompt: undefined }, dir));
+      } catch (e) {
+        errs.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+  } else {
+    try {
+      texts.push(loadCronJobPromptText(job, dir));
+    } catch (e) {
+      return [e instanceof Error ? e.message : String(e)];
+    }
   }
-  const hits = scanPromptText(text);
-  if (hits.length) {
-    errs.push(`job '${job.id}': prompt injection patterns: ${hits.join(", ")}`);
+  for (const text of texts) {
+    const hits = scanPromptText(text);
+    if (hits.length) {
+      errs.push(`job '${job.id}': prompt injection patterns: ${hits.join(", ")}`);
+    }
   }
   return errs;
 }

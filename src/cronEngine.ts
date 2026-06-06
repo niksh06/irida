@@ -19,6 +19,7 @@ import {
 import { buildSeenPostsPromptSection } from "./memoryDedup.js";
 import { loadCronJobPromptText } from "./cronPrompt.js";
 import { validateCronJobPrompt } from "./cronPromptGuard.js";
+import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import type { SdkLike } from "./host.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
@@ -74,8 +75,9 @@ export async function executeCronJob(
     return { ok: false, exitCode: EXIT.noperm, message: guardErrs.join("; ") };
   }
 
-  const promptBody = loadCronJobPromptText(job, configDir);
-  const prompt = await resolveCronPrompt(job, configDir);
+  const promptBody = job.topicDelegates
+    ? [job.topicPromptFile, job.synthesizePromptFile].filter(Boolean).join(" ")
+    : loadCronJobPromptText(job, configDir);
   if (opts.checkSafety !== false) {
     const gate = await safetyGate({
       prompt: promptBody,
@@ -90,6 +92,21 @@ export async function executeCronJob(
       };
     }
   }
+
+  if (job.topicDelegates) {
+    const digest = await executeTopicDigestJob(job, configDir, {
+      sdk: opts.sdk,
+      onLog: (line) => console.error(line),
+    });
+    return {
+      ok: digest.ok,
+      exitCode: digest.exitCode,
+      message: digest.message,
+      output: digest.output,
+    };
+  }
+
+  const prompt = await resolveCronPrompt(job, configDir);
 
   if (job.sessionId) {
     const store = createStore(configDir, loadConfig(configDir).stateDir);

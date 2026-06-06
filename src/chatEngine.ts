@@ -101,6 +101,8 @@ export interface ChatSession {
   agentId: string | null;
   connectMode: ConnectMode | "fresh";
   sendTurn(userMessage: string, hooks?: TurnHooks): Promise<TurnOutcome>;
+  /** Record delegate/subagent output into session transcript (replay on next turns). */
+  injectContext(userLabel: string, assistantText: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -488,6 +490,29 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           };
         }
       }
+    },
+    async injectContext(userLabel: string, assistantText: string): Promise<void> {
+      const label = userLabel.trim();
+      const body = assistantText.trim();
+      if (!label || !body) return;
+      const runId = newId("run");
+      await store.recordRun({
+        id: runId,
+        session_id: sessionId,
+        sdk_agent_id: agent.agentId ?? null,
+        sdk_run_id: null,
+        prompt_preview: preview(label),
+        result_preview: resultPreview(body),
+        status: "injected",
+        error_kind: null,
+        started_at: nowIso(),
+        finished_at: nowIso(),
+        cwd: sessionCwd,
+        runtime: cfg.runtime,
+        model: cfg.model,
+      });
+      lastAgentTouchAt = Date.now();
+      log(`[chat] injectContext session=${sessionId} labelChars=${label.length} bodyChars=${body.length}`);
     },
     async close(): Promise<void> {
       await disposeAgent(agent);
