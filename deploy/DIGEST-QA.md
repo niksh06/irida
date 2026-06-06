@@ -57,6 +57,14 @@ FAIL tg links: 0 t.me link(s)
 
 `/status`: `QA ok` или `QA FAIL` в строке `cron tparser-daily-digest`.
 
+## Morning re-check (08:00)
+
+launchd `ai.csagent.digest-qa-morning` — повторный `cron qa --morning --alert`.
+
+Alert prefix: `🌅 morning QA FAIL` (отличается от ночного `⚠️ QA FAIL`).
+
+Ручной прогон: `bash deploy/digest-qa-morning.sh`
+
 ## Ручной чеклист (1 мин в Telegram)
 
 - [ ] Заголовок `📬 TParser · день · …`

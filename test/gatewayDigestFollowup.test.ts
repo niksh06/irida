@@ -1,21 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDigestFollowup } from "../src/gatewayDigestFollowup.js";
+import {
+  buildDigestFollowupTurn,
+  parseDigestFollowup,
+} from "../src/gatewayDigestFollowup.js";
 
-test("parseDigestFollowup top-N variants", () => {
-  assert.equal(parseDigestFollowup("топ-50")?.label, "top-50");
-  assert.equal(parseDigestFollowup("top 50")?.label, "top-50");
-  assert.equal(parseDigestFollowup("top-15")?.label, "top-15");
-  assert.match(parseDigestFollowup("топ-50")!.prompt, /top-50/);
+test("parseDigestFollowup maps только devops to DevOps topic", () => {
+  const f = parseDigestFollowup("только devops");
+  assert.ok(f);
+  assert.match(f!.prompt, /DevOps/);
+  assert.equal(f!.label, "filter:DevOps");
 });
 
-test("parseDigestFollowup sphere filters", () => {
-  assert.equal(parseDigestFollowup("только InfoSec")?.label, "filter:InfoSec");
-  assert.equal(parseDigestFollowup("only AI")?.label, "filter:AI");
-  assert.match(parseDigestFollowup("только DevSecOps")!.prompt, /DevSecOps/);
+test("parseDigestFollowup maps only aisec", () => {
+  const f = parseDigestFollowup("only aisec");
+  assert.ok(f);
+  assert.match(f!.prompt, /AISec/);
 });
 
-test("parseDigestFollowup returns null for normal chat", () => {
-  assert.equal(parseDigestFollowup("привет"), null);
-  assert.equal(parseDigestFollowup("что нового в kafka?"), null);
+test("buildDigestFollowupTurn prepends digest context", () => {
+  const turn = buildDigestFollowupTurn("[digest-followup] expand", "[digest-context] snippet\n\n");
+  assert.match(turn, /^\[digest-context\]/);
+  assert.match(turn, /expand/);
 });

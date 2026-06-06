@@ -100,6 +100,18 @@ test("formatDigestQaAlert lists failed checks only", () => {
   assert.doesNotMatch(alert, /run status/);
 });
 
+test("formatDigestQaAlert morning prefix", () => {
+  const alert = formatDigestQaAlert(
+    {
+      jobId: DEFAULT_DIGEST_JOB_ID,
+      ok: false,
+      checks: [{ name: "freshness", ok: false, detail: "30h ago" }],
+    },
+    { morning: true }
+  );
+  assert.match(alert, /morning QA FAIL/);
+});
+
 test("saveDigestQaResult patches lastResult", () => {
   const dir = setupDir();
   const at = new Date().toISOString();

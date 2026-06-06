@@ -122,6 +122,35 @@ test("GatewaySessionRouter maps digest follow-up to expanded prompt", async () =
   });
 });
 
+test("GatewaySessionRouter injects digest context on follow-up when saved", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    mkdirSync(join(dir, ".agent"), { recursive: true });
+    writeFileSync(
+      join(dir, "agent.config.json"),
+      JSON.stringify({ stateDir: ".agent", cwd: dir }),
+      "utf8"
+    );
+    writeFileSync(
+      join(dir, ".agent", "cron.last-digest.tparser-daily-digest.txt"),
+      "📬 TParser saved digest snippet",
+      "utf8"
+    );
+    const router = new GatewaySessionRouter({
+      dir,
+      adapter: "telegram",
+      sdk: mockSdk({ v: false }),
+    });
+    const out = await router.handleInbound("u1", "только infosec");
+    assert.match(out.reply, /\[digest-context\]/);
+    assert.match(out.reply, /TParser saved/);
+    assert.match(out.reply, /\[digest-followup\]/);
+    await router.closeAll();
+  });
+});
+
 test("GatewaySessionRouter /new resets peer to fresh sess_", async () => {
   await withKey("k", async () => {
     const dir = tmp();

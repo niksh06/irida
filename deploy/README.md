@@ -57,6 +57,7 @@ bash ~/.csagent/csagent/deploy/install-launchd.sh
 | `ai.csagent.gateway` | Telegram long-poll | always (KeepAlive) |
 | `ai.csagent.cron-tick` | `csagent cron tick` | every 300s |
 | `ai.csagent.backup-weekly` | `backup-personal.sh` | Sun 05:00 |
+| `ai.csagent.digest-qa-morning` | `digest-qa-morning.sh` | daily 08:00 |
 
 Logs: `~/.csagent/logs/{gateway,cron-tick}.{log,error.log}`
 

@@ -9,6 +9,7 @@ import {
   formatDigestQaAlert,
   saveDigestOutput,
   saveDigestQaResult,
+  type DigestQaReport,
 } from "./digestQa.js";
 import { formatCronPostMortem, type CronExecuteResult } from "./cronRunRecord.js";
 
@@ -86,26 +87,23 @@ export function resolveJobNotify(job: CronJob): CronJobNotifyConfig | null {
   return { chatId: t.chatId, webhookUrl: t.webhookUrl, secretEnv: t.secretEnv };
 }
 
-async function sendDigestQaFollowUp(
+/** Send digest QA alert to job notify target (telegram or webhook). */
+export async function sendDigestQaAlertMessage(
   job: CronJob,
-  exec: CronExecuteResult,
-  at: Date,
+  report: DigestQaReport,
   dir: string,
-  target: CronJobNotifyTarget
+  target: CronJobNotifyTarget,
+  opts: { morning?: boolean } = {}
 ): Promise<void> {
-  if (!job.topicDelegates || !exec.ok) return;
-  const report = evaluateDigestQa(dir, job.id, at);
-  saveDigestQaResult(dir, job.id, report);
-  if (report.ok) {
-    console.error(`[cron] digest QA pass job=${job.id}`);
-    return;
-  }
-  console.error(`[cron] digest QA FAIL job=${job.id} — sending alert`);
-  const alert = formatDigestQaAlert(report);
+  if (report.ok) return;
+  const alert = formatDigestQaAlert(report, opts);
   try {
     if (target.mode === "telegram") {
       const token = resolveTelegramBotToken(dir, target.tokenEnv).value;
-      if (!token) return;
+      if (!token) {
+        console.error(`[cron] digest QA alert: ${target.tokenEnv} unset job=${job.id}`);
+        return;
+      }
       await telegramSendLongMessage(token, target.chatId, alert);
       return;
     }
@@ -122,6 +120,24 @@ async function sendDigestQaFollowUp(
       `[cron] digest QA alert failed job=${job.id}: ${e instanceof Error ? e.message : String(e)}`
     );
   }
+}
+
+async function sendDigestQaFollowUp(
+  job: CronJob,
+  exec: CronExecuteResult,
+  at: Date,
+  dir: string,
+  target: CronJobNotifyTarget
+): Promise<void> {
+  if (!job.topicDelegates || !exec.ok) return;
+  const report = evaluateDigestQa(dir, job.id, at);
+  saveDigestQaResult(dir, job.id, report);
+  if (report.ok) {
+    console.error(`[cron] digest QA pass job=${job.id}`);
+    return;
+  }
+  console.error(`[cron] digest QA FAIL job=${job.id} — sending alert`);
+  await sendDigestQaAlertMessage(job, report, dir, target);
 }
 
 function formatNotifyText(payload: CronNotifyPayload, exec: CronExecuteResult): string {

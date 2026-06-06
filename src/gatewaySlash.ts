@@ -52,9 +52,15 @@ export function gatewaySlashHelpText(): string {
     const usage = c.args ? `/${c.cmd} ${c.args}` : `/${c.cmd}`;
     return `${usage} — ${c.desc}`;
   });
-  return ["**csagent** — команды бота:", "", ...lines, "", "Свободный текст → агент (Cursor SDK)."].join(
-    "\n"
-  );
+  return [
+    "**csagent** — команды бота:",
+    "",
+    ...lines,
+    "",
+    "**После digest:** `топ-50`, `только InfoSec`, `только AI`, `only devops` → углубление по теме.",
+    "",
+    "Свободный текст → агент (Cursor SDK).",
+  ].join("\n");
 }
 
 export function parseGatewaySlash(text: string): { cmd: string; arg: string } | null {

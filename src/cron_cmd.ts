@@ -14,9 +14,14 @@ import {
 import { formatCronWhen, nextCronRun } from "./cronSchedule.js";
 import { cronJobEnabled } from "./cronJobs.js";
 import { executeCronJob, cronTick, markCronJobRan } from "./cronEngine.js";
-import { sendCronJobNotify } from "./cronNotify.js";
+import { resolveJobNotifyTarget, sendCronJobNotify, sendDigestQaAlertMessage } from "./cronNotify.js";
 import { saveCronJobResult } from "./cronRunRecord.js";
-import { DEFAULT_DIGEST_JOB_ID, evaluateDigestQa, formatDigestQaReport } from "./digestQa.js";
+import {
+  DEFAULT_DIGEST_JOB_ID,
+  evaluateDigestQa,
+  formatDigestQaReport,
+  saveDigestQaResult,
+} from "./digestQa.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
 import type { SdkLike, SdkCreateLike, SdkResumeLike } from "./host.js";
@@ -24,6 +29,9 @@ import type { SdkLike, SdkCreateLike, SdkResumeLike } from "./host.js";
 export interface CronCmdOptions {
   dir?: string;
   sdk?: SdkLike & SdkCreateLike & SdkResumeLike;
+  /** Send Telegram alert when digest QA fails (morning re-check). */
+  alert?: boolean;
+  morning?: boolean;
 }
 
 export function cmdCronList(opts: CronCmdOptions = {}): ExitCode {
@@ -84,7 +92,7 @@ export async function cmdCronRun(jobId: string, opts: CronCmdOptions = {}): Prom
   return exec.exitCode;
 }
 
-export function cmdCronQa(jobId: string | undefined, opts: CronCmdOptions = {}): ExitCode {
+export async function cmdCronQa(jobId: string | undefined, opts: CronCmdOptions = {}): Promise<ExitCode> {
   const dir = opts.dir ?? process.cwd();
   const id = (jobId ?? DEFAULT_DIGEST_JOB_ID).trim();
   if (!id) {
@@ -92,8 +100,29 @@ export function cmdCronQa(jobId: string | undefined, opts: CronCmdOptions = {}):
     return EXIT.usage;
   }
   const report = evaluateDigestQa(dir, id);
+  saveDigestQaResult(dir, id, report);
   console.log(formatDigestQaReport(report));
-  return report.ok ? EXIT.ok : EXIT.software;
+  if (!report.ok) {
+    if (opts.alert) {
+      let job: CronJob | undefined;
+      try {
+        job = loadCronJobs(dir).find((j) => j.id === id);
+      } catch {
+        job = undefined;
+      }
+      const target = job ? resolveJobNotifyTarget(job) : null;
+      if (job && target) {
+        const label = opts.morning ? "morning" : "manual";
+        console.error(`[cron] digest QA FAIL — sending ${label} alert`);
+        await sendDigestQaAlertMessage(job, report, dir, target, { morning: opts.morning });
+      } else {
+        console.error("[cron] digest QA FAIL — no notify target (set job.notify in cron.jobs.json)");
+      }
+    }
+    return EXIT.software;
+  }
+  if (opts.morning) console.error(`[cron] morning digest QA pass job=${id}`);
+  return EXIT.ok;
 }
 
 export async function cmdCronTick(opts: CronCmdOptions = {}): Promise<ExitCode> {
@@ -114,7 +143,8 @@ export async function cmdCronTick(opts: CronCmdOptions = {}): Promise<ExitCode> 
 }
 
 export async function cmdCron(argv: string[], opts: CronCmdOptions = {}): Promise<ExitCode> {
-  const [sub, jobId] = argv;
+  const [sub, ...restArgs] = argv;
+  const jobId = restArgs.find((a) => !a.startsWith("--")) ?? "";
   switch (sub) {
     case "list":
     case "ls":
@@ -123,8 +153,11 @@ export async function cmdCron(argv: string[], opts: CronCmdOptions = {}): Promis
       return cmdCronRun(jobId ?? "", opts);
     case "tick":
       return cmdCronTick(opts);
-    case "qa":
-      return cmdCronQa(jobId, opts);
+    case "qa": {
+      const alert = restArgs.includes("--alert");
+      const morning = restArgs.includes("--morning");
+      return cmdCronQa(jobId || undefined, { ...opts, alert, morning });
+    }
     case undefined:
     case "-h":
     case "--help":
@@ -134,6 +167,8 @@ export async function cmdCron(argv: string[], opts: CronCmdOptions = {}): Promis
   csagent cron run <id>          execute one job now
   csagent cron tick              run all due jobs (call from system cron)
   csagent cron qa [job-id]       automated digest QA (default: tparser-daily-digest)
+  csagent cron qa --alert        QA + Telegram alert on FAIL
+  csagent cron qa --morning --alert   morning re-check (launchd 08:00)
 
 Jobs file: .agent/cron.jobs.json
 Example crontab (every 5 min):

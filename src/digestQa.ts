@@ -195,17 +195,37 @@ export function formatDigestQaReport(report: DigestQaReport): string {
   return lines.join("\n");
 }
 
-/** Short Telegram alert when automated QA fails after a successful cron run. */
-export function formatDigestQaAlert(report: DigestQaReport): string {
+export interface DigestQaAlertOptions {
+  /** Morning re-check (launchd 08:00 safety net). */
+  morning?: boolean;
+}
+
+/** Short Telegram alert when automated QA fails. */
+export function formatDigestQaAlert(report: DigestQaReport, opts: DigestQaAlertOptions = {}): string {
   const failed = report.checks.filter((c) => !c.ok);
+  const head = opts.morning
+    ? `🌅 [cron:${report.jobId}] morning QA FAIL`
+    : `⚠️ [cron:${report.jobId}] QA FAIL`;
   const lines = [
-    `⚠️ [cron:${report.jobId}] QA FAIL`,
+    head,
     "",
     ...failed.map((c) => `FAIL ${c.name}: ${c.detail}`),
     "",
     "Проверь: csagent cron qa · deploy/DIGEST-QA.md",
   ];
   return lines.join("\n");
+}
+
+/** Snippet from last saved digest for Telegram follow-up context (H2). */
+export function loadLastDigestContext(
+  dir: string,
+  jobId: string = DEFAULT_DIGEST_JOB_ID,
+  maxChars = 1500
+): string {
+  const body = loadDigestOutput(dir, jobId);
+  if (!body) return "";
+  const snippet = body.length > maxChars ? `${body.slice(0, maxChars)}…` : body;
+  return `[digest-context] Last daily digest (snippet):\n${snippet}\n\n`;
 }
 
 export function saveDigestQaResult(dir: string, jobId: string, report: DigestQaReport): void {

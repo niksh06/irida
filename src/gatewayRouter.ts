@@ -10,7 +10,8 @@ import {
   type GatewayPeersFile,
 } from "./gatewayPeers.js";
 import type { SessionChannel } from "./sessionChannel.js";
-import { parseDigestFollowup } from "./gatewayDigestFollowup.js";
+import { buildDigestFollowupTurn, parseDigestFollowup } from "./gatewayDigestFollowup.js";
+import { loadLastDigestContext } from "./digestQa.js";
 import { handleGatewaySlash, isGatewaySlashCommand } from "./gatewaySlash.js";
 import { loadGatewayConfig, type GatewayConfig } from "./gatewayConfig.js";
 import { defaultServiceLogSink } from "./serviceLog.js";
@@ -133,9 +134,10 @@ export class GatewaySessionRouter {
       }
       const session = await this.getOrCreateSession(chatId);
       const followup = parseDigestFollowup(text);
-      const turnText = followup?.prompt ?? text;
+      let turnText = followup?.prompt ?? text;
       if (followup) {
         this.onLog(`[gateway] digest follow-up ${followup.label} chat=${chatId}`);
+        turnText = buildDigestFollowupTurn(turnText, loadLastDigestContext(this.dir));
       }
       const out = await session.sendTurn(turnText, hooks);
       if (out.kind === "ok") return { reply: out.assistantText };

@@ -42,6 +42,25 @@ tail -f ~/.csagent/logs/cron-tick.log
 
 Telegram: `/status`, `/doctor`, `/memory`, `/sessions`.
 
+### Утренний re-check (08:00)
+
+launchd `ai.csagent.digest-qa-morning` → `cron qa --morning --alert`.
+
+Если ночной digest не прошёл QA (или не было run) — **🌅 morning QA FAIL** в Telegram.
+
+```bash
+bash ~/.csagent/csagent/deploy/digest-qa-morning.sh   # ручной прогон
+```
+
+### Digest follow-up (H2)
+
+После вечернего digest в чате бота (без `/`):
+
+- `топ-50` / `top-20` — топ постов
+- `только InfoSec` / `only devops` / `только AI` — фильтр по теме
+
+Контекст последнего digest подмешивается из `.agent/cron.last-digest.*.txt`.
+
 ## Weekly jobs
 
 | Job | Schedule | Notes |
