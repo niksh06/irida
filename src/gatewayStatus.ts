@@ -42,15 +42,38 @@ function launchdRunning(label: string): { ok: boolean; detail: string } {
 function tailLog(path: string, lines = 5): string {
   if (!existsSync(path)) return "(log missing)";
   const raw = readFileSync(path, "utf8");
-  const rows = raw.trimEnd().split("\n").slice(-lines);
+  const rows = raw.trimEnd().split("\n").filter(Boolean).slice(-lines);
   return rows.join(" | ") || "(empty)";
+}
+
+/** launchd: stdout → gateway.log, stderr (console.error) → gateway.error.log */
+function resolveGatewayLogPath(logDir: string): { path: string; stream: "stderr" | "stdout" } | null {
+  const errLog = resolve(logDir, "gateway.error.log");
+  const outLog = resolve(logDir, "gateway.log");
+  if (existsSync(errLog) && statSync(errLog).size > 0) {
+    return { path: errLog, stream: "stderr" };
+  }
+  if (existsSync(outLog) && statSync(outLog).size > 0) {
+    return { path: outLog, stream: "stdout" };
+  }
+  if (existsSync(errLog)) return { path: errLog, stream: "stderr" };
+  if (existsSync(outLog)) return { path: outLog, stream: "stdout" };
+  return null;
+}
+
+function gatewayLogHealthy(tail: string, ageMs: number, gatewayRunning: boolean): boolean {
+  const started = tail.includes("long-poll started") || tail.includes("webhook listening");
+  const recent = ageMs < 7 * 24 * 60 * 60 * 1000;
+  if (gatewayRunning) {
+    return recent || started || (tail !== "(empty)" && tail !== "(log missing)");
+  }
+  return started && recent;
 }
 
 export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusLine[] {
   const rows: GatewayStatusLine[] = [];
   const home = process.env.CSAGENT_HOME?.trim() || resolve(dir, "..", "..");
   const logDir = resolve(home, "logs");
-  const gwLog = resolve(logDir, "gateway.log");
   const cronLog = resolve(logDir, "cron-tick.log");
 
   const gwPath = gatewayConfigPath(dir);
@@ -79,17 +102,21 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   const cronLaunch = launchdRunning(CRON_LABEL);
   rows.push({ name: "launchd cron-tick", ok: cronLaunch.ok, detail: cronLaunch.detail });
 
-  if (existsSync(gwLog)) {
-    const ageMs = Date.now() - statSync(gwLog).mtimeMs;
-    const tail = tailLog(gwLog, 3);
-    const pollOk = tail.includes("long-poll started") || tail.includes("webhook listening");
+  const gwLogProbe = resolveGatewayLogPath(logDir);
+  if (gwLogProbe) {
+    const ageMs = Date.now() - statSync(gwLogProbe.path).mtimeMs;
+    const tail = tailLog(gwLogProbe.path, 3);
     rows.push({
       name: "gateway log",
-      ok: pollOk && ageMs < 7 * 24 * 60 * 60 * 1000,
-      detail: `${Math.round(ageMs / 60_000)}m ago · ${tail.slice(0, 200)}`,
+      ok: gatewayLogHealthy(tail, ageMs, gwLaunch.ok),
+      detail: `${gwLogProbe.stream} · ${Math.round(ageMs / 60_000)}m ago · ${tail.slice(0, 200)}`,
     });
   } else {
-    rows.push({ name: "gateway log", ok: false, detail: gwLog });
+    rows.push({
+      name: "gateway log",
+      ok: false,
+      detail: `no logs in ${logDir} (expected gateway.error.log)`,
+    });
   }
 
   if (existsSync(cronLog)) {
