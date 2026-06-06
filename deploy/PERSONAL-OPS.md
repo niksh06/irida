@@ -17,6 +17,14 @@
 
 Проверка с телефона: `/status` — строка `cron tparser-daily-digest` с последним run.
 
+### Digest QA (после первого ночного digest)
+
+```bash
+bash ~/.csagent/csagent/deploy/digest-qa.sh
+```
+
+Чеклист: [deploy/DIGEST-QA.md](DIGEST-QA.md). Команда: `csagent cron qa`.
+
 ## Быстрые команды
 
 ```bash
@@ -43,6 +51,16 @@ Telegram: `/status`, `/doctor`, `/memory`, `/sessions`.
 Включить curator: в `cron.jobs.json` убрать `"enabled": false` (или удалить поле).
 
 ## Backup
+
+**Авто:** launchd `ai.csagent.backup-weekly` — воскресенье **05:00** (после memory-curator 04:00).
+
+Переустановка после обновления кода:
+
+```bash
+bash ~/.csagent/csagent/deploy/install-launchd.sh
+```
+
+**Вручную:**
 
 ```bash
 bash ~/.csagent/csagent/deploy/backup-personal.sh

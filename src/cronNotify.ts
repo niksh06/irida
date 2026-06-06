@@ -4,6 +4,7 @@
 import { resolveTelegramBotToken } from "./credentials.js";
 import { telegramSendLongMessage } from "./gatewayTelegram.js";
 import type { CronJob } from "./cronJobs.js";
+import { saveDigestOutput } from "./digestQa.js";
 import { formatCronPostMortem, type CronExecuteResult } from "./cronRunRecord.js";
 
 export interface CronJobNotifyWebhook {
@@ -105,6 +106,9 @@ export async function sendCronJobNotify(
   const target = resolveJobNotifyTarget(job);
   if (!target) return;
   const text = formatNotifyText(payload, exec);
+  if (job.topicDelegates && exec.output?.trim()) {
+    saveDigestOutput(dir, job.id, exec.output);
+  }
   const postMortem = job.topicDelegates ? formatCronPostMortem(job.id, exec, at) : "";
   try {
     if (target.mode === "telegram") {

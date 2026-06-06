@@ -34,6 +34,16 @@ run "gateway status" "$RUN" gateway status
 run "cron list" "$RUN" cron list
 run "launchd" launchctl list 2>/dev/null | grep -E 'csagent|PID' || true
 
+if [[ -f "$ROOT/deploy/digest-qa.sh" ]]; then
+  echo ""
+  echo "== digest qa (optional) =="
+  if "$ROOT/deploy/digest-qa.sh" 2>/dev/null; then
+    echo "digest-qa: OK"
+  else
+    echo "digest-qa: skip or FAIL (run after first nightly digest)" >&2
+  fi
+fi
+
 if [[ "$fail" -eq 0 ]]; then
   echo ""
   echo "prod-check: OK"

@@ -16,6 +16,7 @@ import { cronJobEnabled } from "./cronJobs.js";
 import { executeCronJob, cronTick, markCronJobRan } from "./cronEngine.js";
 import { sendCronJobNotify } from "./cronNotify.js";
 import { saveCronJobResult } from "./cronRunRecord.js";
+import { DEFAULT_DIGEST_JOB_ID, evaluateDigestQa, formatDigestQaReport } from "./digestQa.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
 import type { SdkLike, SdkCreateLike, SdkResumeLike } from "./host.js";
@@ -83,6 +84,18 @@ export async function cmdCronRun(jobId: string, opts: CronCmdOptions = {}): Prom
   return exec.exitCode;
 }
 
+export function cmdCronQa(jobId: string | undefined, opts: CronCmdOptions = {}): ExitCode {
+  const dir = opts.dir ?? process.cwd();
+  const id = (jobId ?? DEFAULT_DIGEST_JOB_ID).trim();
+  if (!id) {
+    console.error("cron qa: job id required");
+    return EXIT.usage;
+  }
+  const report = evaluateDigestQa(dir, id);
+  console.log(formatDigestQaReport(report));
+  return report.ok ? EXIT.ok : EXIT.software;
+}
+
 export async function cmdCronTick(opts: CronCmdOptions = {}): Promise<ExitCode> {
   const dir = opts.dir ?? process.cwd();
   try {
@@ -110,6 +123,8 @@ export async function cmdCron(argv: string[], opts: CronCmdOptions = {}): Promis
       return cmdCronRun(jobId ?? "", opts);
     case "tick":
       return cmdCronTick(opts);
+    case "qa":
+      return cmdCronQa(jobId, opts);
     case undefined:
     case "-h":
     case "--help":
@@ -118,6 +133,7 @@ export async function cmdCron(argv: string[], opts: CronCmdOptions = {}): Promis
   csagent cron list              show jobs and next run time
   csagent cron run <id>          execute one job now
   csagent cron tick              run all due jobs (call from system cron)
+  csagent cron qa [job-id]       automated digest QA (default: tparser-daily-digest)
 
 Jobs file: .agent/cron.jobs.json
 Example crontab (every 5 min):

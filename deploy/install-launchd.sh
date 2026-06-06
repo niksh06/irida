@@ -68,17 +68,19 @@ pkill -f "cli.ts gateway run" 2>/dev/null || true
 pkill -f "csagent-run.sh gateway" 2>/dev/null || true
 sleep 1
 
-for label in ai.csagent.gateway ai.csagent.cron-tick; do
+for label in ai.csagent.gateway ai.csagent.cron-tick ai.csagent.backup-weekly; do
   launchctl bootout "$DOMAIN" "$LAUNCH_AGENTS/${label}.plist" 2>/dev/null || \
     launchctl unload "$LAUNCH_AGENTS/${label}.plist" 2>/dev/null || true
 done
 
 render "$ROOT/deploy/launchd/ai.csagent.gateway.plist" "$LAUNCH_AGENTS/ai.csagent.gateway.plist"
 render "$ROOT/deploy/launchd/ai.csagent.cron-tick.plist" "$LAUNCH_AGENTS/ai.csagent.cron-tick.plist"
+render "$ROOT/deploy/launchd/ai.csagent.backup-weekly.plist" "$LAUNCH_AGENTS/ai.csagent.backup-weekly.plist"
 
 launchctl bootstrap "$DOMAIN" "$LAUNCH_AGENTS/ai.csagent.gateway.plist"
 launchctl bootstrap "$DOMAIN" "$LAUNCH_AGENTS/ai.csagent.cron-tick.plist"
+launchctl bootstrap "$DOMAIN" "$LAUNCH_AGENTS/ai.csagent.backup-weekly.plist"
 
-echo "Loaded ai.csagent.gateway and ai.csagent.cron-tick"
+echo "Loaded ai.csagent.gateway, ai.csagent.cron-tick, ai.csagent.backup-weekly"
 launchctl list | grep csagent || true
 echo "Logs: $LOG_DIR"

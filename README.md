@@ -308,6 +308,7 @@ Simple inline job (no delegates):
 ```bash
 csagent cron list
 csagent cron run tparser-daily-digest
+csagent cron qa                    # digest QA (after first nightly run)
 csagent cron tick    # launchd ai.csagent.cron-tick every 5 min, or system crontab
 ```
 
