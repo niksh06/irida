@@ -6,9 +6,11 @@ import { join, resolve } from "node:path";
 import {
   DEFAULT_DIGEST_JOB_ID,
   evaluateDigestQa,
+  formatDigestQaAlert,
   saveDigestOutput,
+  saveDigestQaResult,
 } from "../src/digestQa.js";
-import { saveCronState } from "../src/cronJobs.js";
+import { loadCronState, saveCronState } from "../src/cronJobs.js";
 
 function setupDir(): string {
   const dir = mkdtempSync(resolve(tmpdir(), "digest-qa-"));
@@ -82,6 +84,45 @@ test("evaluateDigestQa fails when lastResult missing", () => {
   const report = evaluateDigestQa(dir, DEFAULT_DIGEST_JOB_ID);
   assert.equal(report.ok, false);
   assert.ok(report.checks.some((c) => c.name === "last run" && !c.ok));
+});
+
+test("formatDigestQaAlert lists failed checks only", () => {
+  const alert = formatDigestQaAlert({
+    jobId: DEFAULT_DIGEST_JOB_ID,
+    ok: false,
+    checks: [
+      { name: "run status", ok: true, detail: "OK" },
+      { name: "tg links", ok: false, detail: "0 t.me link(s)" },
+    ],
+  });
+  assert.match(alert, /QA FAIL/);
+  assert.match(alert, /tg links/);
+  assert.doesNotMatch(alert, /run status/);
+});
+
+test("saveDigestQaResult patches lastResult", () => {
+  const dir = setupDir();
+  const at = new Date().toISOString();
+  saveCronState(dir, {
+    version: 1,
+    lastRun: {},
+    lastResult: {
+      [DEFAULT_DIGEST_JOB_ID]: {
+        at,
+        ok: true,
+        durationMs: 1,
+        message: "x",
+      },
+    },
+  });
+  saveDigestQaResult(dir, DEFAULT_DIGEST_JOB_ID, {
+    jobId: DEFAULT_DIGEST_JOB_ID,
+    ok: false,
+    checks: [{ name: "tg links", ok: false, detail: "0" }],
+  });
+  const state = loadCronState(dir);
+  assert.equal(state.lastResult?.[DEFAULT_DIGEST_JOB_ID]?.qaOk, false);
+  assert.deepEqual(state.lastResult?.[DEFAULT_DIGEST_JOB_ID]?.qaFailedChecks, ["tg links"]);
 });
 
 test("evaluateDigestQa accepts empty-day digest", () => {

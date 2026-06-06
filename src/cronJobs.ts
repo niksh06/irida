@@ -56,6 +56,9 @@ export interface CronJobLastResult {
   topicOk?: number;
   topicTotal?: number;
   topics?: Array<{ id: string; title: string; ok: boolean }>;
+  /** Set after automated digest QA (topicDelegates jobs). */
+  qaOk?: boolean;
+  qaFailedChecks?: string[];
 }
 
 export interface CronStateFile {

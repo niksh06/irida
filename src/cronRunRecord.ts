@@ -92,5 +92,7 @@ export function formatCronLastResultSummary(jobId: string, r: CronJobLastResult)
   if (r.topicTotal != null && r.topicOk != null) {
     detail += ` · topics ${r.topicOk}/${r.topicTotal}`;
   }
+  if (r.qaOk === false) detail += ` · QA FAIL`;
+  else if (r.qaOk === true) detail += ` · QA ok`;
   return detail;
 }

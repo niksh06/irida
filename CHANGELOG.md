@@ -10,6 +10,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - `cron.state.json` `lastResult` — surfaced in `/status` and `gateway status`
 - `deploy/PERSONAL-OPS.md` and `deploy/backup-personal.sh` for personal prod runbook
 - **`csagent cron qa`** + `deploy/DIGEST-QA.md` — automated digest QA checklist
+- Telegram **QA alert** after topic-delegate digest when run OK but QA FAIL (`qaOk` in `/status`)
 - launchd **`ai.csagent.backup-weekly`** — Sunday 05:00 backup via `backup-personal.sh`
 
 ## [0.1.1] - 2026-05-29

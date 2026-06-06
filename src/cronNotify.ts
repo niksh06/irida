@@ -4,7 +4,12 @@
 import { resolveTelegramBotToken } from "./credentials.js";
 import { telegramSendLongMessage } from "./gatewayTelegram.js";
 import type { CronJob } from "./cronJobs.js";
-import { saveDigestOutput } from "./digestQa.js";
+import {
+  evaluateDigestQa,
+  formatDigestQaAlert,
+  saveDigestOutput,
+  saveDigestQaResult,
+} from "./digestQa.js";
 import { formatCronPostMortem, type CronExecuteResult } from "./cronRunRecord.js";
 
 export interface CronJobNotifyWebhook {
@@ -81,6 +86,44 @@ export function resolveJobNotify(job: CronJob): CronJobNotifyConfig | null {
   return { chatId: t.chatId, webhookUrl: t.webhookUrl, secretEnv: t.secretEnv };
 }
 
+async function sendDigestQaFollowUp(
+  job: CronJob,
+  exec: CronExecuteResult,
+  at: Date,
+  dir: string,
+  target: CronJobNotifyTarget
+): Promise<void> {
+  if (!job.topicDelegates || !exec.ok) return;
+  const report = evaluateDigestQa(dir, job.id, at);
+  saveDigestQaResult(dir, job.id, report);
+  if (report.ok) {
+    console.error(`[cron] digest QA pass job=${job.id}`);
+    return;
+  }
+  console.error(`[cron] digest QA FAIL job=${job.id} — sending alert`);
+  const alert = formatDigestQaAlert(report);
+  try {
+    if (target.mode === "telegram") {
+      const token = resolveTelegramBotToken(dir, target.tokenEnv).value;
+      if (!token) return;
+      await telegramSendLongMessage(token, target.chatId, alert);
+      return;
+    }
+    const secret = resolveEnv(target.secretEnv);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (secret) headers["X-Gateway-Secret"] = secret;
+    await fetch(target.webhookUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ chatId: target.chatId, text: alert }),
+    });
+  } catch (e) {
+    console.error(
+      `[cron] digest QA alert failed job=${job.id}: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+}
+
 function formatNotifyText(payload: CronNotifyPayload, exec: CronExecuteResult): string {
   if (exec.output?.trim()) return exec.output.trim();
   const status = payload.ok ? "OK" : "FAILED";
@@ -119,6 +162,7 @@ export async function sendCronJobNotify(
       }
       if (text) await telegramSendLongMessage(token, target.chatId, text);
       if (postMortem) await telegramSendLongMessage(token, target.chatId, postMortem);
+      await sendDigestQaFollowUp(job, exec, at, dir, target);
       return;
     }
     const secret = resolveEnv(target.secretEnv);
@@ -130,6 +174,7 @@ export async function sendCronJobNotify(
       headers,
       body: JSON.stringify({ chatId: target.chatId, text: webhookText }),
     });
+    await sendDigestQaFollowUp(job, exec, at, dir, target);
   } catch (e) {
     console.error(
       `[cron] notify failed job=${job.id}: ${e instanceof Error ? e.message : String(e)}`

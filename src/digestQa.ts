@@ -4,7 +4,12 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
-import { loadCronJobs, loadCronState, type CronJobLastResult } from "./cronJobs.js";
+import {
+  loadCronJobs,
+  loadCronState,
+  saveCronState,
+  type CronJobLastResult,
+} from "./cronJobs.js";
 import { TPARSE_DAILY_TOPICS } from "./tparserTopics.js";
 
 export const DEFAULT_DIGEST_JOB_ID = "tparser-daily-digest";
@@ -188,4 +193,32 @@ export function formatDigestQaReport(report: DigestQaReport): string {
     lines.push(`${c.ok ? "OK" : "FAIL"} ${c.name}: ${c.detail}`);
   }
   return lines.join("\n");
+}
+
+/** Short Telegram alert when automated QA fails after a successful cron run. */
+export function formatDigestQaAlert(report: DigestQaReport): string {
+  const failed = report.checks.filter((c) => !c.ok);
+  const lines = [
+    `⚠️ [cron:${report.jobId}] QA FAIL`,
+    "",
+    ...failed.map((c) => `FAIL ${c.name}: ${c.detail}`),
+    "",
+    "Проверь: csagent cron qa · deploy/DIGEST-QA.md",
+  ];
+  return lines.join("\n");
+}
+
+export function saveDigestQaResult(dir: string, jobId: string, report: DigestQaReport): void {
+  const state = loadCronState(dir);
+  const prev = state.lastResult?.[jobId];
+  if (!prev) return;
+  state.lastResult = {
+    ...state.lastResult,
+    [jobId]: {
+      ...prev,
+      qaOk: report.ok,
+      qaFailedChecks: report.checks.filter((c) => !c.ok).map((c) => c.name),
+    },
+  };
+  saveCronState(dir, state);
 }

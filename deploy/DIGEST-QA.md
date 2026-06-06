@@ -40,6 +40,23 @@ topics: 5/5 (ai-ml, aisec-mlsec, …)
 
 **Красные флаги:** `FAILED`, `topics: 0/5`, `duration: 5s`, любой topic с `✗`.
 
+## Telegram alert (авто)
+
+Если cron run **OK**, но `cron qa` **FAIL** — третье сообщение:
+
+```
+⚠️ [cron:tparser-daily-digest] QA FAIL
+
+FAIL tg links: 0 t.me link(s)
+…
+
+Проверь: csagent cron qa · deploy/DIGEST-QA.md
+```
+
+При `status: FAILED` в post-mortem отдельный QA-alert **не** шлётся (достаточно post-mortem).
+
+`/status`: `QA ok` или `QA FAIL` в строке `cron tparser-daily-digest`.
+
 ## Ручной чеклист (1 мин в Telegram)
 
 - [ ] Заголовок `📬 TParser · день · …`

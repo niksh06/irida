@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   resolveJobNotify,
   resolveJobNotifyTarget,
@@ -8,7 +11,51 @@ import {
   splitTelegramMessages,
   type CronNotifyPayload,
 } from "../src/cronNotify.js";
+import { saveCronState } from "../src/cronJobs.js";
+import { DEFAULT_DIGEST_JOB_ID } from "../src/digestQa.js";
 import type { CronJob } from "../src/cronJobs.js";
+
+function topicDigestNotifyDir(): string {
+  const dir = mkdtempSync(resolve(tmpdir(), "cron-notify-"));
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  writeFileSync(
+    join(dir, "agent.config.json"),
+    JSON.stringify({ stateDir: ".agent", cwd: dir }),
+    "utf8"
+  );
+  writeFileSync(
+    join(dir, ".agent", "cron.jobs.json"),
+    JSON.stringify({
+      version: 1,
+      jobs: [
+        {
+          id: DEFAULT_DIGEST_JOB_ID,
+          cron: "59 23 * * *",
+          topicDelegates: true,
+          topicPromptFile: "deploy/prompts/tparser-daily-topic.prompt.txt",
+          synthesizePromptFile: "deploy/prompts/tparser-daily-synthesize.prompt.txt",
+        },
+      ],
+    }),
+    "utf8"
+  );
+  const at = new Date(Date.now() - 3_600_000).toISOString();
+  saveCronState(dir, {
+    version: 1,
+    lastRun: { [DEFAULT_DIGEST_JOB_ID]: "2026-05-29 23:59" },
+    lastResult: {
+      [DEFAULT_DIGEST_JOB_ID]: {
+        at,
+        ok: true,
+        durationMs: 600_000,
+        message: "finished",
+        topicOk: 5,
+        topicTotal: 5,
+      },
+    },
+  });
+  return dir;
+}
 
 test("resolveJobNotify reads job notify block and env fallback", () => {
   const job: CronJob = {
@@ -61,6 +108,7 @@ test("splitTelegramMessages chunks long text", () => {
 });
 
 test("sendCronJobNotify sends digest post-mortem for topicDelegates", async () => {
+  const dir = topicDigestNotifyDir();
   const posts: Array<Record<string, unknown>> = [];
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
@@ -68,7 +116,56 @@ test("sendCronJobNotify sends digest post-mortem for topicDelegates", async () =
     return new Response(JSON.stringify({ ok: true, result: {} }));
   };
   const job: CronJob = {
-    id: "tparser-daily-digest",
+    id: DEFAULT_DIGEST_JOB_ID,
+    cron: "59 23 * * *",
+    topicDelegates: true,
+    notify: { chatId: "123456789", telegram: true, tokenEnv: "TELEGRAM_BOT_TOKEN" },
+  };
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  const digestBody = [
+    "📬 TParser · день",
+    "## AI / ML / LLM",
+    "https://t.me/example/1",
+    "## AISec / MLSec",
+    "https://t.me/example/2",
+    "## InfoSec / AppSec",
+    "https://t.me/example/3",
+  ].join("\n");
+  await sendCronJobNotify(
+    job,
+    {
+      ok: true,
+      exitCode: 0,
+      message: "finished",
+      output: digestBody,
+      durationMs: 90_000,
+      topicSummaries: [
+        { topicId: "ai-ml", title: "AI/ML", ok: true, summary: "a" },
+        { topicId: "devops", title: "DevOps", ok: true, summary: "b" },
+      ],
+    },
+    new Date(),
+    dir
+  );
+  assert.equal(posts.length, 2);
+  assert.match(String(posts[0]!.text), /TParser/);
+  assert.match(String(posts[1]!.text), /post-mortem/);
+  globalThis.fetch = prevFetch;
+  if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+  else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+});
+
+test("sendCronJobNotify sends QA alert when digest body fails checks", async () => {
+  const dir = topicDigestNotifyDir();
+  const posts: Array<Record<string, unknown>> = [];
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    return new Response(JSON.stringify({ ok: true, result: {} }));
+  };
+  const job: CronJob = {
+    id: DEFAULT_DIGEST_JOB_ID,
     cron: "59 23 * * *",
     topicDelegates: true,
     notify: { chatId: "123456789", telegram: true, tokenEnv: "TELEGRAM_BOT_TOKEN" },
@@ -81,20 +178,16 @@ test("sendCronJobNotify sends digest post-mortem for topicDelegates", async () =
       ok: true,
       exitCode: 0,
       message: "finished",
-      output: "📬 digest body",
-      durationMs: 90_000,
-      topicSummaries: [
-        { topicId: "ai-ml", title: "AI/ML", ok: true, summary: "a" },
-        { topicId: "devops", title: "DevOps", ok: true, summary: "b" },
-      ],
+      output: "📬 TParser · день\n## AI / ML / LLM\nno links here",
+      durationMs: 600_000,
+      topicSummaries: [{ topicId: "ai-ml", title: "AI/ML", ok: true, summary: "a" }],
     },
     new Date(),
-    process.cwd()
+    dir
   );
-  assert.equal(posts.length, 2);
-  assert.match(String(posts[0]!.text), /digest body/);
-  assert.match(String(posts[1]!.text), /post-mortem/);
-  assert.match(String(posts[1]!.text), /topics: 2\/2/);
+  assert.equal(posts.length, 3);
+  assert.match(String(posts[2]!.text), /QA FAIL/);
+  assert.match(String(posts[2]!.text), /tg links/);
   globalThis.fetch = prevFetch;
   if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
   else process.env.TELEGRAM_BOT_TOKEN = prevToken;

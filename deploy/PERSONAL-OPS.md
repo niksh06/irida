@@ -14,6 +14,7 @@
 
 1. Синтезированный digest (тело дня)
 2. **Post-mortem** — `status`, `duration`, `topics N/M`
+3. **QA alert** (только если run OK, но автоматический QA FAIL) — см. [DIGEST-QA.md](DIGEST-QA.md)
 
 Проверка с телефона: `/status` — строка `cron tparser-daily-digest` с последним run.
 
