@@ -20,7 +20,7 @@ test("cron job accepts topicDelegates without promptFile", () => {
       jobs: [
         {
           id: "tparser-daily-digest",
-          cron: "0 20 * * *",
+          cron: "59 23 * * *",
           topicDelegates: true,
           topicPromptFile: "deploy/prompts/tparser-daily-topic.prompt.txt",
           synthesizePromptFile: "deploy/prompts/tparser-daily-synthesize.prompt.txt",

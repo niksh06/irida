@@ -3,7 +3,7 @@
   "jobs": [
     {
       "id": "tparser-daily-digest",
-      "cron": "0 20 * * *",
+      "cron": "59 23 * * *",
       "cwd": "/path/to/TParser",
       "skills": ["memory-ops", "browser-ops"],
       "memoryFactsSubject": "seen_post",

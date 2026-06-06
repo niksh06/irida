@@ -5,7 +5,7 @@
 
 ## Schedule
 
-- **Once per day** `0 20 * * *` (20:00 local)
+- **Once per day** `59 23 * * *` (23:59 local)
 - Window: **24h** (`topicWindowHours`)
 
 ## Flow
