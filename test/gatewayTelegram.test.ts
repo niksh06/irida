@@ -10,6 +10,7 @@ import {
   telegramSendLongMessage,
   telegramSendChatAction,
   startTelegramPoller,
+  syncTelegramBotCommands,
   formatTelegramToolProgressLine,
   formatTelegramMultipartBodies,
   shouldEmitTelegramToolProgress,
@@ -59,6 +60,31 @@ function mockSdk(disposed: { v: boolean }, stream?: RunLike["stream"]): SdkLike 
     resume: async () => chatAgent(disposed, stream),
   };
 }
+
+test("syncTelegramBotCommands posts setMyCommands for each scope", async () => {
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const fetchFn: import("../src/gatewayTelegram.js").TelegramFetch = async (_url, init) => {
+    const url = _url;
+    if (url.includes("setMyCommands")) {
+      calls.push({
+        method: "setMyCommands",
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      return new Response(JSON.stringify({ ok: true, result: true }));
+    }
+    return new Response(JSON.stringify({ ok: false }));
+  };
+  const n = await syncTelegramBotCommands("tok", fetchFn);
+  assert.equal(n, 8);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map((c) => (c.body.scope as { type: string }).type), [
+    "default",
+    "all_private_chats",
+    "all_group_chats",
+  ]);
+  const names = (calls[0]!.body.commands as Array<{ command: string }>).map((c) => c.command);
+  assert.ok(names.includes("help") && names.includes("doctor") && !names.includes("stop"));
+});
 
 test("formatTelegramToolProgressLine uses command preview", () => {
   const line = formatTelegramToolProgressLine({

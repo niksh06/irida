@@ -11,6 +11,8 @@ import {
 } from "./gatewayPeers.js";
 import type { SessionChannel } from "./sessionChannel.js";
 import { parseDigestFollowup } from "./gatewayDigestFollowup.js";
+import { handleGatewaySlash, isGatewaySlashCommand } from "./gatewaySlash.js";
+import { loadGatewayConfig, type GatewayConfig } from "./gatewayConfig.js";
 import { defaultServiceLogSink } from "./serviceLog.js";
 
 export { GATEWAY_PEERS_FILE, loadGatewayPeers, saveGatewayPeers, peerKey } from "./gatewayPeers.js";
@@ -110,6 +112,22 @@ export class GatewaySessionRouter {
             ? `Новая сессия csagent (было ${previousSessionId}). Контекст сброшен — можно писать заново.`
             : "Новая сессия csagent. Контекст сброшен — можно писать заново.",
         };
+      }
+      if (isGatewaySlashCommand(text)) {
+        let gwCfg;
+        try {
+          gwCfg = loadGatewayConfig(this.dir);
+        } catch {
+          gwCfg = { skills: this.skills } as GatewayConfig;
+        }
+        const slashReply = await handleGatewaySlash(text, {
+          dir: this.dir,
+          adapter: this.adapter,
+          chatId,
+          cfg: gwCfg,
+          skills: this.skills,
+        });
+        if (slashReply) return { reply: slashReply };
       }
       const session = await this.getOrCreateSession(chatId);
       const followup = parseDigestFollowup(text);

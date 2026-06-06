@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { resolveTelegramBotToken } from "./credentials.js";
+import { isChatApproved } from "./gatewayPairing.js";
 
 export const GATEWAY_FILE = "gateway.json";
 
@@ -148,7 +149,9 @@ export function validateGatewayConfig(dir: string = process.cwd()): string[] {
   }
 }
 
-export function isChatAllowed(cfg: GatewayConfig, chatId: string): boolean {
+export function isChatAllowed(cfg: GatewayConfig, chatId: string, dir?: string): boolean {
   if (cfg.allowedChatIds.length === 0) return false;
-  return cfg.allowedChatIds.includes(chatId);
+  if (cfg.allowedChatIds.includes(chatId)) return true;
+  if (dir) return isChatApproved(cfg.allowedChatIds, dir, chatId);
+  return false;
 }

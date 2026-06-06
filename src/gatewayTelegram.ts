@@ -4,6 +4,8 @@
 import { type GatewayConfig, isChatAllowed } from "./gatewayConfig.js";
 import { resolveTelegramBotToken } from "./credentials.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
+import { tryRegisterPairing } from "./gatewayPairing.js";
+import { gatewayTelegramBotCommands, isGatewaySlashCommand } from "./gatewaySlash.js";
 import type { ActivityDetail } from "./host.js";
 import { emitServiceLog, type ServiceLogSink } from "./serviceLog.js";
 
@@ -211,6 +213,7 @@ export interface ProcessTelegramUpdateResult {
 export interface ProcessTelegramUpdateOptions {
   token: string;
   fetchFn?: TelegramFetch;
+  dir?: string;
 }
 
 /** Handle one Telegram update through the gateway router. */
@@ -223,8 +226,10 @@ export async function processTelegramUpdate(
   const msg = update.message;
   if (!msg?.text?.trim()) return { handled: false };
   const chatId = String(msg.chat.id);
-  if (!isChatAllowed(cfg, chatId)) {
-    return { handled: true, chatId, error: "chat not allowed" };
+  const dir = opts.dir ?? process.cwd();
+  if (!isChatAllowed(cfg, chatId, dir)) {
+    const pairing = tryRegisterPairing(dir, "telegram", chatId);
+    return { handled: true, chatId, reply: pairing.message };
   }
   const text = msg.text.trim();
   if (text.length > cfg.maxMessageLength) {
@@ -236,7 +241,7 @@ export async function processTelegramUpdate(
 
   const token = opts.token;
   const fetchFn = opts.fetchFn ?? fetch;
-  const quickCommand = text === "/new";
+  const quickCommand = text === "/new" || isGatewaySlashCommand(text);
   const typing =
     cfg.telegramShowTyping && !quickCommand
       ? startTelegramTypingLoop(token, chatId, fetchFn)
@@ -286,6 +291,25 @@ export interface TelegramPollerOptions {
 }
 
 /** Backoff for poll failures; honors Telegram `retry after N` seconds on 429. */
+/** Scopes Hermes used to register — overwrite stale menu in each. */
+const TELEGRAM_COMMAND_SCOPES = [
+  { type: "default" },
+  { type: "all_private_chats" },
+  { type: "all_group_chats" },
+] as const;
+
+/** Push csagent slash catalog to Telegram «/» menu (replaces Hermes leftovers). */
+export async function syncTelegramBotCommands(
+  token: string,
+  fetchFn: TelegramFetch = fetch
+): Promise<number> {
+  const commands = gatewayTelegramBotCommands();
+  for (const scope of TELEGRAM_COMMAND_SCOPES) {
+    await telegramApiPost(token, "setMyCommands", { commands, scope }, fetchFn);
+  }
+  return commands.length;
+}
+
 export function telegramPollRetryDelayMs(
   message: string,
   consecutiveErrors: number,
@@ -330,7 +354,11 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       }
       for (const u of updates) {
         offset = Math.max(offset, u.update_id + 1);
-        const result = await processTelegramUpdate(opts.cfg, opts.router, u, { token, fetchFn });
+        const result = await processTelegramUpdate(opts.cfg, opts.router, u, {
+          token,
+          fetchFn,
+          dir: opts.dir,
+        });
         if (!result.handled || !result.chatId) continue;
         if (result.reply) {
           await telegramSendLongMessage(token, result.chatId, result.reply, fetchFn);
@@ -357,6 +385,11 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   };
 
   logInfo(`[gateway] telegram long-poll started (interval=${pollMs}ms)`);
+  void syncTelegramBotCommands(token, fetchFn)
+    .then((n) => logInfo(`[gateway] telegram setMyCommands OK (${n} cmds, ${TELEGRAM_COMMAND_SCOPES.length} scopes)`))
+    .catch((e) =>
+      logError(`[gateway] telegram setMyCommands failed: ${e instanceof Error ? e.message : String(e)}`)
+    );
   void tick();
 
   return {
