@@ -14,6 +14,22 @@ Hermes-style home: **`~/.csagent`**. Code in **`~/.csagent/csagent`**, runtime i
   csagent/             # install copy (synced from repo by setup-home.sh)
 ```
 
+## Prod health (personal ops)
+
+After deploy or `setup-home.sh`:
+
+```bash
+bash ~/.csagent/csagent/deploy/prod-check.sh
+```
+
+Manual digest smoke (before trusting 23:59 cron):
+
+```bash
+~/.csagent/csagent/scripts/csagent-run.sh cron run tparser-daily-digest
+```
+
+Telegram: `/status`, `/doctor` — no laptop required.
+
 ## Quick start
 
 ```bash

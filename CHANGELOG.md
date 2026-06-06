@@ -2,6 +2,18 @@
 
 All notable changes to **csagent** are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.1] - 2026-05-29
+
+### Fixed
+
+- **Postgres TUI:** shared connection pool with refcount — no more `Called end on pool more than once` when switching sessions
+- **TUI tab bar:** stable slot order across switches; `Tab` / `←→` / `1`–`5` use visible tabs, not DB sort order
+- **bootSession:** serialized session switches to avoid races
+
+### Added
+
+- `deploy/prod-check.sh` — personal prod pass (`doctor`, `gateway status`, `cron list`, launchd)
+
 ## [0.1.0] - 2026-05-29
 
 ### Added
@@ -23,4 +35,5 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - Requires Node.js ≥ 20 and a Cursor API key
 - Cloud runtime (`runtime: cloud`) is gated but not implemented yet (issue 016)
 
+[0.1.1]: https://github.com/niksh06/csagent/releases/tag/v0.1.1
 [0.1.0]: https://github.com/niksh06/csagent/releases/tag/v0.1.0

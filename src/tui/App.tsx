@@ -54,7 +54,13 @@ import type { SessionRecord } from "../store.js";
 import { resolveAgentLogger } from "../agentLog.js";
 import { indexOfLastAssistant, indexOfStreamingAssistant } from "./streamingTarget.js";
 import { formatToolProgressLine } from "./toolProgress.js";
-import { parseSessionTabHotkey, sessionAtTabIndex } from "./sessionTabs.js";
+import {
+  mergeTabBarSessions,
+  parseSessionTabHotkey,
+  sessionAtTabIndex,
+  tabCycleIndex,
+  visibleTabSessions,
+} from "./sessionTabs.js";
 
 let msgSeq = 0;
 function nextId(prefix: string): string {
@@ -118,6 +124,7 @@ export function App(props: TuiOptions) {
 
   const sessionRef = useRef<ChatSession | null>(null);
   const bootGen = useRef(0);
+  const bootChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const rowCacheRef = useRef<MessageRowCache>(new Map());
   const agentLog = useMemo(() => resolveAgentLogger({ component: "tui" }), []);
 
@@ -140,7 +147,7 @@ export function App(props: TuiOptions) {
   const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
   const [, tick] = useState(0);
   const [pickerSessions, setPickerSessions] = useState<SessionRecord[]>([]);
-  const [recentSessions, setRecentSessions] = useState<SessionRecord[]>([]);
+  const [tabBarSessions, setTabBarSessions] = useState<SessionRecord[]>([]);
   const [thinkingText, setThinkingText] = useState("");
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [modelOverride, setModelOverride] = useState<string | undefined>(undefined);
@@ -248,6 +255,7 @@ export function App(props: TuiOptions) {
 
   const bootSession = useCallback(
     async (resumeSessionId?: string) => {
+      const job = bootChainRef.current.then(async () => {
       const gen = ++bootGen.current;
       await sessionRef.current?.close();
       sessionRef.current = null;
@@ -339,8 +347,12 @@ export function App(props: TuiOptions) {
         },
         ...history,
       ]);
-      setRecentSessions(await listStoredSessions(dir));
+      const fresh = await listStoredSessions(dir);
+      setTabBarSessions((prev) => mergeTabBarSessions(prev, fresh));
       return opened;
+      });
+      bootChainRef.current = job.catch(() => {});
+      return job;
     },
     [agentLog, dir, modelOverride, noteActivity, patchStreaming, patchThinking, props.skills, props.yesIUnderstand, pushMessage, resetTurnRetry]
   );
@@ -455,24 +467,23 @@ export function App(props: TuiOptions) {
 
   const cycleSessionTab = useCallback(
     (delta: number) => {
-      if (recentSessions.length < 2 || busy) return;
-      const cur = meta?.sessionId;
-      let idx = recentSessions.findIndex((s) => s.id === cur);
-      if (idx < 0) idx = 0;
-      const next = (idx + delta + recentSessions.length) % recentSessions.length;
-      void switchToSession(recentSessions[next]!);
+      if (busy) return;
+      const tabs = visibleTabSessions(tabBarSessions);
+      const nextIdx = tabCycleIndex(tabs, meta?.sessionId, delta);
+      if (nextIdx == null) return;
+      void switchToSession(tabs[nextIdx]!);
     },
-    [recentSessions, meta?.sessionId, busy, switchToSession]
+    [tabBarSessions, meta?.sessionId, busy, switchToSession]
   );
 
   const selectSessionTabByIndex = useCallback(
     (tabIndex: number) => {
       if (busy) return;
-      const target = sessionAtTabIndex(recentSessions, tabIndex);
+      const target = sessionAtTabIndex(tabBarSessions, tabIndex);
       if (!target || target.id === meta?.sessionId) return;
       void switchToSession(target);
     },
-    [recentSessions, meta?.sessionId, busy, switchToSession]
+    [tabBarSessions, meta?.sessionId, busy, switchToSession]
   );
 
   const applyModel = useCallback(
@@ -649,7 +660,8 @@ export function App(props: TuiOptions) {
             return;
           }
           if (await renameStoredSession(dir, meta.sessionId, slash.title)) {
-            setRecentSessions(await listStoredSessions(dir));
+            const fresh = await listStoredSessions(dir);
+            setTabBarSessions((prev) => mergeTabBarSessions(prev, fresh));
             pushMessage({ role: "system", text: `Session renamed → ${slash.title}` });
           } else {
             pushMessage({ role: "error", text: "Rename failed" });
@@ -810,7 +822,7 @@ export function App(props: TuiOptions) {
     <Box flexDirection="column" width="100%">
       <Box flexDirection="column" marginBottom={0}>
         <Text color={theme.primary}>{banner.trimEnd()}</Text>
-        <SessionTabBar sessions={recentSessions} activeId={meta?.sessionId ?? null} width={cols} />
+        <SessionTabBar sessions={tabBarSessions} activeId={meta?.sessionId ?? null} width={cols} />
       </Box>
 
       <Box
