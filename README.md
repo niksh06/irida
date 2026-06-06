@@ -2,18 +2,18 @@
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
-> **Local-first** (no cloud runs yet). **Cron** · **Gateway** (webhook + Telegram) · **Browser MCP** · **Ink TUI** · **262 tests** green.
+> **Local-first** (no cloud runs yet). **Cron** · **Gateway** (webhook + Telegram) · **Browser MCP** · **Ink TUI** · **265 tests** green.
 
 ## Feature overview
 
 | Area | What you get |
 |------|----------------|
 | **CLI** | `doctor`, `run`, `chat`, `sessions`, `resume`, `config`, `skills`, `store migrate` |
-| **TUI** | `csagent tui` — tabs, slash cmds (`/delegate`), overlays, scroll, `@file` complete |
+| **TUI** | `csagent tui` — tabs, slash cmds (`/delegate` → inject into session), overlays, `@file` |
 | **Auth** | `csagent auth login` + `auth telegram login` → `.agent/credentials.json` or PG (pgcrypto) |
 | **Memory** | `@memory:name`, MCP tools, `memory align-silo`, `import-md`, `memory fact …` |
 | **Browser** | `csagent-browser` MCP — stealth Chromium (`browser_navigate`, `browser_snapshot`, …) |
-| **Cron** | `.agent/cron.jobs.json` + `cron tick`; prompt injection guard in doctor |
+| **Cron** | `cron tick` + jobs; TParser **daily** digest (5 topic delegates); prompt guard in doctor |
 | **Gateway** | Webhook or Telegram → stable `sess_` per chat; csagent slash catalog + pairing |
 | **Resilience** | SDK agent rotation in-session; auth errors surfaced clearly |
 | **Safety** | Destructive prompt gate, secret redaction, BSD exit codes |
@@ -149,7 +149,7 @@ Import a markdown KB into PG (example):
 ~/.csagent/csagent/scripts/csagent-run.sh memory list
 ```
 
-Cron (TParser digest example): copy `deploy/cron.jobs.example.json` → `~/.csagent/.agent/cron.jobs.json`, set `notify.chatId`. See [deploy/README.md](deploy/README.md).
+Cron (TParser **daily** digest at `59 23 * * *`): copy `deploy/cron.jobs.example.json` → `~/.csagent/.agent/cron.jobs.json`, set `notify.chatId` and `cwd` to TParser. See [deploy/README.md](deploy/README.md).
 
 #### 2.4. Postgres backup
 
@@ -215,14 +215,14 @@ During development: `npm run dev -- <subcommand>` (same as above).
 ### TUI (`csagent tui`)
 
 - **Session tabs** — recent `sess_` in the header; **Ctrl+[** / **Ctrl+]** switch (empty composer).
-- **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/delegate <prompt>`, `/new`, `/resume <id>`, `/clear`, `/copy`, `/rename`, `/exit`, …
+- **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/delegate <prompt>` (isolated run + **inject** into parent `sess_`), `/new`, `/resume <id>`, `/clear`, `/copy`, `/rename`, `/exit`, …
 - **Overlays** — `/sessions`, `/skills`, `/memory`, `/model`, `/mcp` (Esc closes; scroll preserved).
 - **Composer** — multiline, `@file` Tab-complete, `@memory:` refs.
 - **Activity** — tool call banner during turns; thinking strip when model streams reasoning (Ctrl+T).
 
 ### Skills
 
-Drop Markdown skills under `skills/` (`skills/<name>.md` or `skills/<name>/SKILL.md`) with frontmatter:
+Bundled: `memory-ops`, `browser-ops`, `obsidian-ops` (see `skills/`). Drop more under `skills/<name>.md` with frontmatter:
 
 ```markdown
 ---
@@ -268,37 +268,52 @@ In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
 ### Cron (scheduled jobs)
 
-`.agent/cron.jobs.json` (five-field cron, local time). Full TParser digest example: `deploy/cron.jobs.example.json`.
+`.agent/cron.jobs.json` (five-field cron, **local time**). Examples: `deploy/cron.jobs.example.json`.
+
+**TParser daily digest** (`topicDelegates: true`) — five isolated `runDelegate` passes (AI/ML, AISec, InfoSec, Programming, DevOps) over a 24h window, then a synthesizer `runPrompt` → one Telegram message. Default schedule: **`59 23 * * *`** (23:59). Prompts: `deploy/prompts/tparser-daily-topic.prompt.txt`, `tparser-daily-synthesize.prompt.txt`.
 
 ```json
 {
   "version": 1,
   "jobs": [
     {
-      "id": "nightly-summary",
-      "cron": "0 9 * * *",
-      "prompt": "Summarize open issues @memory:project",
-      "skills": ["review"],
-      "yesIUnderstand": false,
+      "id": "tparser-daily-digest",
+      "cron": "59 23 * * *",
+      "cwd": "/path/to/TParser",
+      "skills": ["memory-ops", "browser-ops"],
+      "memoryFactsSubject": "seen_post",
+      "memoryFactsLimit": 200,
+      "topicDelegates": true,
+      "topicWindowHours": 24,
+      "topicPromptFile": "deploy/prompts/tparser-daily-topic.prompt.txt",
+      "synthesizePromptFile": "deploy/prompts/tparser-daily-synthesize.prompt.txt",
       "notify": { "chatId": "YOUR_CHAT_ID", "telegram": true }
     }
   ]
 }
 ```
 
+Simple inline job (no delegates):
+
+```json
+{
+  "id": "nightly-summary",
+  "cron": "0 9 * * *",
+  "prompt": "Summarize open issues @memory:project",
+  "skills": ["memory-ops"],
+  "notify": { "chatId": "YOUR_CHAT_ID", "telegram": true }
+}
+```
+
 ```bash
 csagent cron list
-csagent cron run nightly-summary
-csagent cron tick    # call from system cron every minute
+csagent cron run tparser-daily-digest
+csagent cron tick    # launchd ai.csagent.cron-tick every 5 min, or system crontab
 ```
 
-Example crontab:
+Launchd (macOS home): `bash deploy/install-launchd.sh` runs `cron tick` — no manual crontab required.
 
-```cron
-*/5 * * * * cd /path/to/project && csagent cron tick >> /tmp/csagent-cron.log 2>&1
-```
-
-Optional `sessionId` binds to existing `sess_`. Destructive prompts denied unless `"yesIUnderstand": true`.
+Optional `sessionId` binds to existing `sess_`. Destructive prompts denied unless `"yesIUnderstand": true`. Doctor checks **cron prompt guard** (injection patterns).
 
 ### Gateway (webhook / Telegram → chat)
 
@@ -361,7 +376,7 @@ Each `chatId` → stable `sess_` (visible in `csagent sessions` / TUI). Allowlis
 
 On gateway start, `setMyCommands` syncs this menu to Telegram (replaces stale Hermes entries). Free text → Cursor SDK agent turn.
 
-**Launchd + Postgres secrets:** when using `CSAGENT_DATABASE_URL`, also set `CSAGENT_SECRETS_KEY` in `~/.csagent/csagent.env` — `install-launchd.sh` injects both into gateway/cron plists.
+**Launchd env:** `CSAGENT_SECRETS_KEY` (required with Postgres credentials), optional `OBSIDIAN_VAULT_PATH` for `obsidian-ops` — `install-launchd.sh` injects into gateway/cron plists from `~/.csagent/csagent.env`.
 
 SIGINT disposes SDK agents.
 
@@ -442,7 +457,7 @@ Auth errors (`ERROR_NOT_LOGGED_IN`) are **not** fixed by rotation — refresh th
 
 ```bash
 npm run typecheck
-npm test            # 262 tests, mocked SDK
+npm test            # 265 tests, mocked SDK
 npm run accept      # MVP acceptance harness
 npm run smoke       # live SDK (needs key)
 ```
@@ -458,13 +473,14 @@ Cursor SDK is the sole agent runtime (no parallel model/provider loop). Shared c
 | Module | Role |
 |--------|------|
 | `src/cli.ts` | command dispatch |
-| `src/chatEngine.ts` | shared chat + rotation |
+| `src/chatEngine.ts` | shared chat + rotation + `injectContext` |
+| `src/delegateRun.ts` `src/cronTopicDigest.ts` | TUI/cron subagent delegates |
 | `src/tui/` | Ink TUI |
 | `src/store.ts` | SQLite or Postgres store |
 | `src/memory*.ts` `src/cron*.ts` `src/gateway*.ts` | automation surfaces |
 | `src/browser/` `src/mcp/browser*.ts` | stealth browser MCP |
 | `src/gatewaySlash.ts` `src/gatewayPairing.ts` | Telegram slash + pairing |
-| `issues/` | tracked specs for roadmap slices (039, I-22…I-28, 040) |
+| `issues/` | tracked specs (039, I-22…I-30, 040) — see `issues/README.md` |
 | `src/safety.ts` `src/redact.ts` | gate + redaction |
 
 ## Support the author

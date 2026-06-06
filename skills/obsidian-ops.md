@@ -11,7 +11,7 @@ Obsidian vault work is **filesystem-first**. Tolaria MCP is read-only — use re
 Resolve once per task; never pass unresolved `$OBSIDIAN_VAULT_PATH` to tools.
 
 1. `OBSIDIAN_VAULT_PATH` from the environment (`~/.csagent/csagent.env` or shell).
-2. If unset, ask the user or use the known home vault (e.g. `~/Downloads/Obsidian/ForNotes`).
+2. If unset, ask the user for the vault path (must be absolute).
 3. All paths must be **absolute**; vault names may contain spaces.
 
 ## vs `memory-ops` (csagent-memory)
