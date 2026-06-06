@@ -13,6 +13,7 @@ test("gatewaySlashHelpText is csagent branded", () => {
   assert.match(help, /csagent/);
   assert.match(help, /\/help/);
   assert.match(help, /\/doctor/);
+  assert.match(help, /\/delegate/);
   assert.doesNotMatch(help, /hermes/i);
 });
 

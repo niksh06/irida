@@ -214,7 +214,7 @@ During development: `npm run dev -- <subcommand>` (same as above).
 
 ### TUI (`csagent tui`)
 
-- **Session tabs** — recent `sess_` in the header; **Ctrl+[** / **Ctrl+]** switch (empty composer).
+- **Session tabs** — recent `sess_` in the header; **`1`–`5`**, **Tab** / **Shift+Tab**, **←**/**→** (empty composer), **Ctrl+[** / **Ctrl+]** to switch.
 - **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/delegate <prompt>` (isolated run + **inject** into parent `sess_`), `/new`, `/resume <id>`, `/clear`, `/copy`, `/rename`, `/exit`, …
 - **Overlays** — `/sessions`, `/skills`, `/memory`, `/model`, `/mcp` (Esc closes; scroll preserved).
 - **Composer** — multiline, `@file` Tab-complete, `@memory:` refs.
@@ -373,6 +373,7 @@ Each `chatId` → stable `sess_` (visible in `csagent sessions` / TUI). Allowlis
 | `/sessions [q]` | Recent sessions for this chat |
 | `/skills` | Skills from `gateway.json` |
 | `/approve <code>` | Approve pairing for new chatId |
+| `/delegate <prompt>` | Isolated subagent run; summary **injected** into this chat's `sess_` |
 
 On gateway start, `setMyCommands` syncs this menu to Telegram (replaces stale Hermes entries). Free text → Cursor SDK agent turn.
 

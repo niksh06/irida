@@ -22,8 +22,12 @@ export function Composer(props: {
   scrollMode?: boolean;
   placeholder?: string;
   cwd?: string;
+  /** When input empty: digit 1–5 selects session tab; ←→ cycles tabs. */
+  onSessionTabSelect?: (index: number) => void;
+  onSessionTabCycle?: (delta: number) => void;
 }) {
-  const { value, onChange, onSubmit, disabled, scrollMode, placeholder, cwd } = props;
+  const { value, onChange, onSubmit, disabled, scrollMode, placeholder, cwd, onSessionTabSelect, onSessionTabCycle } =
+    props;
   const [cursor, setCursor] = useState(() => props.value.length);
 
   useEffect(() => {
@@ -70,10 +74,18 @@ export function Composer(props: {
         return;
       }
       if (key.leftArrow) {
+        if (value.length === 0 && onSessionTabCycle) {
+          onSessionTabCycle(-1);
+          return;
+        }
         setCursor(moveCursor(value, cursor, "left"));
         return;
       }
       if (key.rightArrow) {
+        if (value.length === 0 && onSessionTabCycle) {
+          onSessionTabCycle(1);
+          return;
+        }
         setCursor(moveCursor(value, cursor, "right"));
         return;
       }
@@ -86,6 +98,13 @@ export function Composer(props: {
         return;
       }
       if (!key.ctrl && !key.meta && input) {
+        if (value.length === 0 && onSessionTabSelect && input.length === 1) {
+          const n = input.charCodeAt(0) - 49;
+          if (n >= 0 && n < 5) {
+            onSessionTabSelect(n);
+            return;
+          }
+        }
         const { value: v, cursor: c } = insertAt(value, cursor, input);
         apply(v, c);
       }

@@ -12,6 +12,8 @@ import { loadConfig } from "./config.js";
 import { createStore } from "./store.js";
 import { searchSessions } from "./sessionSearch.js";
 import { listSkills } from "./skills.js";
+import { runDelegate } from "./delegateRun.js";
+import type { ChatSession } from "./chatEngine.js";
 
 export interface GatewaySlashCommand {
   cmd: string;
@@ -31,6 +33,7 @@ export const GATEWAY_SLASH_COMMANDS: GatewaySlashCommand[] = [
   { cmd: "sessions", desc: "Последние сессии (этот чат)", telegram: true },
   { cmd: "skills", desc: "Skills из gateway.json", telegram: true },
   { cmd: "approve", desc: "Подтвердить pairing-код", args: "<код>", telegram: true },
+  { cmd: "delegate", desc: "Изолированный subagent (summary → сессия)", args: "<prompt>", telegram: true },
 ];
 
 /** Telegram Bot API menu entries (setMyCommands) — same catalog as /help. */
@@ -74,6 +77,9 @@ export interface GatewaySlashContext {
   chatId: string;
   cfg: GatewayConfig;
   skills: string[];
+  /** Required for /delegate — inject summary into the peer session. */
+  getSession?: () => Promise<ChatSession>;
+  yesIUnderstand?: boolean;
 }
 
 export async function handleGatewaySlash(
@@ -167,6 +173,24 @@ export async function handleGatewaySlash(
       if (!p.arg) return "Использование: /approve <код>";
       const out = tryApprovePairing(ctx.dir, ctx.chatId, p.arg);
       return out.message;
+    }
+
+    case "delegate": {
+      const prompt = p.arg.trim();
+      if (!prompt) return "Использование: /delegate <prompt>";
+      if (!ctx.getSession) return "delegate недоступен (нет сессии)";
+      const session = await ctx.getSession();
+      const out = await runDelegate({
+        dir: ctx.dir,
+        prompt,
+        skills: ctx.skills.length ? ctx.skills : ctx.cfg.skills,
+        yesIUnderstand: ctx.yesIUnderstand,
+      });
+      if (out.ok) {
+        await session.injectContext(`[delegate] ${prompt}`, out.summary);
+        return `[delegate]\n${out.summary}`;
+      }
+      return `Delegate failed: ${out.summary}`;
     }
 
     default:

@@ -19,6 +19,7 @@ import {
 } from "../src/gatewayTelegram.js";
 import { writeExampleGatewayConfig } from "../src/gateway_cmd.js";
 import { GatewaySessionRouter } from "../src/gatewayRouter.js";
+import { GATEWAY_SLASH_COMMANDS } from "../src/gatewaySlash.js";
 import type { SdkLike, SdkCreateLike, SdkResumeLike, RunLike, AgentLike } from "../src/host.js";
 
 function tmp(): string {
@@ -75,7 +76,7 @@ test("syncTelegramBotCommands posts setMyCommands for each scope", async () => {
     return new Response(JSON.stringify({ ok: false }));
   };
   const n = await syncTelegramBotCommands("tok", fetchFn);
-  assert.equal(n, 8);
+  assert.equal(n, GATEWAY_SLASH_COMMANDS.filter((c) => c.telegram !== false).length);
   assert.equal(calls.length, 3);
   assert.deepEqual(calls.map((c) => (c.body.scope as { type: string }).type), [
     "default",
@@ -83,7 +84,9 @@ test("syncTelegramBotCommands posts setMyCommands for each scope", async () => {
     "all_group_chats",
   ]);
   const names = (calls[0]!.body.commands as Array<{ command: string }>).map((c) => c.command);
-  assert.ok(names.includes("help") && names.includes("doctor") && !names.includes("stop"));
+  assert.ok(
+    names.includes("help") && names.includes("doctor") && names.includes("delegate") && !names.includes("stop")
+  );
 });
 
 test("formatTelegramToolProgressLine uses command preview", () => {

@@ -54,6 +54,7 @@ import type { SessionRecord } from "../store.js";
 import { resolveAgentLogger } from "../agentLog.js";
 import { indexOfLastAssistant, indexOfStreamingAssistant } from "./streamingTarget.js";
 import { formatToolProgressLine } from "./toolProgress.js";
+import { parseSessionTabHotkey, sessionAtTabIndex } from "./sessionTabs.js";
 
 let msgSeq = 0;
 function nextId(prefix: string): string {
@@ -464,6 +465,16 @@ export function App(props: TuiOptions) {
     [recentSessions, meta?.sessionId, busy, switchToSession]
   );
 
+  const selectSessionTabByIndex = useCallback(
+    (tabIndex: number) => {
+      if (busy) return;
+      const target = sessionAtTabIndex(recentSessions, tabIndex);
+      if (!target || target.id === meta?.sessionId) return;
+      void switchToSession(target);
+    },
+    [recentSessions, meta?.sessionId, busy, switchToSession]
+  );
+
   const applyModel = useCallback(
     async (model: string) => {
       finishOverlay();
@@ -493,6 +504,11 @@ export function App(props: TuiOptions) {
         return;
       }
       if (!overlay && !confirm && !busy && input === "") {
+        const tabIdx = parseSessionTabHotkey(inputKey);
+        if (tabIdx != null) {
+          selectSessionTabByIndex(tabIdx);
+          return;
+        }
         if (key.ctrl && inputKey === "[") {
           cycleSessionTab(-1);
           return;
@@ -525,6 +541,10 @@ export function App(props: TuiOptions) {
           } else if (matches.length > 1) {
             setInput(applyContextRefCompletion(input, ref, commonPathPrefix(matches)));
           }
+          return;
+        }
+        if (input === "") {
+          cycleSessionTab(key.shift ? -1 : 1);
         }
       }
     },
@@ -878,6 +898,8 @@ export function App(props: TuiOptions) {
         disabled={composerDisabled}
         scrollMode={scrollMode}
         cwd={meta?.cwd ?? dir}
+        onSessionTabSelect={overlay || busy ? undefined : selectSessionTabByIndex}
+        onSessionTabCycle={overlay || busy ? undefined : cycleSessionTab}
         placeholder={
           fatal
             ? "session failed"

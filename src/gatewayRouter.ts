@@ -126,6 +126,8 @@ export class GatewaySessionRouter {
           chatId,
           cfg: gwCfg,
           skills: this.skills,
+          yesIUnderstand: this.yesIUnderstand,
+          getSession: () => this.getOrCreateSession(chatId),
         });
         if (slashReply) return { reply: slashReply };
       }
