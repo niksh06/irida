@@ -22,6 +22,20 @@ export interface MemoryConfig {
   mcp?: boolean;
 }
 
+/** Stealth browser MCP (puppeteer-extra + persistent Chromium profile). */
+export interface BrowserConfig {
+  /** Attach csagent-browser MCP tools (default false). Set true to enable. */
+  mcp?: boolean;
+  /** Chromium user-data profile name under `<state>/browser/` (default `default`). */
+  profile?: string;
+  /** Headless mode for agent runs (default true). Set false for manual login flows. */
+  headless?: boolean;
+  /** Optional custom User-Agent string. */
+  userAgent?: string;
+  /** Optional Chrome/Chromium executable path (or CSAGENT_CHROME_PATH env). */
+  chromePath?: string;
+}
+
 export interface AgentConfig {
   model: string;
   runtime: "local" | "cloud";
@@ -31,6 +45,7 @@ export interface AgentConfig {
   mcpServers: Record<string, unknown>;
   safety: SafetyConfig;
   memory: MemoryConfig;
+  browser: BrowserConfig;
 }
 
 export class ConfigError extends Error {}
@@ -87,6 +102,7 @@ export function defaults(dir: string): AgentConfig {
     mcpServers: {},
     safety: { allowCloud: false, allowAutoPr: false },
     memory: {},
+    browser: {},
   };
 }
 
@@ -177,6 +193,38 @@ function validate(obj: unknown, dir: string): AgentConfig {
         throw new ConfigError("memory.mcp must be a boolean");
       }
       cfg.memory.mcp = m.mcp;
+    }
+  }
+  if (o.browser !== undefined) {
+    if (typeof o.browser !== "object" || o.browser === null || Array.isArray(o.browser)) {
+      throw new ConfigError("browser must be an object");
+    }
+    const b = o.browser as Record<string, unknown>;
+    if (b.mcp !== undefined) {
+      if (typeof b.mcp !== "boolean") throw new ConfigError("browser.mcp must be a boolean");
+      cfg.browser.mcp = b.mcp;
+    }
+    if (b.profile !== undefined) {
+      if (typeof b.profile !== "string" || !b.profile.trim()) {
+        throw new ConfigError("browser.profile must be a non-empty string");
+      }
+      cfg.browser.profile = b.profile.trim();
+    }
+    if (b.headless !== undefined) {
+      if (typeof b.headless !== "boolean") throw new ConfigError("browser.headless must be a boolean");
+      cfg.browser.headless = b.headless;
+    }
+    if (b.userAgent !== undefined) {
+      if (typeof b.userAgent !== "string" || !b.userAgent.trim()) {
+        throw new ConfigError("browser.userAgent must be a non-empty string");
+      }
+      cfg.browser.userAgent = b.userAgent.trim();
+    }
+    if (b.chromePath !== undefined) {
+      if (typeof b.chromePath !== "string" || !b.chromePath.trim()) {
+        throw new ConfigError("browser.chromePath must be a non-empty string");
+      }
+      cfg.browser.chromePath = b.chromePath.trim();
     }
   }
   return cfg;

@@ -4,6 +4,11 @@
   "memory": {
     "mcp": true
   },
+  "browser": {
+    "mcp": true,
+    "profile": "default",
+    "headless": true
+  },
   "mcpServers": {},
   "safety": { "allowCloud": false, "allowAutoPr": false }
 }
