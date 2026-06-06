@@ -258,7 +258,7 @@ EOF
 
 In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
-**Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, `memory_list`, `memory_save`, `memory_fact_query`, `memory_fact_add`. Enable skill `memory-ops` in `gateway.json` for Telegram so the model queries memory before guessing. With `browser.mcp: true`, add skill `browser-ops` so gateway/cron use `browser_navigate` / `browser_snapshot` instead of guessing page content.
+**Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, `memory_list`, `memory_save`, `memory_fact_query`, `memory_fact_add`. Enable skill `memory-ops` in `gateway.json` for Telegram so the model queries memory before guessing. With `browser.mcp: true`, add skill `browser-ops` so gateway/cron use `browser_navigate` / `browser_snapshot` instead of guessing page content. For Obsidian vault read/write (filesystem, not Tolaria), add `obsidian-ops` and set `OBSIDIAN_VAULT_PATH` in `csagent.env`.
 
 ```json
 "memory": { "mcp": true }
@@ -333,7 +333,7 @@ curl -X POST http://127.0.0.1:18789/hook \
   "adapter": "telegram",
   "telegram": { "tokenEnv": "TELEGRAM_BOT_TOKEN", "pollIntervalMs": 2000 },
   "allowedChatIds": ["YOUR_CHAT_ID"],
-  "skills": ["memory-ops", "browser-ops"]
+  "skills": ["memory-ops", "browser-ops", "obsidian-ops"]
 }
 ```
 

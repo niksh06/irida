@@ -6,5 +6,5 @@
     "pollIntervalMs": 2000
   },
   "allowedChatIds": ["YOUR_CHAT_ID"],
-  "skills": ["memory-ops", "browser-ops"]
+  "skills": ["memory-ops", "browser-ops", "obsidian-ops"]
 }
