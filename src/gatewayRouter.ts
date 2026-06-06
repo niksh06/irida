@@ -11,6 +11,7 @@ import {
 } from "./gatewayPeers.js";
 import type { SessionChannel } from "./sessionChannel.js";
 import { parseDigestFollowup } from "./gatewayDigestFollowup.js";
+import { defaultServiceLogSink } from "./serviceLog.js";
 
 export { GATEWAY_PEERS_FILE, loadGatewayPeers, saveGatewayPeers, peerKey } from "./gatewayPeers.js";
 export type { GatewayPeersFile } from "./gatewayPeers.js";
@@ -23,7 +24,7 @@ export interface GatewayRouterOptions {
   skills?: string[];
   yesIUnderstand?: boolean;
   sdk?: SdkCreateLike & SdkResumeLike;
-  onLog?: (line: string) => void;
+  onLog?: (line: string, level?: import("./serviceLog.js").ServiceLogLevel) => void;
 }
 
 export class GatewaySessionRouter {
@@ -43,7 +44,7 @@ export class GatewaySessionRouter {
     this.skills = opts.skills ?? [];
     this.yesIUnderstand = opts.yesIUnderstand ?? false;
     this.sdk = opts.sdk;
-    this.onLog = opts.onLog ?? ((line) => console.error(line));
+    this.onLog = opts.onLog ?? defaultServiceLogSink;
     this.peers = loadGatewayPeers(opts.dir);
   }
 

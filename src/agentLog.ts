@@ -1,7 +1,9 @@
 /**
- * Optional agent/chat diagnostics (stderr). Enable with CSAGENT_LOG=1.
+ * Optional agent/chat diagnostics. Enable with CSAGENT_LOG=1.
+ * Info → stdout, errors → stderr (launchd: gateway.log / gateway.error.log).
  */
 import { redact } from "./redact.js";
+import { emitServiceLog, inferServiceLogLevel, type ServiceLogLevel } from "./serviceLog.js";
 
 const TRUTHY = new Set(["1", "true", "yes", "on"]);
 
@@ -23,20 +25,21 @@ export function agentLogVerbose(): boolean {
 export interface AgentLoggerOptions {
   /** Prefix tag, e.g. `chat`, `tui`. */
   component?: string;
-  /** Extra sink (tests, file hook). Called with the same redacted line (no timestamp). */
-  onLog?: (line: string) => void;
+  /** Extra sink (tests, gateway). Receives redacted line + level. */
+  onLog?: (line: string, level?: ServiceLogLevel) => void;
 }
 
-/** Build a logger: stderr when CSAGENT_LOG; always forwards to onLog if set. */
+/** Build a logger: CSAGENT_LOG → stdout/stderr by level; always forwards to onLog. */
 export function resolveAgentLogger(opts: AgentLoggerOptions = {}): (line: string) => void {
   const component = opts.component ?? "csagent";
   const enabled = agentLogEnabled();
   return (line: string) => {
     const msg = redact(line);
+    const level = inferServiceLogLevel(msg);
     if (enabled) {
       const stamped = `[${component}] ${new Date().toISOString()} ${msg}`;
-      process.stderr.write(`${stamped}\n`);
+      emitServiceLog(stamped, level);
     }
-    opts.onLog?.(msg);
+    opts.onLog?.(msg, level);
   };
 }

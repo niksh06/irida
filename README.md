@@ -124,7 +124,7 @@ In `~/.csagent/csagent.env`, set (or uncomment after `setup-home`):
 
 ```bash
 export CSAGENT_DATABASE_URL="postgresql://csagent:csagent@127.0.0.1:5435/csagent"
-# export CSAGENT_LOG=1   # optional: stderr diagnostics for chat/cron
+# export CSAGENT_LOG=1   # optional: chat/cron diagnostics (info→stdout, errors→stderr)
 ```
 
 Re-run launchd install if services already exist — plists pick up env from `install-launchd.sh`:
@@ -419,7 +419,7 @@ npm run accept      # MVP acceptance harness
 npm run smoke       # live SDK (needs key)
 ```
 
-Optional diagnostics: `CSAGENT_LOG=1` in `csagent.env` (rotation, runs); `CSAGENT_LOG_VERBOSE=1` for per-tool lines.
+Optional diagnostics: `CSAGENT_LOG=1` in `csagent.env` (rotation, runs → gateway.log); `CSAGENT_LOG_VERBOSE=1` for per-tool lines.
 
 Idle sessions: `CSAGENT_AGENT_IDLE_MS` (default `1200000` = 20 min) proactively refreshes the SDK agent before the next turn; set `0` to disable.
 

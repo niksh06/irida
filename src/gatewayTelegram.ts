@@ -5,6 +5,7 @@ import { type GatewayConfig, isChatAllowed } from "./gatewayConfig.js";
 import { resolveTelegramBotToken } from "./credentials.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import type { ActivityDetail } from "./host.js";
+import { emitServiceLog, type ServiceLogSink } from "./serviceLog.js";
 
 export interface TelegramMessage {
   message_id: number;
@@ -281,7 +282,7 @@ export interface TelegramPollerOptions {
   dir?: string;
   fetchFn?: TelegramFetch;
   pollIntervalMs?: number;
-  onLog?: (line: string) => void;
+  onLog?: ServiceLogSink;
 }
 
 /** Backoff for poll failures; honors Telegram `retry after N` seconds on 429. */
@@ -306,7 +307,8 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   const token = telegramBotToken(opts.cfg, dir);
   if (!token) throw new Error(`telegram bot token env ${opts.cfg.telegramTokenEnv} is unset`);
   const fetchFn = opts.fetchFn ?? fetch;
-  const log = opts.onLog ?? ((s: string) => console.error(s));
+  const logInfo = (s: string) => emitServiceLog(s, "info", opts.onLog);
+  const logError = (s: string) => emitServiceLog(s, "error", opts.onLog);
   const pollMs = opts.pollIntervalMs ?? opts.cfg.telegramPollIntervalMs;
   let offset = 0;
   let running = true;
@@ -323,7 +325,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       const updates = await telegramGetUpdates(token, offset, Math.min(50, Math.max(1, Math.floor(pollMs / 1000))), fetchFn);
       consecutiveErrors = 0;
       if (Date.now() - lastHeartbeatLog >= heartbeatMs) {
-        log(`[gateway] telegram poll ok (heartbeat offset=${offset})`);
+        logInfo(`[gateway] telegram poll ok (heartbeat offset=${offset})`);
         lastHeartbeatLog = Date.now();
       }
       for (const u of updates) {
@@ -333,7 +335,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
         if (result.reply) {
           await telegramSendLongMessage(token, result.chatId, result.reply, fetchFn);
         } else if (result.error) {
-          log(`[gateway] telegram chat=${result.chatId} error: ${result.error}`);
+          logError(`[gateway] telegram chat=${result.chatId} error: ${result.error}`);
           if (result.error === "busy") {
             await telegramSendMessage(token, result.chatId, "Still working on your previous message…", fetchFn);
           } else if (result.error === "chat not allowed") {
@@ -349,12 +351,12 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       consecutiveErrors++;
       const msg = e instanceof Error ? e.message : String(e);
       nextDelayMs = telegramPollRetryDelayMs(msg, consecutiveErrors, pollMs, maxBackoffMs);
-      log(`[gateway] telegram poll error (#${consecutiveErrors}): ${msg}; retry in ${nextDelayMs}ms`);
+      logError(`[gateway] telegram poll error (#${consecutiveErrors}): ${msg}; retry in ${nextDelayMs}ms`);
     }
     if (running) timer = setTimeout(() => void tick(), nextDelayMs);
   };
 
-  log(`[gateway] telegram long-poll started (interval=${pollMs}ms)`);
+  logInfo(`[gateway] telegram long-poll started (interval=${pollMs}ms)`);
   void tick();
 
   return {

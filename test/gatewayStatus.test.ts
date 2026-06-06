@@ -15,15 +15,15 @@ test("gatherGatewayStatus reports gateway config when present", () => {
   assert.equal(cfg!.ok, true);
 });
 
-test("gatherGatewayStatus reads gateway.error.log not empty stdout", () => {
+test("gatherGatewayStatus reads gateway.log for operational health", () => {
   const dir = mkdtempSync(join(tmpdir(), "gwstat-err-"));
   const home = join(dir, "home");
   const logs = join(home, "logs");
   mkdirSync(logs, { recursive: true });
-  writeFileSync(join(logs, "gateway.log"), "");
+  writeFileSync(join(logs, "gateway.error.log"), "");
   writeFileSync(
-    join(logs, "gateway.error.log"),
-    "[gateway] telegram long-poll started (interval=1500ms)\n"
+    join(logs, "gateway.log"),
+    "[gateway] telegram long-poll started (interval=1500ms)\n[chat] sendTurn ok status=finished\n"
   );
   const prev = process.env.CSAGENT_HOME;
   process.env.CSAGENT_HOME = home;
@@ -31,8 +31,8 @@ test("gatherGatewayStatus reads gateway.error.log not empty stdout", () => {
   const health = gatherGatewayStatus(dir).find((r) => r.name === "gateway health");
   assert.ok(health);
   assert.equal(health!.ok, true);
-  assert.match(health!.detail, /stderr/);
-  assert.match(health!.detail, /long-poll started/);
+  assert.match(health!.detail, /stdout/);
+  assert.match(health!.detail, /long-poll started|sendTurn ok/);
   if (prev === undefined) delete process.env.CSAGENT_HOME;
   else process.env.CSAGENT_HOME = prev;
 });

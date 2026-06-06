@@ -16,6 +16,7 @@ import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { startWebhookServer, type WebhookServer } from "./gatewayWebhook.js";
 import { startTelegramPoller, type TelegramPoller } from "./gatewayTelegram.js";
 import { gatherGatewayStatus } from "./gatewayStatus.js";
+import { emitServiceLog } from "./serviceLog.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
 export interface GatewayRunOptions {
@@ -78,7 +79,7 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
     webhook.server.once("error", reject);
     webhook.server.listen(cfg.port, cfg.host, () => resolve());
   });
-  console.error(`[gateway] webhook listening http://${cfg.host}:${cfg.port}${cfg.webhookPath}`);
+  emitServiceLog(`[gateway] webhook listening http://${cfg.host}:${cfg.port}${cfg.webhookPath}`, "info");
 
   return {
     cfg,
@@ -101,7 +102,7 @@ export async function cmdGatewayRun(opts: GatewayRunOptions = {}): Promise<ExitC
   }
 
   const shutdown = async (signal: string) => {
-    console.error(`[gateway] ${signal} — shutting down`);
+    emitServiceLog(`[gateway] ${signal} — shutting down`, "info");
     try {
       await handle!.close();
     } finally {

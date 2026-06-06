@@ -40,7 +40,7 @@ bash ~/.csagent/csagent/deploy/install-launchd.sh
 
 Logs: `~/.csagent/logs/{gateway,cron-tick}.{log,error.log}`
 
-Gateway writes diagnostics to **stderr** → `gateway.error.log` (operational). `gateway.log` (stdout) is often empty. Check status: `csagent gateway status` or `tail -f ~/.csagent/logs/gateway.error.log`.
+Gateway ops (`[gateway]` info, `[chat]` traces) → **stdout** `gateway.log`. Errors (poll failures, sendTurn errors) → **stderr** `gateway.error.log`. Tail ops: `tail -f ~/.csagent/logs/gateway.log`; errors: `gateway.error.log`.
 
 ## Hermes vs csagent (one bot)
 

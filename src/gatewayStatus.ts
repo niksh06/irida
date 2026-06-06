@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
-import { assessGatewayLogHealth, tailLogLines } from "./gatewayLogHealth.js";
+import { assessGatewayServiceHealth, tailLogLines } from "./gatewayLogHealth.js";
 
 export interface GatewayStatusLine {
   name: string;
@@ -45,19 +45,8 @@ function readLogTailLines(path: string, lines = 5): string[] {
   return tailLogLines(readFileSync(path, "utf8"), lines);
 }
 
-/** launchd: stdout → gateway.log, stderr (console.error) → gateway.error.log */
-function resolveGatewayLogPath(logDir: string): { path: string; stream: "stderr" | "stdout" } | null {
-  const errLog = resolve(logDir, "gateway.error.log");
-  const outLog = resolve(logDir, "gateway.log");
-  if (existsSync(errLog) && statSync(errLog).size > 0) {
-    return { path: errLog, stream: "stderr" };
-  }
-  if (existsSync(outLog) && statSync(outLog).size > 0) {
-    return { path: outLog, stream: "stdout" };
-  }
-  if (existsSync(errLog)) return { path: errLog, stream: "stderr" };
-  if (existsSync(outLog)) return { path: outLog, stream: "stdout" };
-  return null;
+function logAgeMs(path: string): number {
+  return existsSync(path) ? Date.now() - statSync(path).mtimeMs : Number.POSITIVE_INFINITY;
 }
 
 export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusLine[] {
@@ -92,15 +81,15 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   const cronLaunch = launchdRunning(CRON_LABEL);
   rows.push({ name: "launchd cron-tick", ok: cronLaunch.ok, detail: cronLaunch.detail });
 
-  const gwLogProbe = resolveGatewayLogPath(logDir);
-  if (gwLogProbe) {
-    const ageMs = Date.now() - statSync(gwLogProbe.path).mtimeMs;
-    const tailLines = readLogTailLines(gwLogProbe.path, 5);
-    const health = assessGatewayLogHealth({
-      tailLines,
-      ageMs,
+  const infoLog = resolve(logDir, "gateway.log");
+  const errLog = resolve(logDir, "gateway.error.log");
+  if (existsSync(infoLog) || existsSync(errLog)) {
+    const health = assessGatewayServiceHealth({
+      infoLines: readLogTailLines(infoLog, 8),
+      errorLines: readLogTailLines(errLog, 5),
+      infoAgeMs: logAgeMs(infoLog),
+      errorAgeMs: logAgeMs(errLog),
       gatewayRunning: gwLaunch.ok,
-      stream: gwLogProbe.stream,
     });
     rows.push({
       name: "gateway health",
@@ -111,7 +100,7 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
     rows.push({
       name: "gateway health",
       ok: false,
-      detail: `no logs in ${logDir} (expected gateway.error.log)`,
+      detail: `no logs in ${logDir} (expected gateway.log)`,
     });
   }
 
