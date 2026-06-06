@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   assessGatewayLogHealth,
+  assessGatewayServiceHealth,
   GATEWAY_LOG_STALE_MS,
 } from "../src/gatewayLogHealth.js";
 import { telegramPollRetryDelayMs } from "../src/gatewayTelegram.js";
@@ -40,6 +41,18 @@ test("assessGatewayLogHealth ok on recent long-poll started", () => {
     stream: "stderr",
   });
   assert.equal(h.ok, true);
+});
+
+test("assessGatewayServiceHealth ok when stdout healthy despite stale stderr poll errors", () => {
+  const h = assessGatewayServiceHealth({
+    infoLines: ["[gateway] telegram long-poll started (interval=500ms)"],
+    errorLines: ["[gateway] telegram poll error (#14): Not Found; retry in 60000ms"],
+    infoAgeMs: 30_000,
+    errorAgeMs: 30_000,
+    gatewayRunning: true,
+  });
+  assert.equal(h.ok, true);
+  assert.match(h.detail, /long-poll started/);
 });
 
 test("telegramPollRetryDelayMs honors retry after seconds", () => {

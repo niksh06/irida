@@ -49,6 +49,14 @@ export function gatherCronPromptDrift(configDir: string): CronPromptDriftResult 
   }
 
   for (const job of jobs) {
+    if (job.topicDelegates) {
+      const topic = job.topicPromptFile?.trim();
+      const synth = job.synthesizePromptFile?.trim();
+      if (!topic || !synth) {
+        warnings.push(`job '${job.id}': topicDelegates requires topicPromptFile and synthesizePromptFile`);
+      }
+      continue;
+    }
     if (!job.promptFile?.trim()) {
       const len = job.prompt?.length ?? 0;
       if (len > 400 || job.id.includes("digest")) {

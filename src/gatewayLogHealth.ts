@@ -101,6 +101,25 @@ export function assessGatewayServiceHealth(opts: {
     };
   }
 
+  const infoRecent = infoAgeMs <= GATEWAY_LOG_STALE_MS;
+  const healthyMarkers = [
+    "poll ok",
+    "long-poll started",
+    "setMyCommands OK",
+    "sendTurn ok",
+    "[chat]",
+  ];
+  const healthyInfoLine = [...infoGw].reverse().find((l) => healthyMarkers.some((m) => l.includes(m)));
+  const lastInfo = healthyInfoLine ?? infoGw[infoGw.length - 1] ?? "";
+
+  // Prefer recent stdout health over stale stderr poll errors from a prior process.
+  if (gatewayRunning && infoRecent && healthyInfoLine) {
+    return {
+      ok: true,
+      detail: `stdout · ${Math.round(infoAgeMs / 60_000)}m ago · ${lastInfo.slice(0, 160)}`,
+    };
+  }
+
   if (errGw.length > 0) {
     const lastErr = errGw[errGw.length - 1]!;
     if (lastErr.includes("poll error") && errorAgeMs < GATEWAY_LOG_STALE_MS) {
@@ -110,21 +129,6 @@ export function assessGatewayServiceHealth(opts: {
         hint: "telegram poll errors — check rate limits / Hermes 409",
       };
     }
-  }
-
-  const lastInfo = infoGw[infoGw.length - 1] ?? "";
-  const infoRecent = infoAgeMs <= GATEWAY_LOG_STALE_MS;
-  const healthyInfo =
-    lastInfo.includes("poll ok") ||
-    lastInfo.includes("long-poll started") ||
-    lastInfo.includes("sendTurn ok") ||
-    lastInfo.includes("[chat]");
-
-  if (gatewayRunning && infoRecent && healthyInfo) {
-    return {
-      ok: true,
-      detail: `stdout · ${Math.round(infoAgeMs / 60_000)}m ago · ${lastInfo.slice(0, 160)}`,
-    };
   }
 
   return assessGatewayLogHealth({
