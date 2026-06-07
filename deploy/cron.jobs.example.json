@@ -18,6 +18,19 @@
       }
     },
     {
+      "id": "tparser-bi-hourly-digest",
+      "cron": "0 */2 * * *",
+      "cwd": "/path/to/TParser",
+      "skills": ["memory-ops"],
+      "memoryFactsSubject": "seen_post",
+      "memoryFactsLimit": 120,
+      "promptFile": "deploy/prompts/tparser-bi-hourly.prompt.txt",
+      "notify": {
+        "chatId": "YOUR_CHAT_ID",
+        "telegram": true
+      }
+    },
+    {
       "id": "happyin-kb-weekly",
       "cron": "0 3 * * 0",
       "enabled": false,
@@ -33,6 +46,15 @@
         "telegram": true
       },
       "promptFile": "deploy/prompts/memory-curator-weekly.prompt.txt"
+    },
+    {
+      "id": "memory-audit-weekly",
+      "cron": "30 5 * * 0",
+      "builtin": "memory-audit",
+      "notify": {
+        "chatId": "YOUR_CHAT_ID",
+        "telegram": true
+      }
     }
   ]
 }

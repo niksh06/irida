@@ -26,6 +26,7 @@ export function scanPromptText(text: string): string[] {
 }
 
 export function validateCronJobPrompt(job: CronJob, dir: string): string[] {
+  if (job.builtin) return [];
   const errs: string[] = [];
   const texts: string[] = [];
   if (job.topicDelegates) {

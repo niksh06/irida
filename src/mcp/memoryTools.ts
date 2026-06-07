@@ -146,4 +146,20 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
       return textResult(`fact ${fact.id}: ${subject} ${predicate} ${object}`);
     }
   );
+
+  server.registerTool(
+    "memory_fact_invalidate",
+    {
+      description: "Invalidate (close) a temporal fact by id — sets valid_to.",
+      inputSchema: {
+        fact_id: z.string().describe("Fact id from memory_fact_query"),
+      },
+    },
+    async ({ fact_id }) => {
+      const ok = await withStore(ctx, (s) => s.invalidateFact(fact_id));
+      return textResult(
+        ok ? `fact invalidated: ${fact_id}` : `fact not found or already ended: ${fact_id}`
+      );
+    }
+  );
 }

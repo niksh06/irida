@@ -7,6 +7,9 @@ import { loadConfig, resolveMemoryRoot } from "./config.js";
 import { listMemories, memoryDir } from "./memory.js";
 import { createMemoryStore, type MemoryNote } from "./memoryStore.js";
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
+import { EXIT } from "./exit.js";
+import type { CronExecuteResult } from "./cronRunRecord.js";
+import { pruneSeenPostFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
 
 export const DEFAULT_STALE_DAYS = 90;
 export const SEEN_POST_WARN_THRESHOLD = 3000;
@@ -282,4 +285,23 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
 
   const ok = checks.every((c) => c.ok || c.severity === "warn");
   return { at: new Date().toISOString(), ok, checks };
+}
+
+/** Deterministic cron handler — audit notes/facts + seen_post TTL prune. */
+export async function executeMemoryAuditBuiltin(dir: string): Promise<CronExecuteResult> {
+  const report = await evaluateMemoryAudit({ dir, staleDays: DEFAULT_STALE_DAYS, opsOnly: true });
+  saveMemoryAuditResult(dir, report);
+  const pruned = await pruneSeenPostFacts(dir, { olderThanDays: SEEN_POST_TTL_DAYS });
+  const body = formatMemoryAuditReport(report);
+  const pruneLine =
+    pruned.pruned > 0
+      ? `\nseen_post TTL: pruned ${pruned.pruned} fact(s) older than ${SEEN_POST_TTL_DAYS}d.`
+      : "";
+  const output = body + pruneLine;
+  return {
+    ok: report.ok,
+    exitCode: report.ok ? EXIT.ok : EXIT.software,
+    message: output.slice(0, 400),
+    output,
+  };
 }

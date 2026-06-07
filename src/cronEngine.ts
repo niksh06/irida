@@ -20,6 +20,7 @@ import { buildSeenPostsPromptSection } from "./memoryDedup.js";
 import { loadCronJobPromptText } from "./cronPrompt.js";
 import { validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
+import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
 import {
   saveCronJobResult,
   type CronExecuteResult,
@@ -74,15 +75,19 @@ export async function executeCronJob(
     });
   }
 
-  const guardErrs = validateCronJobPrompt(job, configDir);
+  const guardErrs = job.builtin ? [] : validateCronJobPrompt(job, configDir);
   if (guardErrs.length) {
     return withDuration(started, { ok: false, exitCode: EXIT.noperm, message: guardErrs.join("; ") });
+  }
+
+  if (job.builtin === "memory-audit") {
+    return withDuration(started, await executeMemoryAuditBuiltin(configDir));
   }
 
   const promptBody = job.topicDelegates
     ? [job.topicPromptFile, job.synthesizePromptFile].filter(Boolean).join(" ")
     : loadCronJobPromptText(job, configDir);
-  if (opts.checkSafety !== false) {
+  if (opts.checkSafety !== false && !job.builtin) {
     const gate = await safetyGate({
       prompt: promptBody,
       interactive: false,

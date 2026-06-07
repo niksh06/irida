@@ -11,6 +11,10 @@ import {
   hasPlaintextCredentialsOnDisk,
   pgSecretsEnabled,
   resolveApiKey,
+  resolveTelegramBotToken,
+  telegramTokenSourceLabel,
+  validateCursorApiKeyFormat,
+  validateTelegramBotTokenFormat,
 } from "./credentials.js";
 import { probePgCredentialStore, SECRETS_KEY_ENV, secretsKey } from "./credentialsPg.js";
 import { probePostgresStore } from "./store.js";
@@ -87,6 +91,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   checks.push(...gatherBrowserEnvChecks(dir));
   checks.push(...gatherGatewaySkillsChecks(dir));
   checks.push(...gatherCredentialsEnvChecks(dir));
+  checks.push(...gatherDoctorSecretFormatChecks(dir));
 
   const cronPath = cronJobsPath(dir);
   if (existsSync(cronPath)) {
@@ -122,6 +127,33 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
     });
   }
 
+  return checks;
+}
+
+function gatherDoctorSecretFormatChecks(dir: string): DoctorCheck[] {
+  const checks: DoctorCheck[] = [];
+  const api = resolveApiKey(dir);
+  if (api.key) {
+    const fmt = validateCursorApiKeyFormat(api.key);
+    checks.push({
+      name: "CURSOR_API_KEY format",
+      ok: fmt.ok,
+      detail: fmt.ok
+        ? `ok (${api.key.length} chars, ${apiKeySourceLabel(api.source, dir)})`
+        : `${fmt.detail} — ${apiKeySourceLabel(api.source, dir)}`,
+    });
+  }
+  const tg = resolveTelegramBotToken(dir);
+  if (tg.value) {
+    const fmt = validateTelegramBotTokenFormat(tg.value);
+    checks.push({
+      name: "TELEGRAM_BOT_TOKEN format",
+      ok: fmt.ok,
+      detail: fmt.ok
+        ? `ok (${tg.value.length} chars, ${telegramTokenSourceLabel(tg.source, dir)})`
+        : `${fmt.detail} — ${telegramTokenSourceLabel(tg.source, dir)}`,
+    });
+  }
   return checks;
 }
 

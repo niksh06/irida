@@ -66,6 +66,17 @@ export interface MemoryFactAuditSummary {
   subjects: FactSubjectStats[];
 }
 
+export interface PruneFactsInput {
+  subject: string;
+  olderThanDays: number;
+  dryRun?: boolean;
+}
+
+export interface PruneFactsResult {
+  matched: number;
+  pruned: number;
+}
+
 export interface IMemoryStore {
   upsertNote(input: UpsertNoteInput): Promise<MemoryNote>;
   getNote(name: string): Promise<MemoryNote | undefined>;
@@ -76,6 +87,7 @@ export interface IMemoryStore {
   queryFacts(input: QueryFactsInput): Promise<MemoryFact[]>;
   factAuditSummary(): Promise<MemoryFactAuditSummary>;
   invalidateFact(id: string, ended?: string): Promise<boolean>;
+  pruneCurrentFacts(input: PruneFactsInput): Promise<PruneFactsResult>;
   close(): Promise<void>;
 }
 
@@ -295,6 +307,28 @@ export class SqliteMemoryStore implements IMemoryStore {
     return r.changes > 0;
   }
 
+  async pruneCurrentFacts(input: PruneFactsInput): Promise<PruneFactsResult> {
+    const subject = input.subject.trim();
+    const days = Math.max(1, Math.floor(input.olderThanDays));
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+    const when = nowIso().slice(0, 10);
+    const countRow = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM memory_facts
+         WHERE subject=? AND (valid_to IS NULL OR valid_to='') AND created_at < ?`
+      )
+      .get(subject, cutoff) as { n: number };
+    const matched = countRow?.n ?? 0;
+    if (input.dryRun || matched === 0) return { matched, pruned: 0 };
+    const r = this.db
+      .prepare(
+        `UPDATE memory_facts SET valid_to=?
+         WHERE subject=? AND (valid_to IS NULL OR valid_to='') AND created_at < ?`
+      )
+      .run(when, subject, cutoff);
+    return { matched, pruned: r.changes };
+  }
+
   async close(): Promise<void> {
     this.db.close();
   }
@@ -465,6 +499,27 @@ export class PostgresMemoryStore implements IMemoryStore {
       [when, id.trim()]
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  async pruneCurrentFacts(input: PruneFactsInput): Promise<PruneFactsResult> {
+    await this.ensureMigrated();
+    const subject = input.subject.trim();
+    const days = Math.max(1, Math.floor(input.olderThanDays));
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+    const when = nowIso().slice(0, 10);
+    const countRes = await this.pool.query(
+      `SELECT COUNT(*)::int AS n FROM memory_facts
+       WHERE subject=$1 AND (valid_to IS NULL OR valid_to='') AND created_at < $2`,
+      [subject, cutoff]
+    );
+    const matched = (countRes.rows[0] as { n: number } | undefined)?.n ?? 0;
+    if (input.dryRun || matched === 0) return { matched, pruned: 0 };
+    const updateRes = await this.pool.query(
+      `UPDATE memory_facts SET valid_to=$1
+       WHERE subject=$2 AND (valid_to IS NULL OR valid_to='') AND created_at < $3`,
+      [when, subject, cutoff]
+    );
+    return { matched, pruned: updateRes.rowCount ?? 0 };
   }
 
   async close(): Promise<void> {

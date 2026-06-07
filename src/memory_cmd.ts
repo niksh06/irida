@@ -13,6 +13,7 @@ import {
   saveMemoryAuditResult,
   DEFAULT_STALE_DAYS,
 } from "./memoryAudit.js";
+import { parseOlderThanDays, pruneSeenPostFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
 export interface MemoryCmdOptions {
@@ -261,11 +262,36 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
       console.log(ok ? `fact: invalidated ${id}` : `fact: not found or already ended: ${id}`);
       return EXIT.ok;
     }
+    case "prune": {
+      const subject = rest[0];
+      if (subject !== "seen_post") {
+        console.error("usage: csagent memory fact prune seen_post --older-than 30d [--dry-run]");
+        return EXIT.usage;
+      }
+      let olderThan = `${SEEN_POST_TTL_DAYS}d`;
+      let dryRun = false;
+      for (let i = 1; i < rest.length; i++) {
+        const a = rest[i];
+        if (a === "--dry-run") dryRun = true;
+        else if (a === "--older-than" && rest[i + 1]) olderThan = rest[++i]!;
+      }
+      const days = parseOlderThanDays(olderThan);
+      if (!days) {
+        console.error("memory fact prune: --older-than must be like 30d");
+        return EXIT.usage;
+      }
+      const result = await pruneSeenPostFacts(dir, { olderThanDays: days, dryRun });
+      console.log(
+        `seen_post prune${dryRun ? " (dry-run)" : ""}: matched=${result.matched} pruned=${result.pruned} (>${days}d)`
+      );
+      return EXIT.ok;
+    }
     default:
       console.log(`Usage:
   csagent memory fact add <subject> <predicate> <object>
   csagent memory fact query <subject> [predicate]
   csagent memory fact invalidate <fact-id>
+  csagent memory fact prune seen_post --older-than 30d [--dry-run]
 `);
       return sub ? EXIT.usage : EXIT.ok;
   }

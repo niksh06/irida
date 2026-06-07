@@ -60,7 +60,7 @@ test("doctor fails on invalid mcp config", async () => {
 });
 
 test("doctor passes with valid mcp config", async () => {
-  await withKey("k", async () => {
+  await withKey("crsr_" + "a".repeat(24), async () => {
     const dir = tmp();
     writeFileSync(
       join(dir, "agent.config.json"),

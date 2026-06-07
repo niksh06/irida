@@ -65,7 +65,7 @@ function mockSdk(disposed: { v: boolean }): SdkLike & SdkCreateLike & SdkResumeL
 test("acceptance: doctor reflects API key presence", async () => {
   const mockList = { listModels: async () => [{ id: "composer-2.5" }] };
   await withKey(undefined, async () => assert.equal(await cmdDoctor(tmp()), 1));
-  await withKey("k", async () => assert.equal(await cmdDoctor(tmp(), mockList), 0));
+  await withKey("crsr_" + "a".repeat(24), async () => assert.equal(await cmdDoctor(tmp(), mockList), 0));
 });
 
 test("acceptance: run -> chat -> sessions -> resume flow", async () => {

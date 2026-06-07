@@ -20,6 +20,7 @@ Never guess from chat history alone when these tools are available.
 
 - Durable prose → `memory_save`
 - Structured "seen X" / preferences → `memory_fact_add`
+- Close outdated facts → `memory_fact_invalidate` (after `memory_fact_query`)
 - Do not use shell `csagent memory …` when MCP tools exist.
 
 ## Do not

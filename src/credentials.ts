@@ -49,6 +49,45 @@ export const API_KEY_HELP =
 export const TELEGRAM_TOKEN_HELP =
   "Set TELEGRAM_BOT_TOKEN in the environment or run: csagent auth telegram login --stdin";
 
+export interface SecretFormatCheck {
+  ok: boolean;
+  detail: string;
+}
+
+/** Shape check only — does not call external APIs. Never logs the secret. */
+export function validateCursorApiKeyFormat(key: string): SecretFormatCheck {
+  const k = key.trim();
+  if (k.length < 20) {
+    return {
+      ok: false,
+      detail: `too short (${k.length} chars) — likely corrupt decryption or wrong secret`,
+    };
+  }
+  if (/^(crsr_|cursor_|key_)/.test(k) || k.startsWith("sk-")) {
+    return { ok: true, detail: "ok" };
+  }
+  if (k.length >= 40) return { ok: true, detail: "ok" };
+  return {
+    ok: false,
+    detail: `unexpected shape (${k.length} chars) — expected crsr_/cursor_ prefix or length ≥40`,
+  };
+}
+
+/** Bot API tokens are `{bot_id}:{secret}` (~46 chars). Catches PG garbage like 6-char blobs. */
+export function validateTelegramBotTokenFormat(token: string): SecretFormatCheck {
+  const t = token.trim();
+  if (t.length < 35) {
+    return {
+      ok: false,
+      detail: `too short (${t.length} chars) — Bot API tokens are typically ~46 chars`,
+    };
+  }
+  if (!/^\d+:[A-Za-z0-9_-]+$/.test(t)) {
+    return { ok: false, detail: "invalid shape — expected bot_id:secret (digits:alnum)" };
+  }
+  return { ok: true, detail: "ok" };
+}
+
 let pgSecretsCache: Partial<Record<CredentialSecretName, string>> | null = null;
 let pgCacheReady = false;
 

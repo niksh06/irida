@@ -9,6 +9,9 @@ import { CronError, parseCronExpression, validateCronExpression, cronMinuteKey }
 export const CRON_JOBS_FILE = "cron.jobs.json";
 export const CRON_STATE_FILE = "cron.state.json";
 
+export const CRON_BUILTIN_HANDLERS = ["memory-audit"] as const;
+export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
+
 export interface CronJobNotify {
   chatId: string;
   /** Direct Telegram sendMessage (no webhook agent turn). */
@@ -41,6 +44,8 @@ export interface CronJob {
   synthesizePromptFile?: string;
   /** Hours for daily window (default 24). */
   topicWindowHours?: number;
+  /** Built-in CLI handler (no SDK prompt). */
+  builtin?: CronBuiltinHandler;
 }
 
 export interface CronJobsFile {
@@ -90,6 +95,7 @@ function validateJob(raw: unknown, index: number): CronJob {
   const cron = typeof o.cron === "string" ? o.cron.trim() : "";
   const prompt = typeof o.prompt === "string" ? o.prompt.trim() : "";
   const promptFile = typeof o.promptFile === "string" ? o.promptFile.trim() : "";
+  const builtinRaw = typeof o.builtin === "string" ? o.builtin.trim() : "";
   if (!id || !/^[a-zA-Z0-9._-]+$/.test(id)) {
     throw new CronJobsError(`jobs[${index}].id must be a non-empty slug`);
   }
@@ -101,8 +107,14 @@ function validateJob(raw: unknown, index: number): CronJob {
     if (!tp || !sp) {
       throw new CronJobsError(`jobs[${index}] topicDelegates requires topicPromptFile and synthesizePromptFile`);
     }
+  } else if (builtinRaw) {
+    if (!(CRON_BUILTIN_HANDLERS as readonly string[]).includes(builtinRaw)) {
+      throw new CronJobsError(
+        `jobs[${index}].builtin must be one of: ${CRON_BUILTIN_HANDLERS.join(", ")}`
+      );
+    }
   } else if (!prompt && !promptFile) {
-    throw new CronJobsError(`jobs[${index}] requires prompt or promptFile`);
+    throw new CronJobsError(`jobs[${index}] requires prompt, promptFile, or builtin`);
   }
   if (prompt && promptFile) {
     throw new CronJobsError(`jobs[${index}] cannot set both prompt and promptFile`);
@@ -138,6 +150,7 @@ function validateJob(raw: unknown, index: number): CronJob {
   if (typeof o.topicWindowHours === "number" && o.topicWindowHours > 0) {
     job.topicWindowHours = Math.min(o.topicWindowHours, 72);
   }
+  if (builtinRaw) job.builtin = builtinRaw as CronBuiltinHandler;
   if (o.notify && typeof o.notify === "object" && !Array.isArray(o.notify)) {
     const n = o.notify as Record<string, unknown>;
     const chatId = typeof n.chatId === "string" ? n.chatId.trim() : "";

@@ -18,6 +18,7 @@ import {
 import { executeCronJob, cronTick } from "../src/cronEngine.js";
 import { cmdCronList, cmdCronRun, writeExampleCronJobs } from "../src/cron_cmd.js";
 import { gatherDoctorChecks } from "../src/doctorChecks.js";
+import { createMemoryStore } from "../src/memoryStore.js";
 import type { SdkLike } from "../src/host.js";
 
 function tmp(): string {
@@ -118,6 +119,26 @@ test("loadCronJobs accepts promptFile without inline prompt", () => {
   const jobs = loadCronJobs(dir);
   assert.equal(jobs[0]!.promptFile, "prompts/job.txt");
   assert.equal(jobs[0]!.prompt, undefined);
+});
+
+test("loadCronJobs accepts builtin memory-audit without prompt", () => {
+  const dir = tmp();
+  writeExampleCronJobs(dir, [{ id: "audit", cron: "0 5 * * 0", builtin: "memory-audit" }]);
+  const jobs = loadCronJobs(dir);
+  assert.equal(jobs[0]!.builtin, "memory-audit");
+});
+
+test("executeCronJob runs memory-audit builtin", async () => {
+  await withKey("crsr_" + "x".repeat(24), async () => {
+    const dir = tmp();
+    const store = createMemoryStore(dir, ".agent");
+    await store.upsertNote({ name: "ops", body: "# Ops\n" + "x".repeat(100) });
+    await store.close();
+    writeExampleCronJobs(dir, [{ id: "audit", cron: "0 5 * * 0", builtin: "memory-audit" }]);
+    const result = await executeCronJob(loadCronJobs(dir)[0]!, { dir, sdk: fakeSdk() });
+    assert.equal(result.ok, true);
+    assert.match(result.output ?? "", /memory audit/);
+  });
 });
 
 test("executeCronJob runs with mocked SDK", async () => {

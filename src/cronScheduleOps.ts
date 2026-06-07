@@ -18,6 +18,7 @@ export const MAX_USER_CRON_JOBS = 10;
 export const PROTECTED_CRON_JOB_IDS = new Set([
   "tparser-daily-digest",
   "memory-curator-weekly",
+  "memory-audit-weekly",
   "happyin-kb-weekly",
   "tparser-bi-hourly-digest",
 ]);

@@ -4,7 +4,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { cmdDoctor } from "../src/doctor.js";
-import { gatherDoctorApiChecks } from "../src/doctorChecks.js";
+import { gatherDoctorApiChecks, gatherDoctorChecks } from "../src/doctorChecks.js";
+
+const VALID_TEST_KEY = "crsr_" + "k".repeat(24);
 
 function withKey(value: string | undefined, fn: () => void | Promise<void>): Promise<void> {
   const prev = process.env.CURSOR_API_KEY;
@@ -24,7 +26,7 @@ test("doctor fails without API key", async () => {
 });
 
 test("doctor passes with key + writable dir + models API", async () => {
-  await withKey("test-key", async () => {
+  await withKey(VALID_TEST_KEY, async () => {
     const dir = mkdtempSync(resolve(tmpdir(), "doc-"));
     assert.equal(
       await cmdDoctor(dir, {
@@ -56,8 +58,23 @@ test("gatherDoctorApiChecks skips when key unset", async () => {
   });
 });
 
+test("gatherDoctorChecks reports secret format failures", () => {
+  const prev = process.env.CURSOR_API_KEY;
+  process.env.CURSOR_API_KEY = "short";
+  try {
+    const dir = mkdtempSync(resolve(tmpdir(), "doc-fmt-"));
+    const checks = gatherDoctorChecks(dir);
+    const fmt = checks.find((c) => c.name === "CURSOR_API_KEY format");
+    assert.ok(fmt);
+    assert.equal(fmt!.ok, false);
+  } finally {
+    if (prev === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prev;
+  }
+});
+
 test("gatherDoctorApiChecks reports model count", async () => {
-  await withKey("k", async () => {
+  await withKey(VALID_TEST_KEY, async () => {
     const checks = await gatherDoctorApiChecks(".", {
       listModels: async () => [{ id: "a" }, { id: "b" }],
     });
