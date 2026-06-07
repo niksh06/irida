@@ -202,6 +202,7 @@ csagent auth logout                  # remove credentials file
 ```bash
 csagent memory list|show|add|search|rm|import-md …
 csagent memory align-silo [--dry-run]   # merge repo/cron silos → CSAGENT_HOME memory
+csagent memory audit [--links] [--stale-days 90]  # notes/facts/silo QA
 csagent memory fact add|query|invalidate …
 csagent cron list|run <id>|tick
 csagent gateway status         # launchd + log probe
