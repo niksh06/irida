@@ -31,7 +31,8 @@ export async function runDelegate(opts: DelegateOptions): Promise<DelegateResult
     return { ok: false, summary: "CURSOR_API_KEY not set", runId: null };
   }
   const out = await runPrompt(wrapped, {
-    dir: workDir,
+    dir,
+    cwd: workDir,
     sdk: opts.sdk,
     skills: opts.skills,
     yesIUnderstand: opts.yesIUnderstand,
