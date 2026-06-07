@@ -54,6 +54,18 @@ export interface QueryFactsInput {
   currentOnly?: boolean;
 }
 
+export interface FactSubjectStats {
+  subject: string;
+  current: number;
+  invalidated: number;
+}
+
+export interface MemoryFactAuditSummary {
+  currentTotal: number;
+  invalidatedTotal: number;
+  subjects: FactSubjectStats[];
+}
+
 export interface IMemoryStore {
   upsertNote(input: UpsertNoteInput): Promise<MemoryNote>;
   getNote(name: string): Promise<MemoryNote | undefined>;
@@ -62,6 +74,7 @@ export interface IMemoryStore {
   searchNotes(query: string, limit?: number): Promise<MemoryNote[]>;
   addFact(input: AddFactInput): Promise<MemoryFact>;
   queryFacts(input: QueryFactsInput): Promise<MemoryFact[]>;
+  factAuditSummary(): Promise<MemoryFactAuditSummary>;
   invalidateFact(id: string, ended?: string): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -253,6 +266,27 @@ export class SqliteMemoryStore implements IMemoryStore {
     return this.db.prepare(sql).all(...params) as unknown as MemoryFact[];
   }
 
+  async factAuditSummary(): Promise<MemoryFactAuditSummary> {
+    const rows = this.db
+      .prepare(
+        `SELECT subject,
+                SUM(CASE WHEN valid_to IS NULL OR valid_to = '' THEN 1 ELSE 0 END) AS current,
+                SUM(CASE WHEN valid_to IS NOT NULL AND valid_to != '' THEN 1 ELSE 0 END) AS invalidated
+         FROM memory_facts
+         GROUP BY subject
+         ORDER BY current DESC, subject ASC`
+      )
+      .all() as Array<{ subject: string; current: number; invalidated: number }>;
+    let currentTotal = 0;
+    let invalidatedTotal = 0;
+    const subjects: FactSubjectStats[] = rows.map((r) => {
+      currentTotal += r.current;
+      invalidatedTotal += r.invalidated;
+      return { subject: r.subject, current: r.current, invalidated: r.invalidated };
+    });
+    return { currentTotal, invalidatedTotal, subjects };
+  }
+
   async invalidateFact(id: string, ended?: string): Promise<boolean> {
     const when = ended?.trim() || nowIso().slice(0, 10);
     const r = this.db
@@ -401,6 +435,26 @@ export class PostgresMemoryStore implements IMemoryStore {
     const sql = `SELECT * FROM memory_facts WHERE ${clauses.join(" AND ")} ORDER BY created_at DESC`;
     const res = await this.pool.query(sql, params);
     return res.rows as MemoryFact[];
+  }
+
+  async factAuditSummary(): Promise<MemoryFactAuditSummary> {
+    await this.ensureMigrated();
+    const res = await this.pool.query(
+      `SELECT subject,
+              COUNT(*) FILTER (WHERE valid_to IS NULL OR valid_to = '')::int AS current,
+              COUNT(*) FILTER (WHERE valid_to IS NOT NULL AND valid_to != '')::int AS invalidated
+       FROM memory_facts
+       GROUP BY subject
+       ORDER BY current DESC, subject ASC`
+    );
+    let currentTotal = 0;
+    let invalidatedTotal = 0;
+    const subjects: FactSubjectStats[] = (res.rows as FactSubjectStats[]).map((r) => {
+      currentTotal += r.current;
+      invalidatedTotal += r.invalidated;
+      return r;
+    });
+    return { currentTotal, invalidatedTotal, subjects };
   }
 
   async invalidateFact(id: string, ended?: string): Promise<boolean> {

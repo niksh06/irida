@@ -17,6 +17,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - **Cron from chat:** MCP `cron_propose` + `/schedule approve` (path 2); slash `/schedule add|list|remove|…` (path 1 fallback)
 - Skill **`cron-ops`**, MCP server **`csagent-cron`** (gateway with `allowedChatIds` only)
 - User cron jobs: `user-*` prefix, max 10, protected system job ids
+- **`csagent memory audit`** — notes/facts/silo checks; optional `--links` URL probe; saves `.agent/memory-audit.last.json`
 
 ## [0.1.1] - 2026-05-29
 

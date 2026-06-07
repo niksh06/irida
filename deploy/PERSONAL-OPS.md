@@ -93,6 +93,15 @@ bash ~/.csagent/csagent/deploy/digest-qa-morning.sh   # ручной прого�
 | `memory-curator-weekly` | `0 4 * * 0` | memory-ops, отчёт в Telegram |
 | `happyin-kb-weekly` | `0 3 * * 0` | disabled by default |
 
+### Memory audit
+
+```bash
+~/.csagent/csagent/scripts/csagent-run.sh memory audit
+~/.csagent/csagent/scripts/csagent-run.sh memory audit --links   # HEAD-check URLs in ops notes
+```
+
+Проверяет: notes vs `.md`, stale ops notes, `seen_post` facts, silo alignment, stub notes. Результат: `.agent/memory-audit.last.json`. Exit 70 = FAIL/WARN критичные пункты.
+
 Включить curator: в `cron.jobs.json` убрать `"enabled": false` (или удалить поле).
 
 ## Backup

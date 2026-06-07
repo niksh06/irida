@@ -11,7 +11,7 @@ Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/s
 | **CLI** | `doctor`, `run`, `chat`, `sessions`, `resume`, `config`, `skills`, `store migrate` |
 | **TUI** | `csagent tui` — tabs, slash cmds (`/delegate` → inject into session), overlays, `@file` |
 | **Auth** | `csagent auth login` + `auth telegram login` → `.agent/credentials.json` or PG (pgcrypto) |
-| **Memory** | `@memory:name`, MCP tools, `memory align-silo`, `import-md`, `memory fact …` |
+| **Memory** | `@memory:name`, MCP tools, `memory align-silo`, `memory audit`, `import-md`, `memory fact …` |
 | **Browser** | `csagent-browser` MCP — stealth Chromium (`browser_navigate`, `browser_snapshot`, …) |
 | **Cron** | `cron tick` + jobs; TParser **daily** digest (5 topic delegates); prompt guard in doctor |
 | **Gateway** | Webhook or Telegram → stable `sess_` per chat; csagent slash catalog + pairing |

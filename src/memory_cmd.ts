@@ -7,6 +7,12 @@ import { importHappyinKb } from "./importHappyinKb.js";
 import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from "./memory.js";
 import { alignMemorySilos } from "./memorySiloOps.js";
 import { createMemoryStore } from "./memoryStore.js";
+import {
+  evaluateMemoryAudit,
+  formatMemoryAuditReport,
+  saveMemoryAuditResult,
+  DEFAULT_STALE_DAYS,
+} from "./memoryAudit.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
 export interface MemoryCmdOptions {
@@ -265,6 +271,39 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
   }
 }
 
+export async function cmdMemoryAudit(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  let staleDays = DEFAULT_STALE_DAYS;
+  let checkLinks = false;
+  let opsOnly = true;
+  let json = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--links") checkLinks = true;
+    else if (a === "--all-notes") opsOnly = false;
+    else if (a === "--json") json = true;
+    else if (a === "--stale-days" && argv[i + 1]) staleDays = parseInt(argv[++i]!, 10);
+  }
+  if (!Number.isFinite(staleDays) || staleDays < 1) {
+    console.error("memory audit: --stale-days must be a positive integer");
+    return EXIT.usage;
+  }
+  try {
+    loadConfig(dir);
+    const report = await evaluateMemoryAudit({ dir, staleDays, checkLinks, opsOnly });
+    saveMemoryAuditResult(dir, report);
+    if (json) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      console.log(formatMemoryAuditReport(report));
+    }
+    return report.ok ? EXIT.ok : EXIT.software;
+  } catch (e) {
+    console.error("memory audit: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
 export async function cmdMemoryAlignSilo(
   argv: string[],
   opts: MemoryCmdOptions = {}
@@ -301,6 +340,8 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemorySearch([name, ...rest].filter(Boolean).join(" "), opts);
     case "fact":
       return cmdMemoryFact([name ?? "", ...rest], opts);
+    case "audit":
+      return cmdMemoryAudit([name ?? "", ...rest], opts);
     case "import-md":
       return cmdMemoryImportMd([name ?? "", ...rest], opts);
     case "add": {
@@ -331,6 +372,7 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory rm <name>
   csagent memory import-md --kb-root PATH [--dir CSAGENT_ROOT] [--domains kafka,python] [--dry-run]
   csagent memory align-silo [--dry-run]   merge repo/cron silos → canonical ~/.csagent/.agent/memory
+  csagent memory audit [--links] [--stale-days N] [--all-notes] [--json]
   csagent memory fact add|query|invalidate …
 
 In chat/TUI, inject with @memory:<name> or @memory: for all.
