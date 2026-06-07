@@ -83,6 +83,7 @@ export class GatewaySessionRouter {
       yesIUnderstand: this.yesIUnderstand,
       interactive: false,
       channel: this.adapter as SessionChannel,
+      gatewayPeer: { adapter: this.adapter, chatId },
       onLog: this.onLog,
     });
     if (!opened.ok) {

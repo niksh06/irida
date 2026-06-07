@@ -66,6 +66,8 @@ export interface ChatSessionOptions {
   resumeSessionId?: string;
   /** Owning channel (telegram, tui, cli, …) — isolates gateway from TUI. */
   channel?: SessionChannel;
+  /** Gateway peer for cron_propose MCP (Telegram chatId). */
+  gatewayPeer?: { adapter: string; chatId: string };
   onLog?: (line: string) => void;
   onAssistantDelta?: (delta: string) => void;
   onThinkingDelta?: (chunk: string) => void;
@@ -153,7 +155,10 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   }
   cfg = { ...cfg, model: activeModel };
 
-  const mcpServers = resolveMcpServers(cfg, dir);
+  const mcpServers = resolveMcpServers(cfg, dir, {
+    gatewayChatId: opts.gatewayPeer?.chatId,
+    gatewayAdapter: opts.gatewayPeer?.adapter,
+  });
 
   let skills: Skill[] = [];
   if (opts.skills?.length) {

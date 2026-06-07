@@ -40,7 +40,32 @@ tail -f ~/.csagent/logs/gateway.log
 tail -f ~/.csagent/logs/cron-tick.log
 ```
 
-Telegram: `/status`, `/doctor`, `/memory`, `/sessions`.
+Telegram: `/status`, `/doctor`, `/memory`, `/sessions`, `/schedule`.
+
+### Cron из чата (Telegram)
+
+**Путь 2 (основной):** напиши агенту, например «каждый понедельник в 9:00 — разбор inbox». Агент вызовет MCP `cron_propose` и вернёт код подтверждения:
+
+```
+/schedule approve ABC123
+```
+
+**Путь 1 (fallback, slash):**
+
+```text
+/schedule help
+/schedule list          # все jobs
+/schedule user          # только user-*
+/schedule pending       # ждут approve
+/schedule add 0 9 * * 1 weekly-inbox Summarize open tasks
+/schedule remove user-weekly-inbox
+```
+
+User jobs: id с префиксом `user-`, max 10, notify → этот чат. Системные (`tparser-daily-digest`, …) через `/schedule remove` не удаляются.
+
+Skill: `cron-ops` в `gateway.json` (см. `deploy/gateway.json.example`).
+
+Файлы: `~/.csagent/.agent/cron.schedule.pending.json`, `cron.jobs.json`.
 
 ### Утренний re-check (08:00)
 

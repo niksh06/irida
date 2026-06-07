@@ -14,6 +14,9 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - **Morning digest QA** launchd (08:00) + `cron qa --morning --alert`
 - **H2:** digest follow-up aliases aligned with 5 topics; last digest snippet in follow-up turns; `/help` hints
 - launchd **`ai.csagent.backup-weekly`** — Sunday 05:00 backup via `backup-personal.sh`
+- **Cron from chat:** MCP `cron_propose` + `/schedule approve` (path 2); slash `/schedule add|list|remove|…` (path 1 fallback)
+- Skill **`cron-ops`**, MCP server **`csagent-cron`** (gateway with `allowedChatIds` only)
+- User cron jobs: `user-*` prefix, max 10, protected system job ids
 
 ## [0.1.1] - 2026-05-29
 

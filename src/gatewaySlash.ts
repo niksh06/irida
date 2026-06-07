@@ -12,6 +12,15 @@ import { loadConfig } from "./config.js";
 import { createStore } from "./store.js";
 import { searchSessions } from "./sessionSearch.js";
 import { listSkills } from "./skills.js";
+import {
+  addUserCronJob,
+  approveCronSchedule,
+  listCronJobsText,
+  listPendingCronSchedulesText,
+  parseScheduleAddArgs,
+  removeUserCronJob,
+  scheduleSlashHelpText,
+} from "./cronScheduleOps.js";
 import { runDelegate } from "./delegateRun.js";
 import type { ChatSession } from "./chatEngine.js";
 
@@ -34,6 +43,7 @@ export const GATEWAY_SLASH_COMMANDS: GatewaySlashCommand[] = [
   { cmd: "skills", desc: "Skills из gateway.json", telegram: true },
   { cmd: "approve", desc: "Подтвердить pairing-код", args: "<код>", telegram: true },
   { cmd: "delegate", desc: "Изолированный subagent (summary → сессия)", args: "<prompt>", telegram: true },
+  { cmd: "schedule", desc: "Cron: list/add/approve", args: "[subcommand]", telegram: true },
 ];
 
 /** Telegram Bot API menu entries (setMyCommands) — same catalog as /help. */
@@ -58,6 +68,8 @@ export function gatewaySlashHelpText(): string {
     ...lines,
     "",
     "**После digest:** `топ-50`, `только InfoSec`, `только AI`, `only devops` → углубление по теме.",
+    "",
+    "**Cron из чата:** попроси агента запланировать → `/schedule approve <код>` · fallback: `/schedule help`",
     "",
     "Свободный текст → агент (Cursor SDK).",
   ].join("\n");
@@ -197,6 +209,43 @@ export async function handleGatewaySlash(
         return `[delegate]\n${out.summary}`;
       }
       return `Delegate failed: ${out.summary}`;
+    }
+
+    case "schedule": {
+      const sub = (p.arg.split(/\s+/)[0] ?? "").toLowerCase();
+      const rest = p.arg.slice(sub.length).trim();
+      switch (sub) {
+        case "":
+        case "help":
+          return scheduleSlashHelpText();
+        case "list":
+          return listCronJobsText(ctx.dir, "all");
+        case "user":
+          return listCronJobsText(ctx.dir, "user");
+        case "pending":
+          return listPendingCronSchedulesText(ctx.dir, ctx.chatId);
+        case "add": {
+          const draft = parseScheduleAddArgs(`add ${rest}`);
+          if (!draft) {
+            return "Использование: /schedule add `<cron>` `<id>` `<prompt…>`\nПример: /schedule add 0 9 * * 1 weekly-inbox Summarize tasks";
+          }
+          const out = addUserCronJob(ctx.dir, draft, {
+            chatId: ctx.chatId,
+            telegram: true,
+          });
+          return out.message;
+        }
+        case "remove": {
+          if (!rest) return "Использование: /schedule remove `<id>`";
+          return removeUserCronJob(ctx.dir, rest.split(/\s+/)[0]!).message;
+        }
+        case "approve": {
+          if (!rest) return "Использование: /schedule approve `<код>`";
+          return approveCronSchedule(ctx.dir, rest.split(/\s+/)[0]!, ctx.chatId).message;
+        }
+        default:
+          return scheduleSlashHelpText();
+      }
     }
 
     default:

@@ -250,3 +250,14 @@ export function isJobDue(job: CronJob, at: Date, state: CronStateFile): boolean 
 }
 
 export { jobsPath as cronJobsPath, statePath as cronStatePath };
+
+export function saveCronJobs(dir: string, jobs: CronJob[]): void {
+  const cfg = loadConfig(dir);
+  const root = resolve(dir, cfg.stateDir);
+  mkdirSync(root, { recursive: true });
+  writeFileSync(
+    jobsPath(dir),
+    JSON.stringify({ version: 1, jobs }, null, 2) + "\n",
+    { encoding: "utf8", mode: 0o600 }
+  );
+}
