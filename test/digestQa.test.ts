@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   DEFAULT_DIGEST_JOB_ID,
+  digestNeverRan,
   evaluateDigestQa,
   formatDigestQaAlert,
   saveDigestOutput,
@@ -84,6 +85,15 @@ test("evaluateDigestQa fails when lastResult missing", () => {
   const report = evaluateDigestQa(dir, DEFAULT_DIGEST_JOB_ID);
   assert.equal(report.ok, false);
   assert.ok(report.checks.some((c) => c.name === "last run" && !c.ok));
+  assert.match(
+    report.checks.find((c) => c.name === "last run")!.detail,
+    /never ran/
+  );
+});
+
+test("digestNeverRan is true without lastRun entry", () => {
+  const dir = setupDir();
+  assert.equal(digestNeverRan(dir, DEFAULT_DIGEST_JOB_ID), true);
 });
 
 test("formatDigestQaAlert lists failed checks only", () => {

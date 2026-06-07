@@ -18,6 +18,7 @@ import { resolveJobNotifyTarget, sendCronJobNotify, sendDigestQaAlertMessage } f
 import { saveCronJobResult } from "./cronRunRecord.js";
 import {
   DEFAULT_DIGEST_JOB_ID,
+  digestNeverRan,
   evaluateDigestQa,
   formatDigestQaReport,
   saveDigestQaResult,
@@ -104,6 +105,12 @@ export async function cmdCronQa(jobId: string | undefined, opts: CronCmdOptions 
   console.log(formatDigestQaReport(report));
   if (!report.ok) {
     if (opts.alert) {
+      if (opts.morning && digestNeverRan(dir, id)) {
+        console.error(
+          `[cron] morning QA skip alert job=${id} — digest never ran yet (await 23:59 or manual smoke)`
+        );
+        return EXIT.software;
+      }
       let job: CronJob | undefined;
       try {
         job = loadCronJobs(dir).find((j) => j.id === id);

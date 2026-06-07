@@ -38,6 +38,11 @@ export interface DigestQaReport {
   checks: DigestQaCheck[];
 }
 
+export function digestNeverRan(dir: string, jobId: string = DEFAULT_DIGEST_JOB_ID): boolean {
+  const state = loadCronState(dir);
+  return !state.lastResult?.[jobId] && !state.lastRun?.[jobId];
+}
+
 export function digestOutputPath(dir: string, jobId: string): string {
   const cfg = loadConfig(dir);
   return resolve(dir, cfg.stateDir, `cron.last-digest.${jobId}.txt`);
@@ -98,7 +103,16 @@ export function evaluateDigestQa(
   const last: CronJobLastResult | undefined = state.lastResult?.[jobId];
 
   if (!last) {
-    checks.push(check("last run", false, "no lastResult in cron.state.json"));
+    const never = !state.lastRun?.[jobId];
+    checks.push(
+      check(
+        "last run",
+        false,
+        never
+          ? "never ran — awaiting 23:59 slot or `cron run tparser-daily-digest`"
+          : "no lastResult in cron.state.json"
+      )
+    );
     return { jobId, ok: false, checks };
   }
 
