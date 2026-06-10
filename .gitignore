@@ -25,3 +25,7 @@ agent.config.json
 
 issues/
 
+# local agent memory (untracked; remove from gitignore to version)
+AGENTS.md
+AGENTS.local.md
+.cursor/
