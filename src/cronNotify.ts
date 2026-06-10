@@ -177,7 +177,7 @@ export async function sendCronJobNotify(
         console.error(`[cron] notify telegram: ${target.tokenEnv} unset job=${job.id}`);
         return;
       }
-      if (text) await telegramSendLongMessage(token, target.chatId, text);
+      if (text) await telegramSendLongMessage(token, target.chatId, text, fetch, { html: true });
       if (postMortem) await telegramSendLongMessage(token, target.chatId, postMortem);
       await sendDigestQaFollowUp(job, exec, at, dir, target);
       return;

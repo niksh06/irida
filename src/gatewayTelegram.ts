@@ -3,6 +3,7 @@
  */
 import { type GatewayConfig, isChatAllowed } from "./gatewayConfig.js";
 import { resolveTelegramBotToken } from "./credentials.js";
+import { formatTelegramHtml, telegramHtmlDiffers } from "./telegramFormat.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { tryRegisterPairing } from "./gatewayPairing.js";
 import { gatewayTelegramBotCommands, isGatewaySlashCommand } from "./gatewaySlash.js";
@@ -113,16 +114,43 @@ export async function telegramSendMessage(
   await telegramApiPost(token, "sendMessage", { chat_id: chatId, text }, fetchFn);
 }
 
+/** Send with HTML formatting; fall back to plain text when the API rejects parse (I-37). */
+export async function telegramSendMessageHtml(
+  token: string,
+  chatId: string,
+  text: string,
+  fetchFn: TelegramFetch = fetch
+): Promise<void> {
+  const html = formatTelegramHtml(text);
+  if (!telegramHtmlDiffers(text, html)) {
+    await telegramSendMessage(token, chatId, text, fetchFn);
+    return;
+  }
+  try {
+    await telegramApiPost(
+      token,
+      "sendMessage",
+      { chat_id: chatId, text: html, parse_mode: "HTML", disable_web_page_preview: true },
+      fetchFn
+    );
+  } catch {
+    // Unbalanced tags after multipart split etc. — content over formatting.
+    await telegramSendMessage(token, chatId, text, fetchFn);
+  }
+}
+
 /** Send text as one or more Telegram messages (same chunking as cron digest). */
 export async function telegramSendLongMessage(
   token: string,
   chatId: string,
   text: string,
-  fetchFn: TelegramFetch = fetch
+  fetchFn: TelegramFetch = fetch,
+  opts: { html?: boolean } = {}
 ): Promise<number> {
   const bodies = formatTelegramMultipartBodies(text);
   for (const body of bodies) {
-    await telegramSendMessage(token, chatId, body, fetchFn);
+    if (opts.html) await telegramSendMessageHtml(token, chatId, body, fetchFn);
+    else await telegramSendMessage(token, chatId, body, fetchFn);
   }
   return bodies.length;
 }
@@ -214,7 +242,12 @@ export interface ProcessTelegramUpdateOptions {
   token: string;
   fetchFn?: TelegramFetch;
   dir?: string;
+  /** Min ms between progress edits (tests set 0). */
+  progressEditMinMs?: number;
 }
+
+/** Telegram tolerates ~1 edit/sec per chat; stay under it. */
+export const TELEGRAM_PROGRESS_EDIT_MIN_MS = 1500;
 
 /** Handle one Telegram update through the gateway router. */
 export async function processTelegramUpdate(
@@ -247,30 +280,81 @@ export async function processTelegramUpdate(
       ? startTelegramTypingLoop(token, chatId, fetchFn)
       : null;
   const toolState: TelegramToolProgressState = { lastToolName: null, seenCallIds: new Set() };
-  const toolNotifies: Promise<void>[] = [];
+
+  // One self-updating progress message per turn (I-37): first tool call sends
+  // it, later calls edit it (rate-limited). Serial chain keeps send-before-edit.
+  const editMinMs = opts.progressEditMinMs ?? TELEGRAM_PROGRESS_EDIT_MIN_MS;
+  let progressMessageId: number | null = null;
+  let lastEditAt = 0;
+  let pendingLine: string | null = null;
+  let progressChain: Promise<void> = Promise.resolve();
+
+  const pushProgress = (line: string): void => {
+    pendingLine = line;
+    progressChain = progressChain.then(async () => {
+      const next = pendingLine;
+      if (next == null) return;
+      try {
+        if (progressMessageId == null) {
+          pendingLine = null;
+          const sent = await telegramApiPost<{ message_id?: number }>(
+            token,
+            "sendMessage",
+            { chat_id: chatId, text: next },
+            fetchFn
+          );
+          progressMessageId = sent?.message_id ?? null;
+          lastEditAt = Date.now();
+          if (cfg.telegramShowTyping) {
+            await telegramSendChatAction(token, chatId, "typing", fetchFn);
+          }
+          return;
+        }
+        if (Date.now() - lastEditAt < editMinMs) return; // keep pendingLine for a later call
+        pendingLine = null;
+        await telegramApiPost(
+          token,
+          "editMessageText",
+          { chat_id: chatId, message_id: progressMessageId, text: next },
+          fetchFn
+        );
+        lastEditAt = Date.now();
+      } catch {
+        /* non-fatal UX */
+      }
+    });
+  };
+
+  const flushProgress = async (): Promise<void> => {
+    await progressChain;
+    // Final state: make sure the last tool line landed even if rate-limited.
+    if (pendingLine != null && progressMessageId != null) {
+      const line = pendingLine;
+      pendingLine = null;
+      try {
+        await telegramApiPost(
+          token,
+          "editMessageText",
+          { chat_id: chatId, message_id: progressMessageId, text: line },
+          fetchFn
+        );
+      } catch {
+        /* non-fatal UX */
+      }
+    }
+  };
 
   try {
     const { reply } = await router.handleInbound(chatId, text, {
       onActivity: (activity) => {
         if (!shouldEmitTelegramToolProgress(cfg, activity, toolState)) return;
-        toolNotifies.push(
-          (async () => {
-            try {
-              await telegramSendMessage(token, chatId, formatTelegramToolProgressLine(activity), fetchFn);
-              if (cfg.telegramShowTyping) {
-                await telegramSendChatAction(token, chatId, "typing", fetchFn);
-              }
-            } catch {
-              /* non-fatal UX */
-            }
-          })()
-        );
+        pushProgress(formatTelegramToolProgressLine(activity));
       },
     });
-    await Promise.allSettled(toolNotifies);
+    await flushProgress();
     return { handled: true, chatId, reply };
   } catch (e) {
-    await Promise.allSettled(toolNotifies);
+    await flushProgress();
     return { handled: true, chatId, error: e instanceof Error ? e.message : String(e) };
   } finally {
     typing?.stop();
@@ -350,7 +434,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   /** Agent turn already ran — retry delivery once before giving up. */
   const deliverWithRetry = async (chatId: string, text: string, long: boolean): Promise<void> => {
     const send = async () => {
-      if (long) await telegramSendLongMessage(token, chatId, text, fetchFn);
+      if (long) await telegramSendLongMessage(token, chatId, text, fetchFn, { html: true });
       else await telegramSendMessage(token, chatId, text, fetchFn);
     };
     try {

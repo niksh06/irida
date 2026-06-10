@@ -7,6 +7,7 @@ import {
   processTelegramUpdate,
   telegramGetUpdates,
   telegramSendMessage,
+  telegramSendMessageHtml,
   telegramSendLongMessage,
   telegramSendChatAction,
   startTelegramPoller,
@@ -177,6 +178,72 @@ test("processTelegramUpdate sends typing and tool progress", async () => {
     assert.ok(calls.some((c) => c.includes("shell") && c.includes("npm test")));
     await router.closeAll();
   });
+});
+
+test("tool progress: one message sent, later tools edit it (I-37)", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const cfg = writeExampleGatewayConfig(dir, {
+      adapter: "telegram",
+      allowedChatIds: ["42"],
+      telegramShowToolProgress: true,
+    });
+    const stream: RunLike["stream"] = async function* () {
+      yield { type: "tool_call", name: "shell", status: "running", call_id: "c1", args: { command: "ls" } };
+      yield { type: "tool_call", name: "read", status: "running", call_id: "c2", args: {} };
+      yield { type: "tool_call", name: "grep", status: "running", call_id: "c3", args: {} };
+      yield { type: "assistant", message: { content: [{ type: "text", text: "done" }] } };
+    };
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }, stream) });
+    let sendCount = 0;
+    const edits: string[] = [];
+    const fetchFn = async (url: string, init?: RequestInit) => {
+      if (url.includes("editMessageText")) {
+        const body = JSON.parse(String(init?.body)) as { text: string; message_id: number };
+        edits.push(body.text);
+        assert.equal(body.message_id, 777);
+        return new Response(JSON.stringify({ ok: true, result: {} }));
+      }
+      if (url.includes("sendMessage")) {
+        sendCount++;
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 777 } }));
+      }
+      return new Response(JSON.stringify({ ok: true, result: {} }));
+    };
+    const out = await processTelegramUpdate(
+      cfg,
+      router,
+      { update_id: 1, message: { message_id: 1, chat: { id: 42 }, text: "run tools" } },
+      { token: "tok", fetchFn, progressEditMinMs: 0 }
+    );
+    assert.equal(out.reply, "done");
+    // One progress message; subsequent tool lines are edits, not new messages.
+    assert.equal(sendCount, 1);
+    assert.ok(edits.length >= 1);
+    assert.ok(edits.some((t) => t.includes("read") || t.includes("grep")));
+    await router.closeAll();
+  });
+});
+
+test("telegramSendMessageHtml falls back to plain on parse error", async () => {
+  const posts: Array<{ text: string; parse_mode?: string }> = [];
+  const fetchFn = async (url: string, init?: RequestInit) => {
+    if (url.includes("sendMessage")) {
+      const body = JSON.parse(String(init?.body)) as { text: string; parse_mode?: string };
+      posts.push(body);
+      if (body.parse_mode === "HTML") {
+        return new Response(JSON.stringify({ ok: false, description: "can't parse entities" }));
+      }
+      return new Response(JSON.stringify({ ok: true, result: {} }));
+    }
+    return new Response(JSON.stringify({ ok: false }));
+  };
+  await telegramSendMessageHtml("tok", "42", "**bold** broken", fetchFn);
+  assert.equal(posts.length, 2);
+  assert.equal(posts[0]!.parse_mode, "HTML");
+  assert.match(posts[0]!.text, /<b>bold<\/b>/);
+  assert.equal(posts[1]!.parse_mode, undefined);
+  assert.equal(posts[1]!.text, "**bold** broken");
 });
 
 test("splitTelegramMessages and formatTelegramMultipartBodies respect limit", () => {
