@@ -8,7 +8,11 @@
   },
   "files": [
     "dist",
-    "scripts/csagent.mjs"
+    "scripts/csagent.mjs",
+    "OPS.md",
+    "REFERENCE.md",
+    "deploy",
+    "skills"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
