@@ -4,6 +4,7 @@
 import { type GatewayConfig, isChatAllowed } from "./gatewayConfig.js";
 import { resolveTelegramBotToken } from "./credentials.js";
 import { formatTelegramHtml, telegramHtmlDiffers } from "./telegramFormat.js";
+import { drainOutbox, enqueueOutbox } from "./gatewayOutbox.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { tryRegisterPairing } from "./gatewayPairing.js";
 import { gatewayTelegramBotCommands, isGatewaySlashCommand } from "./gatewaySlash.js";
@@ -431,7 +432,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
 
   const SEND_RETRY_DELAY_MS = 1500;
 
-  /** Agent turn already ran — retry delivery once before giving up. */
+  /** Agent turn already ran — retry once, then park in the outbox (I-31). */
   const deliverWithRetry = async (chatId: string, text: string, long: boolean): Promise<void> => {
     const send = async () => {
       if (long) await telegramSendLongMessage(token, chatId, text, fetchFn, { html: true });
@@ -447,10 +448,41 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
         await send();
       } catch (e2) {
         const msg2 = e2 instanceof Error ? e2.message : String(e2);
-        logError(
-          `[gateway] telegram reply LOST chat=${chatId}: ${msg2}; replyPreview=${text.slice(0, 200)}`
+        try {
+          enqueueOutbox(dir, { chatId, text, html: long });
+          logError(`[gateway] telegram send parked in outbox chat=${chatId}: ${msg2}`);
+        } catch (e3) {
+          logError(
+            `[gateway] telegram reply LOST chat=${chatId}: ${msg2}; outbox failed: ${e3 instanceof Error ? e3.message : String(e3)}; replyPreview=${text.slice(0, 200)}`
+          );
+        }
+      }
+    }
+  };
+
+  /** Deliver parked messages; called from the poll loop (cheap when empty). */
+  const drainParked = async (): Promise<void> => {
+    try {
+      const result = await drainOutbox(
+        dir,
+        async (entry) => {
+          if (entry.html) await telegramSendLongMessage(token, entry.chatId, entry.text, fetchFn, { html: true });
+          else await telegramSendMessage(token, entry.chatId, entry.text, fetchFn);
+        },
+        {
+          onDrop: (entry) =>
+            logError(
+              `[gateway] outbox DROP chat=${entry.chatId} attempts=${entry.attempts} preview=${entry.text.slice(0, 120)}`
+            ),
+        }
+      );
+      if (result.sent > 0 || result.dropped > 0) {
+        logInfo(
+          `[gateway] outbox drained sent=${result.sent} failed=${result.failed} dropped=${result.dropped} remaining=${result.remaining}`
         );
       }
+    } catch (e) {
+      logError(`[gateway] outbox drain error: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -495,6 +527,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   const tick = async () => {
     if (!running) return;
     let nextDelayMs = pollMs;
+    await drainParked();
     try {
       const updates = await telegramGetUpdates(token, offset, Math.min(50, Math.max(1, Math.floor(pollMs / 1000))), fetchFn);
       consecutiveErrors = 0;

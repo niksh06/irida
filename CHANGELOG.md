@@ -15,6 +15,8 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Secure memory notes** (I-20) — `--wing secure` (Postgres): body pgcrypto-encrypted at rest, decrypt only via `memory show`/`memory_get`, masked in list/search, no `.md` mirror; sqlite refuses; migration `007_memory_secure.sql`
+- **Telegram outbound queue** (I-31) — failed deliveries (replies, cron digest) park in `gateway.outbox.json`; poll loop drains with backoff 30s→1h, caps 20 attempts / 48h / 100 entries
 - **Run metrics** (I-33) — `gateway status` / Telegram `/status` row `runs 24h`: count, error rate, p50/p95 duration, token totals (aggregated from `runs.jsonl`, no DB migration)
 - **TUI `/find <text>`** (R3-4) — transcript search, reverse-i-search UX: first hit = newest match, repeat `/find` walks older, wraps; case-insensitive
 - **Structured run log** (I-19) — every recorded run appends to `<stateDir>/logs/runs.jsonl` (id, status, duration, model, tokens; no previews); rotation at 5MB; `CSAGENT_RUN_LOG=0` disables

@@ -3,6 +3,7 @@
  */
 import { resolveTelegramBotToken } from "./credentials.js";
 import { telegramSendLongMessage } from "./gatewayTelegram.js";
+import { enqueueOutbox } from "./gatewayOutbox.js";
 import type { CronJob } from "./cronJobs.js";
 import {
   evaluateDigestQa,
@@ -197,5 +198,14 @@ export async function sendCronJobNotify(
     console.error(
       `[cron] notify failed job=${job.id}: ${e instanceof Error ? e.message : String(e)}`
     );
+    // Digest must survive a network blip: park for the gateway outbox drain (I-31).
+    if (target.mode === "telegram" && text) {
+      try {
+        enqueueOutbox(dir, { chatId: target.chatId, text, html: true });
+        console.error(`[cron] notify parked in outbox job=${job.id}`);
+      } catch {
+        /* best-effort */
+      }
+    }
   }
 }
