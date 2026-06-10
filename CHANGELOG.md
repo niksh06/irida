@@ -15,6 +15,11 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Structured run log** (I-19) — every recorded run appends to `<stateDir>/logs/runs.jsonl` (id, status, duration, model; no previews); rotation at 5MB; `CSAGENT_RUN_LOG=0` disables
+- **Telegram HTML formatting** (I-37) — replies and digest render `**bold**`, `` `code` ``, fences, links via HTML parse_mode; plain-text fallback on parse errors
+- **Telegram tool progress via editMessage** (I-37) — one self-updating message per turn instead of message-per-tool (rate-limited 1.5s)
+- **Pairing rate-limit** (I-35) — pending codes: cap 20, 24h TTL, code reuse per chat
+- **pgcrypto spec** (I-20) — `issues/I-20-pgcrypto-notes-facts.md`, Option A (`secure` wing), awaits sign-off
 - **Roadmap + issue tracker:** `docs/ROADMAP.md` (R1–R4), issues I-31…I-37 (outbound queue, packaging, metrics, retention, pairing rate-limit, pgvector, telegram markdown)
 - Per-job **`graceMinutes`** in cron jobs — catch missed slots after machine sleep (daily digest)
 - Cron builtin **`session-export`** (I-12) — daily transcripts to `Reports/sessions/YYYY-MM-DD/`

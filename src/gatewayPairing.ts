@@ -8,6 +8,9 @@ import { loadConfig } from "./config.js";
 import { writeFileAtomic } from "./util.js";
 
 export const PAIRING_FILE = "gateway.pairing.json";
+/** Unknown chats can spam pairing requests — cap pending and expire stale codes (I-35). */
+export const PAIRING_PENDING_MAX = 20;
+export const PAIRING_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface PairingPending {
   code: string;
@@ -27,6 +30,11 @@ function pairingPath(dir: string): string {
   return resolve(dir, cfg.stateDir, PAIRING_FILE);
 }
 
+function pendingFresh(p: PairingPending, now: number): boolean {
+  const t = Date.parse(p.createdAt);
+  return Number.isFinite(t) && now - t <= PAIRING_PENDING_TTL_MS;
+}
+
 export function loadPairingFile(dir: string): PairingFile {
   const path = pairingPath(dir);
   if (!existsSync(path)) {
@@ -34,10 +42,14 @@ export function loadPairingFile(dir: string): PairingFile {
   }
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as PairingFile;
+    const now = Date.now();
+    const pending = Array.isArray(parsed.pending)
+      ? parsed.pending.filter((p) => pendingFresh(p, now))
+      : [];
     return {
       version: 1,
       approved: Array.isArray(parsed.approved) ? parsed.approved.map(String) : [],
-      pending: Array.isArray(parsed.pending) ? parsed.pending : [],
+      pending,
     };
   } catch {
     return { version: 1, approved: [], pending: [] };
@@ -86,6 +98,11 @@ export function tryRegisterPairing(
     adapter,
     createdAt: new Date().toISOString(),
   });
+  // Cap: evict oldest pending codes so unknown chats cannot grow the file unbounded.
+  if (data.pending.length > PAIRING_PENDING_MAX) {
+    data.pending.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+    data.pending.splice(0, data.pending.length - PAIRING_PENDING_MAX);
+  }
   savePairingFile(dir, data);
   return {
     registered: true,
