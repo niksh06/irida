@@ -11,6 +11,14 @@ import { redact } from "./redact.js";
 import { newId, nowIso } from "./util.js";
 import { resolveMemoryRoot } from "./config.js";
 import { postgresFtsQuery, sqliteFtsMatchQuery } from "./memorySearch.js";
+import { secretsKey, SECRETS_KEY_ENV } from "./credentialsPg.js";
+
+/**
+ * Notes in this wing are pgcrypto-encrypted at rest (Postgres only, I-20).
+ * Body is decrypted only by getNote; list/search show a placeholder.
+ */
+export const SECURE_WING = "secure";
+export const SECURE_BODY_PLACEHOLDER = "(encrypted — use memory show)";
 
 export interface MemoryNote {
   name: string;
@@ -99,6 +107,10 @@ const MEMORY_FTS_MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/006_memory_fts.sql"),
   "utf8"
 );
+const MEMORY_SECURE_MIGRATION = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/007_memory_secure.sql"),
+  "utf8"
+);
 
 function titleFromBody(name: string, body: string): string {
   const m = body.match(/^#\s+(.+)$/m);
@@ -166,8 +178,14 @@ export class SqliteMemoryStore implements IMemoryStore {
   async upsertNote(input: UpsertNoteInput): Promise<MemoryNote> {
     const now = nowIso();
     const name = input.name.trim();
-    const body = redact(input.body.trim());
     const wing = input.wing?.trim() || "default";
+    if (wing === SECURE_WING) {
+      // No pgcrypto in the sqlite path — refuse loudly instead of storing plaintext.
+      throw new Error(
+        "secure wing requires the Postgres store (CSAGENT_DATABASE_URL + CSAGENT_SECRETS_KEY)"
+      );
+    }
+    const body = redact(input.body.trim());
     const title = redact(input.title?.trim() || titleFromBody(name, body));
     const existing = await this.getNote(name);
     this.db
@@ -348,22 +366,62 @@ export class PostgresMemoryStore implements IMemoryStore {
     if (this.migrated) return;
     await this.pool.query(MEMORY_MIGRATION);
     await this.pool.query(MEMORY_FTS_MIGRATION);
+    await this.pool.query(MEMORY_SECURE_MIGRATION);
     this.migrated = true;
+  }
+
+  /** Column list with body resolved for reads; decrypts only when asked and key set. */
+  private noteSelect(decrypt: boolean): { expr: string; params: unknown[] } {
+    const key = secretsKey();
+    if (decrypt && key) {
+      return {
+        expr: `name, wing, title,
+               CASE WHEN body_enc IS NOT NULL THEN pgp_sym_decrypt(body_enc, $1) ELSE body END AS body,
+               created_at, updated_at`,
+        params: [key],
+      };
+    }
+    return {
+      expr: `name, wing, title,
+             CASE WHEN body_enc IS NOT NULL THEN '${SECURE_BODY_PLACEHOLDER}' ELSE body END AS body,
+             created_at, updated_at`,
+      params: [],
+    };
   }
 
   async upsertNote(input: UpsertNoteInput): Promise<MemoryNote> {
     await this.ensureMigrated();
     const now = nowIso();
     const name = input.name.trim();
-    const body = redact(input.body.trim());
     const wing = input.wing?.trim() || "default";
-    const title = redact(input.title?.trim() || titleFromBody(name, body));
     const existing = await this.getNote(name);
+
+    if (wing === SECURE_WING) {
+      const key = secretsKey();
+      if (!key) {
+        throw new Error(`secure wing requires ${SECRETS_KEY_ENV} (pgcrypto encryption key)`);
+      }
+      // Encryption replaces redaction here — secure notes exist to hold secrets.
+      const rawBody = input.body.trim();
+      const title = redact(input.title?.trim() || titleFromBody(name, rawBody));
+      // body='' keeps the generated FTS vector free of secret content.
+      await this.pool.query(
+        `INSERT INTO memory_notes (name, wing, title, body, body_enc, created_at, updated_at)
+         VALUES ($1,$2,$3,'',pgp_sym_encrypt($4,$5),$6,$7)
+         ON CONFLICT(name) DO UPDATE SET
+           wing=EXCLUDED.wing, title=EXCLUDED.title, body='', body_enc=EXCLUDED.body_enc, updated_at=EXCLUDED.updated_at`,
+        [name, wing, title, rawBody, key, existing?.created_at ?? now, now]
+      );
+      return (await this.getNote(name))!;
+    }
+
+    const body = redact(input.body.trim());
+    const title = redact(input.title?.trim() || titleFromBody(name, body));
     await this.pool.query(
-      `INSERT INTO memory_notes (name, wing, title, body, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO memory_notes (name, wing, title, body, body_enc, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,NULL,$5,$6)
        ON CONFLICT(name) DO UPDATE SET
-         wing=EXCLUDED.wing, title=EXCLUDED.title, body=EXCLUDED.body, updated_at=EXCLUDED.updated_at`,
+         wing=EXCLUDED.wing, title=EXCLUDED.title, body=EXCLUDED.body, body_enc=NULL, updated_at=EXCLUDED.updated_at`,
       [name, wing, title, body, existing?.created_at ?? now, now]
     );
     return (await this.getNote(name))!;
@@ -371,20 +429,25 @@ export class PostgresMemoryStore implements IMemoryStore {
 
   async getNote(name: string): Promise<MemoryNote | undefined> {
     await this.ensureMigrated();
-    const res = await this.pool.query(`SELECT * FROM memory_notes WHERE name=$1`, [name.trim()]);
+    const sel = this.noteSelect(true);
+    const res = await this.pool.query(
+      `SELECT ${sel.expr} FROM memory_notes WHERE name=$${sel.params.length + 1}`,
+      [...sel.params, name.trim()]
+    );
     return (res.rows[0] as MemoryNote | undefined) ?? undefined;
   }
 
   async listNotes(wing?: string): Promise<MemoryNote[]> {
     await this.ensureMigrated();
+    const sel = this.noteSelect(false);
     if (wing?.trim()) {
       const res = await this.pool.query(
-        `SELECT * FROM memory_notes WHERE wing=$1 ORDER BY updated_at DESC`,
-        [wing.trim()]
+        `SELECT ${sel.expr} FROM memory_notes WHERE wing=$${sel.params.length + 1} ORDER BY updated_at DESC`,
+        [...sel.params, wing.trim()]
       );
       return res.rows as MemoryNote[];
     }
-    const res = await this.pool.query(`SELECT * FROM memory_notes ORDER BY updated_at DESC`);
+    const res = await this.pool.query(`SELECT ${sel.expr} FROM memory_notes ORDER BY updated_at DESC`);
     return res.rows as MemoryNote[];
   }
 
@@ -396,11 +459,14 @@ export class PostgresMemoryStore implements IMemoryStore {
 
   async searchNotes(query: string, limit = 20): Promise<MemoryNote[]> {
     await this.ensureMigrated();
+    // Search never decrypts: secure notes can match by name/title only and
+    // come back with the placeholder body.
+    const sel = this.noteSelect(false);
     const ftsQ = postgresFtsQuery(query);
     if (ftsQ.length >= 2) {
       try {
         const res = await this.pool.query(
-          `SELECT * FROM memory_notes
+          `SELECT ${sel.expr} FROM memory_notes
            WHERE search_vector @@ plainto_tsquery('simple', $1)
            ORDER BY ts_rank(search_vector, plainto_tsquery('simple', $1)) DESC, updated_at DESC
            LIMIT $2`,
@@ -412,7 +478,7 @@ export class PostgresMemoryStore implements IMemoryStore {
       }
     }
     const res = await this.pool.query(
-      `SELECT * FROM memory_notes
+      `SELECT ${sel.expr} FROM memory_notes
        WHERE name ILIKE $1 OR title ILIKE $1 OR body ILIKE $1
        ORDER BY updated_at DESC LIMIT $2`,
       [`%${query.trim()}%`, limit]

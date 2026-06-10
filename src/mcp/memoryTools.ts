@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveMemoryRoot } from "../config.js";
 import { saveMemory } from "../memory.js";
-import { createMemoryStore } from "../memoryStore.js";
+import { createMemoryStore, SECURE_WING } from "../memoryStore.js";
 
 export interface MemoryMcpContext {
   dir: string;
@@ -101,6 +101,11 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
       },
     },
     async ({ name, body, wing }) => {
+      if (wing?.trim() === SECURE_WING) {
+        // Never mirror secure notes to plaintext .md files.
+        await withStore(ctx, (s) => s.upsertNote({ name, body, wing }));
+        return textResult(`Saved encrypted note: ${name} (store only)`);
+      }
       // File mirror first — read path (@memory, previews) prefers files.
       saveMemory(ctx.dir, name, body);
       await withStore(ctx, (s) => s.upsertNote({ name, body, wing }));

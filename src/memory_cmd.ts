@@ -6,7 +6,7 @@ import { loadConfig, ConfigError } from "./config.js";
 import { importHappyinKb } from "./importHappyinKb.js";
 import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from "./memory.js";
 import { alignMemorySilos } from "./memorySiloOps.js";
-import { createMemoryStore } from "./memoryStore.js";
+import { createMemoryStore, SECURE_WING } from "./memoryStore.js";
 import {
   evaluateMemoryAudit,
   formatMemoryAuditReport,
@@ -120,6 +120,12 @@ export async function cmdMemoryAdd(
     return EXIT.usage;
   }
   try {
+    if (opts.wing?.trim() === SECURE_WING) {
+      // Never mirror secure notes to plaintext .md files.
+      await withStore(dir, (s) => s.upsertNote({ name, body, wing: opts.wing }));
+      console.log(`memory: saved ${name} (encrypted, store only — read via memory show)`);
+      return EXIT.ok;
+    }
     // File mirror first: @memory refs and previews read files, so on partial
     // failure the read path must see the newer content, not a stale mirror.
     mirrorNoteFile(dir, name, body);
