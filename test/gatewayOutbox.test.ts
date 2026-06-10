@@ -7,6 +7,7 @@ import {
   drainOutbox,
   enqueueOutbox,
   loadOutbox,
+  mergeOutboxAfterDrain,
   outboxBackoffMs,
   saveOutbox,
   OUTBOX_MAX_ATTEMPTS,
@@ -102,4 +103,52 @@ test("outbox capped at max entries (oldest evicted)", () => {
   const entries = loadOutbox(dir).entries;
   assert.equal(entries.length, OUTBOX_MAX_ENTRIES);
   assert.ok(!entries.some((e) => e.text === "m0"));
+});
+
+test("mergeOutboxAfterDrain preserves entries enqueued during drain", () => {
+  const dir = tmp();
+  enqueueOutbox(dir, { chatId: "42", text: "concurrent" });
+  const merged = mergeOutboxAfterDrain(dir, new Set(["out_snapshot_only"]), []);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]!.text, "concurrent");
+});
+
+test("drain preserves entries enqueued while send is in flight", async () => {
+  const dir = tmp();
+  enqueueOutbox(dir, { chatId: "42", text: "due" });
+  const now = new Date();
+  let releaseSend: (() => void) | undefined;
+  const sendStarted = new Promise<void>((resolve) => {
+    releaseSend = resolve;
+  });
+
+  const drainPromise = drainOutbox(
+    dir,
+    async () => {
+      releaseSend?.();
+      await new Promise((r) => setTimeout(r, 30));
+    },
+    { now }
+  );
+
+  await sendStarted;
+  enqueueOutbox(dir, { chatId: "42", text: "concurrent" });
+  const result = await drainPromise;
+
+  assert.equal(result.sent, 1);
+  assert.equal(result.remaining, 1);
+  const entries = loadOutbox(dir).entries;
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]!.text, "concurrent");
+});
+
+test("enqueue succeeds after outbox clobbered by concurrent writer", () => {
+  const dir = tmp();
+  enqueueOutbox(dir, { chatId: "42", text: "first" });
+  saveOutbox(dir, { version: 1, entries: [] });
+  const second = enqueueOutbox(dir, { chatId: "42", text: "second" });
+  const entries = loadOutbox(dir).entries;
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]!.id, second.id);
+  assert.equal(entries[0]!.text, "second");
 });

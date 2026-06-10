@@ -57,12 +57,39 @@ export function outboxBackoffMs(attempts: number): number {
   return Math.min(30_000 * 2 ** Math.max(0, attempts - 1), 3600_000);
 }
 
+const ENQUEUE_COMMIT_ATTEMPTS = 8;
+
+function capOutboxEntries(entries: OutboxEntry[]): OutboxEntry[] {
+  if (entries.length <= OUTBOX_MAX_ENTRIES) return entries;
+  const sorted = [...entries].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  return sorted.slice(sorted.length - OUTBOX_MAX_ENTRIES);
+}
+
+/**
+ * Entries enqueued while drainOutbox was in flight (not in the load snapshot).
+ * Without this merge, drain's save would overwrite concurrent enqueueOutbox writes.
+ */
+export function mergeOutboxAfterDrain(
+  dir: string,
+  snapshotIds: Set<string>,
+  keep: OutboxEntry[]
+): OutboxEntry[] {
+  const current = loadOutbox(dir);
+  const keepIds = new Set(keep.map((e) => e.id));
+  const merged = [...keep];
+  for (const entry of current.entries) {
+    if (!snapshotIds.has(entry.id) && !keepIds.has(entry.id)) {
+      merged.push(entry);
+    }
+  }
+  return capOutboxEntries(merged);
+}
+
 export function enqueueOutbox(
   dir: string,
   input: { chatId: string; text: string; html?: boolean },
   now: Date = new Date()
 ): OutboxEntry {
-  const data = loadOutbox(dir);
   const entry: OutboxEntry = {
     id: newId("out"),
     chatId: input.chatId,
@@ -72,14 +99,16 @@ export function enqueueOutbox(
     attempts: 0,
     nextAttemptAt: now.toISOString(),
   };
-  data.entries.push(entry);
-  // Cap: drop oldest, never grow unbounded.
-  if (data.entries.length > OUTBOX_MAX_ENTRIES) {
-    data.entries.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-    data.entries.splice(0, data.entries.length - OUTBOX_MAX_ENTRIES);
+  for (let attempt = 0; attempt < ENQUEUE_COMMIT_ATTEMPTS; attempt++) {
+    const data = loadOutbox(dir);
+    if (data.entries.some((e) => e.id === entry.id)) return entry;
+
+    const next = capOutboxEntries([...data.entries, entry]);
+    saveOutbox(dir, { version: 1, entries: next });
+
+    if (loadOutbox(dir).entries.some((e) => e.id === entry.id)) return entry;
   }
-  saveOutbox(dir, data);
-  return entry;
+  throw new Error("outbox enqueue failed after concurrent writes");
 }
 
 export interface OutboxDrainResult {
@@ -102,6 +131,7 @@ export async function drainOutbox(
   const data = loadOutbox(dir);
   if (data.entries.length === 0) return { sent: 0, failed: 0, dropped: 0, remaining: 0 };
 
+  const snapshotIds = new Set(data.entries.map((e) => e.id));
   const keep: OutboxEntry[] = [];
   let sent = 0;
   let failed = 0;
@@ -133,6 +163,7 @@ export async function drainOutbox(
     }
   }
 
-  saveOutbox(dir, { version: 1, entries: keep });
-  return { sent, failed, dropped, remaining: keep.length };
+  const persisted = mergeOutboxAfterDrain(dir, snapshotIds, keep);
+  saveOutbox(dir, { version: 1, entries: persisted });
+  return { sent, failed, dropped, remaining: persisted.length };
 }

@@ -13,6 +13,7 @@ import {
 } from "../src/cronNotify.js";
 import { saveCronState } from "../src/cronJobs.js";
 import { DEFAULT_DIGEST_JOB_ID } from "../src/digestQa.js";
+import { loadOutbox } from "../src/gatewayOutbox.js";
 import type { CronJob } from "../src/cronJobs.js";
 
 function topicDigestNotifyDir(): string {
@@ -188,6 +189,98 @@ test("sendCronJobNotify sends QA alert when digest body fails checks", async () 
   assert.equal(posts.length, 3);
   assert.match(String(posts[2]!.text), /QA FAIL/);
   assert.match(String(posts[2]!.text), /tg links/);
+  globalThis.fetch = prevFetch;
+  if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+  else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+});
+
+test("sendCronJobNotify parks only post-mortem when digest sent but post-mortem fails", async () => {
+  const dir = topicDigestNotifyDir();
+  let sendCalls = 0;
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    sendCalls++;
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (sendCalls === 1) {
+      assert.match(String(body.text), /TParser/);
+      return new Response(JSON.stringify({ ok: true, result: {} }));
+    }
+    throw new Error("network blip");
+  };
+  const job: CronJob = {
+    id: DEFAULT_DIGEST_JOB_ID,
+    cron: "59 23 * * *",
+    topicDelegates: true,
+    notify: { chatId: "123456789", telegram: true, tokenEnv: "TELEGRAM_BOT_TOKEN" },
+  };
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  const digestBody = [
+    "📬 TParser · день",
+    "## AI / ML / LLM",
+    "https://t.me/example/1",
+    "## AISec / MLSec",
+    "https://t.me/example/2",
+    "## InfoSec / AppSec",
+    "https://t.me/example/3",
+  ].join("\n");
+  await sendCronJobNotify(
+    job,
+    {
+      ok: true,
+      exitCode: 0,
+      message: "finished",
+      output: digestBody,
+      durationMs: 90_000,
+      topicSummaries: [
+        { topicId: "ai-ml", title: "AI/ML", ok: true, summary: "a" },
+        { topicId: "devops", title: "DevOps", ok: true, summary: "b" },
+      ],
+    },
+    new Date(),
+    dir
+  );
+  assert.equal(sendCalls, 2);
+  const outbox = loadOutbox(dir);
+  assert.equal(outbox.entries.length, 1);
+  assert.match(outbox.entries[0]!.text, /post-mortem/);
+  assert.doesNotMatch(outbox.entries[0]!.text, /TParser · день/);
+  globalThis.fetch = prevFetch;
+  if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+  else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+});
+
+test("sendCronJobNotify parks digest and post-mortem when first send fails", async () => {
+  const dir = topicDigestNotifyDir();
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("network down");
+  };
+  const job: CronJob = {
+    id: DEFAULT_DIGEST_JOB_ID,
+    cron: "59 23 * * *",
+    topicDelegates: true,
+    notify: { chatId: "123456789", telegram: true, tokenEnv: "TELEGRAM_BOT_TOKEN" },
+  };
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  await sendCronJobNotify(
+    job,
+    {
+      ok: true,
+      exitCode: 0,
+      message: "finished",
+      output: "📬 TParser · день\nhttps://t.me/example/1",
+      durationMs: 60_000,
+      topicSummaries: [{ topicId: "ai-ml", title: "AI/ML", ok: true, summary: "a" }],
+    },
+    new Date(),
+    dir
+  );
+  const outbox = loadOutbox(dir);
+  assert.equal(outbox.entries.length, 2);
+  assert.match(outbox.entries[0]!.text, /TParser/);
+  assert.match(outbox.entries[1]!.text, /post-mortem/);
   globalThis.fetch = prevFetch;
   if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
   else process.env.TELEGRAM_BOT_TOKEN = prevToken;

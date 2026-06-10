@@ -148,6 +148,31 @@ function formatNotifyText(payload: CronNotifyPayload, exec: CronExecuteResult): 
   return `[cron:${payload.jobId}] ${status}\n${payload.message.slice(0, 2000)}`;
 }
 
+interface TelegramNotifyPart {
+  text: string;
+  html: boolean;
+}
+
+/** Park unsent Telegram parts for gateway outbox drain (I-31). */
+function parkTelegramNotifyParts(
+  dir: string,
+  chatId: string,
+  parts: TelegramNotifyPart[],
+  fromIndex: number
+): number {
+  let parked = 0;
+  for (let i = fromIndex; i < parts.length; i++) {
+    const p = parts[i]!;
+    try {
+      enqueueOutbox(dir, { chatId, text: p.text, html: p.html });
+      parked++;
+    } catch {
+      /* best-effort */
+    }
+  }
+  return parked;
+}
+
 export async function sendCronJobNotify(
   job: CronJob,
   exec: CronExecuteResult,
@@ -178,9 +203,25 @@ export async function sendCronJobNotify(
         console.error(`[cron] notify telegram: ${target.tokenEnv} unset job=${job.id}`);
         return;
       }
-      if (text) await telegramSendLongMessage(token, target.chatId, text, fetch, { html: true });
-      if (postMortem) await telegramSendLongMessage(token, target.chatId, postMortem);
-      await sendDigestQaFollowUp(job, exec, at, dir, target);
+      const parts: TelegramNotifyPart[] = [];
+      if (text) parts.push({ text, html: true });
+      if (postMortem) parts.push({ text: postMortem, html: false });
+      let nextIndex = 0;
+      try {
+        for (; nextIndex < parts.length; nextIndex++) {
+          const p = parts[nextIndex]!;
+          await telegramSendLongMessage(token, target.chatId, p.text, fetch, { html: p.html });
+        }
+        await sendDigestQaFollowUp(job, exec, at, dir, target);
+      } catch (e) {
+        console.error(
+          `[cron] notify failed job=${job.id}: ${e instanceof Error ? e.message : String(e)}`
+        );
+        const parked = parkTelegramNotifyParts(dir, target.chatId, parts, nextIndex);
+        if (parked > 0) {
+          console.error(`[cron] notify parked in outbox job=${job.id} parts=${parked}`);
+        }
+      }
       return;
     }
     const secret = resolveEnv(target.secretEnv);
@@ -198,14 +239,5 @@ export async function sendCronJobNotify(
     console.error(
       `[cron] notify failed job=${job.id}: ${e instanceof Error ? e.message : String(e)}`
     );
-    // Digest must survive a network blip: park for the gateway outbox drain (I-31).
-    if (target.mode === "telegram" && text) {
-      try {
-        enqueueOutbox(dir, { chatId: target.chatId, text, html: true });
-        console.error(`[cron] notify parked in outbox job=${job.id}`);
-      } catch {
-        /* best-effort */
-      }
-    }
   }
 }
