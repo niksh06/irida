@@ -12,6 +12,16 @@ export interface SafetyConfig {
   allowAutoPr: boolean;
 }
 
+/** Local embedding provider for semantic memory search (I-36, Ollama-compatible). */
+export interface EmbeddingsConfig {
+  /** Compute embeddings on note save + enable semantic search (default false). */
+  enabled?: boolean;
+  /** Ollama-compatible base URL (default http://127.0.0.1:11434). */
+  url?: string;
+  /** Embedding model name (default nomic-embed-text). */
+  model?: string;
+}
+
 /** Durable memory injected before the first turn of each chat session (issue 036). */
 export interface MemoryConfig {
   /** Optional: inject named notes on first turn only (prefer MCP tools). */
@@ -20,6 +30,8 @@ export interface MemoryConfig {
   maxCharsPerTurn?: number;
   /** Attach csagent-memory MCP tools (default true). Set false to disable. */
   mcp?: boolean;
+  /** Local embeddings for semantic search (Postgres + pgvector only). */
+  embeddings?: EmbeddingsConfig;
 }
 
 /** Stealth browser MCP (puppeteer-extra + persistent Chromium profile). */
@@ -193,6 +205,30 @@ function validate(obj: unknown, dir: string): AgentConfig {
         throw new ConfigError("memory.mcp must be a boolean");
       }
       cfg.memory.mcp = m.mcp;
+    }
+    if (m.embeddings !== undefined) {
+      if (typeof m.embeddings !== "object" || m.embeddings === null || Array.isArray(m.embeddings)) {
+        throw new ConfigError("memory.embeddings must be an object");
+      }
+      const e = m.embeddings as Record<string, unknown>;
+      const emb: EmbeddingsConfig = {};
+      if (e.enabled !== undefined) {
+        if (typeof e.enabled !== "boolean") throw new ConfigError("memory.embeddings.enabled must be a boolean");
+        emb.enabled = e.enabled;
+      }
+      if (e.url !== undefined) {
+        if (typeof e.url !== "string" || !e.url.trim()) {
+          throw new ConfigError("memory.embeddings.url must be a non-empty string");
+        }
+        emb.url = e.url.trim();
+      }
+      if (e.model !== undefined) {
+        if (typeof e.model !== "string" || !e.model.trim()) {
+          throw new ConfigError("memory.embeddings.model must be a non-empty string");
+        }
+        emb.model = e.model.trim();
+      }
+      cfg.memory.embeddings = emb;
     }
   }
   if (o.browser !== undefined) {

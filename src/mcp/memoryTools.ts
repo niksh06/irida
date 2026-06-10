@@ -55,14 +55,22 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
   server.registerTool(
     "memory_search",
     {
-      description: "Search csagent memory notes by keyword (name, title, body).",
+      description:
+        "Search csagent memory notes. semantic=true uses local vector embeddings (paraphrase recall); default is keyword/FTS.",
       inputSchema: {
         query: z.string().describe("Search text"),
         limit: z.number().int().min(1).max(50).optional().describe("Max hits (default 10)"),
+        semantic: z.boolean().optional().describe("Vector search via local embeddings (PG only)"),
       },
     },
-    async ({ query, limit }) => {
-      const hits = await withStore(ctx, (s) => s.searchNotes(query, limit ?? 10));
+    async ({ query, limit, semantic }) => {
+      const hits = await withStore(ctx, async (s) => {
+        if (semantic && s.searchNotesSemantic) {
+          const out = await s.searchNotesSemantic(query, limit ?? 10);
+          if (out.length > 0) return out;
+        }
+        return s.searchNotes(query, limit ?? 10);
+      });
       if (hits.length === 0) return textResult("No matches.");
       const lines = hits.map(
         (n) =>

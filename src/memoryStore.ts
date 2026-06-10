@@ -9,9 +9,10 @@ import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { redact } from "./redact.js";
 import { newId, nowIso } from "./util.js";
-import { resolveMemoryRoot } from "./config.js";
+import { loadConfig, resolveMemoryRoot } from "./config.js";
 import { postgresFtsQuery, sqliteFtsMatchQuery } from "./memorySearch.js";
 import { secretsKey, SECRETS_KEY_ENV } from "./credentialsPg.js";
+import { makeEmbedder, toVectorLiteral, type EmbedFn } from "./embeddings.js";
 
 /**
  * Notes in this wing are pgcrypto-encrypted at rest (Postgres only, I-20).
@@ -91,6 +92,10 @@ export interface IMemoryStore {
   listNotes(wing?: string): Promise<MemoryNote[]>;
   deleteNote(name: string): Promise<boolean>;
   searchNotes(query: string, limit?: number): Promise<MemoryNote[]>;
+  /** Cosine search over pgvector embeddings (Postgres + embeddings enabled). */
+  searchNotesSemantic?(query: string, limit?: number): Promise<MemoryNote[]>;
+  /** Compute and store embeddings for notes missing one; returns updated count. */
+  reindexEmbeddings?(): Promise<number>;
   addFact(input: AddFactInput): Promise<MemoryFact>;
   queryFacts(input: QueryFactsInput): Promise<MemoryFact[]>;
   factAuditSummary(): Promise<MemoryFactAuditSummary>;
@@ -109,6 +114,10 @@ const MEMORY_FTS_MIGRATION = readFileSync(
 );
 const MEMORY_SECURE_MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/007_memory_secure.sql"),
+  "utf8"
+);
+const MEMORY_VECTOR_MIGRATION = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/008_memory_vector.sql"),
   "utf8"
 );
 
@@ -357,9 +366,11 @@ export class SqliteMemoryStore implements IMemoryStore {
 export class PostgresMemoryStore implements IMemoryStore {
   private pool: pg.Pool;
   private migrated = false;
+  private embedder?: EmbedFn;
 
-  constructor(connectionString: string) {
+  constructor(connectionString: string, opts: { embedder?: EmbedFn } = {}) {
     this.pool = new pg.Pool({ connectionString, max: 5 });
+    this.embedder = opts.embedder;
   }
 
   private async ensureMigrated(): Promise<void> {
@@ -367,7 +378,26 @@ export class PostgresMemoryStore implements IMemoryStore {
     await this.pool.query(MEMORY_MIGRATION);
     await this.pool.query(MEMORY_FTS_MIGRATION);
     await this.pool.query(MEMORY_SECURE_MIGRATION);
+    if (this.embedder) {
+      // Vector column only when the feature is on — plain installs skip pgvector.
+      await this.pool.query(MEMORY_VECTOR_MIGRATION);
+    }
     this.migrated = true;
+  }
+
+  /** Best-effort embedding update; never fails the save. */
+  private async updateEmbedding(name: string, title: string, body: string): Promise<void> {
+    if (!this.embedder) return;
+    const emb = await this.embedder(`${title}\n\n${body}`);
+    if (!emb) return;
+    try {
+      await this.pool.query(`UPDATE memory_notes SET embedding=$1::vector WHERE name=$2`, [
+        toVectorLiteral(emb),
+        name,
+      ]);
+    } catch {
+      /* embedding is an enhancement, not a dependency */
+    }
   }
 
   /** Column list with body resolved for reads; decrypts only when asked and key set. */
@@ -424,7 +454,46 @@ export class PostgresMemoryStore implements IMemoryStore {
          wing=EXCLUDED.wing, title=EXCLUDED.title, body=EXCLUDED.body, body_enc=NULL, updated_at=EXCLUDED.updated_at`,
       [name, wing, title, body, existing?.created_at ?? now, now]
     );
+    await this.updateEmbedding(name, title, body);
     return (await this.getNote(name))!;
+  }
+
+  async searchNotesSemantic(query: string, limit = 10): Promise<MemoryNote[]> {
+    await this.ensureMigrated();
+    if (!this.embedder) return [];
+    const emb = await this.embedder(query);
+    if (!emb) return [];
+    const sel = this.noteSelect(false);
+    const n = sel.params.length;
+    const res = await this.pool.query(
+      `SELECT ${sel.expr} FROM memory_notes
+       WHERE embedding IS NOT NULL
+       ORDER BY embedding <=> $${n + 1}::vector
+       LIMIT $${n + 2}`,
+      [...sel.params, toVectorLiteral(emb), limit]
+    );
+    return res.rows as MemoryNote[];
+  }
+
+  async reindexEmbeddings(): Promise<number> {
+    await this.ensureMigrated();
+    if (!this.embedder) return 0;
+    // Secure notes are never embedded — embeddings leak content.
+    const res = await this.pool.query(
+      `SELECT name, title, body FROM memory_notes
+       WHERE embedding IS NULL AND body_enc IS NULL AND body != ''`
+    );
+    let updated = 0;
+    for (const row of res.rows as Array<{ name: string; title: string; body: string }>) {
+      const emb = await this.embedder(`${row.title}\n\n${row.body}`);
+      if (!emb) continue;
+      await this.pool.query(`UPDATE memory_notes SET embedding=$1::vector WHERE name=$2`, [
+        toVectorLiteral(emb),
+        row.name,
+      ]);
+      updated++;
+    }
+    return updated;
   }
 
   async getNote(name: string): Promise<MemoryNote | undefined> {
@@ -597,6 +666,14 @@ export class PostgresMemoryStore implements IMemoryStore {
 
 export function createMemoryStore(projectDir: string, _stateDir?: string): IMemoryStore {
   const url = process.env.CSAGENT_DATABASE_URL?.trim();
-  if (url) return new PostgresMemoryStore(url);
+  if (url) {
+    let embedder: EmbedFn | undefined;
+    try {
+      embedder = makeEmbedder(loadConfig(projectDir).memory.embeddings);
+    } catch {
+      /* config errors surface elsewhere; embeddings stay off */
+    }
+    return new PostgresMemoryStore(url, { embedder });
+  }
   return new SqliteMemoryStore(resolveMemoryRoot(projectDir));
 }

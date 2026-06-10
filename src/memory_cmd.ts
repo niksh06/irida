@@ -156,14 +156,30 @@ export async function cmdMemoryRm(name: string, opts: MemoryCmdOptions = {}): Pr
   }
 }
 
-export async function cmdMemorySearch(query: string, opts: MemoryCmdOptions = {}): Promise<ExitCode> {
+export async function cmdMemorySearch(
+  query: string,
+  opts: MemoryCmdOptions & { semantic?: boolean } = {}
+): Promise<ExitCode> {
   const dir = opts.dir ?? process.cwd();
   if (!query.trim()) {
     console.error("memory search: query required");
     return EXIT.usage;
   }
   try {
-    const hits = await withStore(dir, (s) => s.searchNotes(query));
+    const hits = await withStore(dir, async (s) => {
+      if (opts.semantic) {
+        if (!s.searchNotesSemantic) {
+          throw new MemoryError(
+            "--semantic requires Postgres + memory.embeddings.enabled (see REFERENCE.md)"
+          );
+        }
+        const semantic = await s.searchNotesSemantic(query);
+        if (semantic.length > 0) return semantic;
+        // Embedding daemon down or nothing indexed → keyword fallback.
+        return s.searchNotes(query);
+      }
+      return s.searchNotes(query);
+    });
     if (hits.length === 0) {
       console.log("No matches.");
       return EXIT.ok;
@@ -361,6 +377,25 @@ export async function cmdMemoryAlignSilo(
   }
 }
 
+export async function cmdMemoryReindexEmbeddings(opts: MemoryCmdOptions = {}): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  try {
+    const updated = await withStore(dir, async (s) => {
+      if (!s.reindexEmbeddings) {
+        throw new MemoryError(
+          "reindex-embeddings requires Postgres + memory.embeddings.enabled (see REFERENCE.md)"
+        );
+      }
+      return s.reindexEmbeddings();
+    });
+    console.log(`memory: embedded ${updated} note(s)`);
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory: " + (e instanceof MemoryError ? e.message : String(e)));
+    return EXIT.usage;
+  }
+}
+
 export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
   const [sub, name, ...rest] = argv;
   switch (sub) {
@@ -370,8 +405,14 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemoryList(opts);
     case "show":
       return cmdMemoryShow(name ?? "", opts);
-    case "search":
-      return cmdMemorySearch([name, ...rest].filter(Boolean).join(" "), opts);
+    case "search": {
+      const args = [name, ...rest].filter((a): a is string => Boolean(a));
+      const semantic = args.includes("--semantic");
+      const q = args.filter((a) => a !== "--semantic").join(" ");
+      return cmdMemorySearch(q, { ...opts, semantic });
+    }
+    case "reindex-embeddings":
+      return cmdMemoryReindexEmbeddings(opts);
     case "fact":
       return cmdMemoryFact([name ?? "", ...rest], opts);
     case "audit":
@@ -402,7 +443,8 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory list                      list stored notes
   csagent memory show <name>               print one note
   csagent memory add <name> [--wing W] [--stdin]
-  csagent memory search <query>            search note bodies
+  csagent memory search <query> [--semantic]   keyword (FTS) or vector search
+  csagent memory reindex-embeddings        embed notes missing a vector (PG)
   csagent memory rm <name>
   csagent memory import-md --kb-root PATH [--dir CSAGENT_ROOT] [--domains kafka,python] [--dry-run]
   csagent memory align-silo [--dry-run]   merge repo/cron silos → canonical ~/.csagent/.agent/memory

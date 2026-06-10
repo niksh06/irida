@@ -9,6 +9,7 @@ import {
   SECURE_WING,
   SECURE_BODY_PLACEHOLDER,
 } from "../src/memoryStore.js";
+import { EMBEDDINGS_DIM } from "../src/embeddings.js";
 
 const PG_URL = process.env.CSAGENT_TEST_PG_URL?.trim();
 
@@ -21,6 +22,48 @@ test("sqlite store refuses secure wing (no pgcrypto)", async () => {
   );
   await store.close();
 });
+
+test(
+  "postgres semantic search orders by cosine distance (I-36)",
+  { skip: !PG_URL ? "set CSAGENT_TEST_PG_URL to run" : false },
+  async () => {
+    // Deterministic fake embedder: axis-aligned vectors per known text.
+    const axis = (i: number) => {
+      const v = new Array(EMBEDDINGS_DIM).fill(0);
+      v[i] = 1;
+      return v;
+    };
+    const vectors = new Map<string, number[]>();
+    const embedder = async (text: string) => {
+      for (const [k, v] of vectors) if (text.includes(k)) return v;
+      return null;
+    };
+    vectors.set("kafka", axis(0));
+    vectors.set("postgres", axis(1));
+    // Query vector leans strongly toward kafka.
+    const queryVec = new Array(EMBEDDINGS_DIM).fill(0);
+    queryVec[0] = 0.9;
+    queryVec[1] = 0.1;
+    vectors.set("QUERYMARKER", queryVec);
+
+    const store = new PostgresMemoryStore(PG_URL!, { embedder });
+    const a = `semvec-kafka-${Date.now()}`;
+    const b = `semvec-postgres-${Date.now()}`;
+    try {
+      await store.upsertNote({ name: a, body: "kafka consumer groups rebalance", wing: "t" });
+      await store.upsertNote({ name: b, body: "postgres vacuum tuning", wing: "t" });
+      const hits = await store.searchNotesSemantic("QUERYMARKER", 2);
+      const names = hits.map((n) => n.name).filter((n) => n === a || n === b);
+      assert.deepEqual(names, [a, b]); // kafka note closer to the query vector
+      const updated = await store.reindexEmbeddings();
+      assert.equal(typeof updated, "number");
+    } finally {
+      await store.deleteNote(a).catch(() => {});
+      await store.deleteNote(b).catch(() => {});
+      await store.close();
+    }
+  }
+);
 
 test(
   "postgres secure wing: encrypted at rest, decrypt on show, masked in list/search (I-20)",
