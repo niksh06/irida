@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { SqliteStore, createStore } from "../src/store.js";
+import { runLogPath } from "../src/runLog.js";
 
 function tmp(): string {
   return mkdtempSync(resolve(tmpdir(), "store-"));
@@ -45,6 +46,37 @@ test("recordRun stores metadata and redacts secrets in preview", async () => {
   assert.doesNotMatch(runs[0].prompt_preview, /key_abcdef123456/);
   assert.match(runs[0].prompt_preview, /<redacted>/);
   await s.close();
+});
+
+test("createStore appends JSONL run log on recordRun (I-19)", async () => {
+  const dir = tmp();
+  const s = createStore(dir, ".agent");
+  await s.upsertSession({ id: "sess_jl", title: "t", cwd: dir, runtime: "local" });
+  const startedAt = new Date(Date.now() - 1500).toISOString();
+  await s.recordRun({
+    id: "run_jl1",
+    session_id: "sess_jl",
+    sdk_agent_id: "a1",
+    sdk_run_id: "r1",
+    prompt_preview: "hello",
+    result_preview: "world",
+    status: "finished",
+    error_kind: null,
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    cwd: dir,
+    runtime: "local",
+    model: "composer-2.5",
+  });
+  await s.close();
+  const body = readFileSync(runLogPath(dir, ".agent"), "utf8").trim();
+  const entry = JSON.parse(body) as Record<string, unknown>;
+  assert.equal(entry.run_id, "run_jl1");
+  assert.equal(entry.session_id, "sess_jl");
+  assert.equal(entry.status, "finished");
+  assert.ok(typeof entry.duration_ms === "number" && entry.duration_ms >= 1000);
+  // No previews in the ops log — secrets stay in the store.
+  assert.doesNotMatch(body, /hello|world/);
 });
 
 test("recordRun stores error_detail redacted", async () => {

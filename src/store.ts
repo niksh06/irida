@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { redact } from "./redact.js";
+import { appendRunLog } from "./runLog.js";
 import { nowIso } from "./util.js";
 
 export interface SessionRecord {
@@ -446,10 +447,26 @@ export class PostgresStore implements IStore {
   }
 }
 
+/** Delegating wrapper: every recorded run also lands in logs/runs.jsonl (I-19). */
+function withRunLog(store: IStore, dir: string, stateDir: string): IStore {
+  return {
+    upsertSession: (s) => store.upsertSession(s),
+    recordRun: async (r) => {
+      await store.recordRun(r);
+      appendRunLog(dir, stateDir, r);
+    },
+    listSessions: (limit, opts) => store.listSessions(limit, opts),
+    getSession: (id) => store.getSession(id),
+    updateSessionTitle: (id, title) => store.updateSessionTitle(id, title),
+    listRuns: (sessionId) => store.listRuns(sessionId),
+    close: () => store.close(),
+  };
+}
+
 export function createStore(dir: string, stateDir: string): IStore {
   const url = process.env.CSAGENT_DATABASE_URL?.trim();
-  if (url) return new PostgresStore(url);
-  return new SqliteStore(dir, stateDir);
+  const store = url ? new PostgresStore(url) : new SqliteStore(dir, stateDir);
+  return withRunLog(store, dir, stateDir);
 }
 
 /** Ping Postgres when CSAGENT_DATABASE_URL is set (doctor). */
