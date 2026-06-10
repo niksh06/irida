@@ -462,6 +462,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             cwd: sessionCwd,
             runtime: cfg.runtime,
             model: cfg.model,
+            input_tokens: usage.inputTokens ?? null,
+            output_tokens: usage.outputTokens ?? null,
           });
           await store.upsertSession({
             id: sessionId,

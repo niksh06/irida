@@ -9,6 +9,7 @@ import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
 import { assessGatewayServiceHealth, tailLogLines } from "./gatewayLogHealth.js";
 import { loadCronJobs, loadCronState } from "./cronJobs.js";
 import { formatCronLastResultSummary } from "./cronRunRecord.js";
+import { formatRunMetrics, loadRunMetrics } from "./runMetrics.js";
 
 export interface GatewayStatusLine {
   name: string;
@@ -118,6 +119,13 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
     ok: existsSync(cronPath),
     detail: existsSync(cronPath) ? cronPath : "cron.jobs.json missing",
   });
+
+  try {
+    const metrics = loadRunMetrics(dir, cfg.stateDir, 24);
+    rows.push({ name: "runs 24h", ok: true, detail: formatRunMetrics(metrics, 24) });
+  } catch {
+    // metrics are best-effort
+  }
 
   try {
     const state = loadCronState(dir);

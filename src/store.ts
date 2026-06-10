@@ -49,6 +49,9 @@ export interface RunRecord {
   cwd: string;
   runtime: string;
   model: string;
+  /** Stream usage for the ops run log (I-33); not persisted in DB columns. */
+  input_tokens?: number | null;
+  output_tokens?: number | null;
 }
 
 export interface IStore {

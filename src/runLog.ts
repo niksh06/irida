@@ -21,6 +21,8 @@ export interface RunLogEntry {
   model: string;
   runtime: string;
   cwd: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
 }
 
 export function runLogPath(dir: string, stateDir: string): string {
@@ -47,6 +49,8 @@ export function runRecordToLogEntry(r: RunRecord): RunLogEntry {
     model: r.model,
     runtime: r.runtime,
     cwd: r.cwd,
+    input_tokens: r.input_tokens ?? null,
+    output_tokens: r.output_tokens ?? null,
   };
 }
 
