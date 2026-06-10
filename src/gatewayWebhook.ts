@@ -74,7 +74,8 @@ export async function handleWebhookHttp(
   req: IncomingMessage,
   res: ServerResponse,
   cfg: GatewayConfig,
-  router: GatewaySessionRouter
+  router: GatewaySessionRouter,
+  dir: string = process.cwd()
 ): Promise<void> {
   const secret = gatewayWebhookSecret(cfg);
   if (req.method !== "POST") {
@@ -99,7 +100,8 @@ export async function handleWebhookHttp(
     json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) });
     return;
   }
-  if (!isChatAllowed(cfg, body.chatId)) {
+  // Same auth model as Telegram: static allowlist + approved pairings.
+  if (!isChatAllowed(cfg, body.chatId, dir)) {
     json(res, 403, { ok: false, error: "chatId not allowed" });
     return;
   }
@@ -127,7 +129,8 @@ export interface WebhookServer {
 
 export function startWebhookServer(
   cfg: GatewayConfig,
-  router: GatewaySessionRouter
+  router: GatewaySessionRouter,
+  dir: string = process.cwd()
 ): WebhookServer {
   const server = createServer((req, res) => {
     const path = req.url?.split("?")[0] ?? "";
@@ -135,7 +138,7 @@ export function startWebhookServer(
       json(res, 404, { ok: false, error: "not found" });
       return;
     }
-    void handleWebhookHttp(req, res, cfg, router);
+    void handleWebhookHttp(req, res, cfg, router, dir);
   });
   return {
     server,
@@ -154,6 +157,7 @@ export async function dispatchWebhookRequest(
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    dir?: string;
   }
 ): Promise<WebhookHandleResult> {
   const secret = gatewayWebhookSecret(cfg);
@@ -188,6 +192,6 @@ export async function dispatchWebhookRequest(
       },
     } as unknown as ServerResponse;
 
-    void handleWebhookHttp(req, res, cfg, router).catch(reject);
+    void handleWebhookHttp(req, res, cfg, router, init.dir).catch(reject);
   });
 }

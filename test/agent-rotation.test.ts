@@ -55,6 +55,7 @@ describe("in-session agent rotation", () => {
         },
       };
 
+      const events: string[] = [];
       const opened = await openChatSession({
         sdk,
         dir,
@@ -62,7 +63,11 @@ describe("in-session agent rotation", () => {
         onTurnRetry: () => {
           retried = true;
         },
-        onAgentRotated: (info) => rotated.push(info),
+        onAgentRotating: () => events.push("rotating"),
+        onAgentRotated: (info) => {
+          events.push("rotated");
+          rotated.push(info);
+        },
       });
       assert.equal(opened.ok, true);
       if (!opened.ok) return;
@@ -78,6 +83,7 @@ describe("in-session agent rotation", () => {
       assert.equal(rotated[0]?.previousAgentId, "agent-old");
       assert.equal(rotated[0]?.newAgentId, "agent-new");
       assert.match(rotated[0]?.reason ?? "", /run_error|exception/);
+      assert.deepEqual(events, ["rotating", "rotated"]);
       assert.equal(opened.session.agentId, "agent-new");
       await opened.session.close();
     });
@@ -190,6 +196,49 @@ describe("in-session agent rotation", () => {
       const out = await opened.session.sendTurn("hello");
       assert.equal(out.kind, "error");
       if (out.kind === "error") assert.match(out.message, /still broken/);
+      await opened.session.close();
+    });
+  });
+
+  it("recovers on next turn when createSession fails during rotation", async () => {
+    await withKey(async () => {
+      const dir = mkdtempSync(resolve(tmpdir(), "rotate-recover-"));
+      let createCount = 0;
+      let sendCount = 0;
+
+      const sdk: SdkCreateLike = {
+        create: async () => {
+          createCount++;
+          // create #2 — the rotation attempt — fails (SDK briefly down)
+          if (createCount === 2) throw new Error("sdk create down");
+          const agent: AgentLike = {
+            agentId: `agent-${createCount}`,
+            send: async () => {
+              sendCount++;
+              // first send fails with a rotatable error, everything after succeeds
+              if (sendCount === 1) {
+                throw Object.assign(new Error("agent handle stale"), { code: 13 });
+              }
+              return okRun("recovered on next turn");
+            },
+          };
+          return agent;
+        },
+      };
+
+      const opened = await openChatSession({ sdk, dir, interactive: false });
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+
+      // Turn 1: send fails, rotation create fails → structured error, no throw.
+      const first = await opened.session.sendTurn("hello");
+      assert.equal(first.kind, "error");
+
+      // Turn 2: engine must notice the dead handle and create a fresh agent.
+      const second = await opened.session.sendTurn("are you alive?");
+      assert.equal(second.kind, "ok");
+      if (second.kind === "ok") assert.equal(second.assistantText, "recovered on next turn");
+      assert.equal(createCount, 3);
       await opened.session.close();
     });
   });

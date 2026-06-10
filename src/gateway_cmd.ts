@@ -16,6 +16,7 @@ import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { startWebhookServer, type WebhookServer } from "./gatewayWebhook.js";
 import { startTelegramPoller, type TelegramPoller } from "./gatewayTelegram.js";
 import { gatherGatewayStatus } from "./gatewayStatus.js";
+import { installGatewayProcessGuards } from "./gatewayProcessGuards.js";
 import { emitServiceLog } from "./serviceLog.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
@@ -74,7 +75,7 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
     };
   }
 
-  const webhook = startWebhookServer(cfg, router);
+  const webhook = startWebhookServer(cfg, router, dir);
   await new Promise<void>((resolve, reject) => {
     webhook.server.once("error", reject);
     webhook.server.listen(cfg.port, cfg.host, () => resolve());
@@ -93,6 +94,7 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
 }
 
 export async function cmdGatewayRun(opts: GatewayRunOptions = {}): Promise<ExitCode> {
+  installGatewayProcessGuards();
   let handle: GatewayRunHandle | undefined;
   try {
     handle = await startGateway(opts);

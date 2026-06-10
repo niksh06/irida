@@ -4,8 +4,22 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ## [Unreleased]
 
+### Fixed (audit 2026-06-10)
+
+- **Build:** 5 typecheck errors blocked `tsc` (cronScheduleOps prompt narrowing, sqlite bigint)
+- **Cron:** double-fire race (slot claimed before run), atomic state/jobs writes, vixie `*/N` anchor for dom/month, DOM-or-DOW semantics, oldest-missed-slot catch-up, per-job `graceMinutes` (daily digest after sleep), cross-process tick lock, webhook notify HTTP status check
+- **Chat engine:** dead agent handle after failed rotation (+ next-turn recovery), idle refresh no longer consumes error-retry budget or re-fires, failed attempts recorded, partial output surfaced on exception, replay prefix no longer duplicated
+- **Telegram gateway:** per-chat queues (one slow turn no longer blocks other chats), reply delivery retry, drain on stop before closing sessions, generic error text to chat (details in log), `uncaughtException` exits for launchd restart
+- **Store/memory:** `store migrate` copies memory notes+facts (was sessions/runs only) and is idempotent, redaction on list previews and silo align, `markPostSeen` dedup, `importHappyinKb` idempotent facts, WAL+busy_timeout on shared sqlite, file-first note mirror
+- **Gateway auth:** webhook honors `pairing.approved` (same model as Telegram); safety gate now checks composed prompt (`@file`/`@memory` content)
+
 ### Added
 
+- **Roadmap + issue tracker:** `docs/ROADMAP.md` (R1–R4), issues I-31…I-37 (outbound queue, packaging, metrics, retention, pairing rate-limit, pgvector, telegram markdown)
+- Per-job **`graceMinutes`** in cron jobs — catch missed slots after machine sleep (daily digest)
+- Cron builtin **`session-export`** (I-12) — daily transcripts to `Reports/sessions/YYYY-MM-DD/`
+- **`tui.log`** (I-17) — `CSAGENT_LOG=1` diagnostics from TUI go to `<stateDir>/tui.log`, not stdout
+- TUI **rotate pending state** (I-13) — `onAgentRotating` hook shows "reinitializing agent…" during rotation
 - Cron digest **post-mortem** in Telegram (`status`, `duration`, `topics N/M`) after topic-delegate jobs
 - `cron.state.json` `lastResult` — surfaced in `/status` and `gateway status`
 - `deploy/PERSONAL-OPS.md` and `deploy/backup-personal.sh` for personal prod runbook

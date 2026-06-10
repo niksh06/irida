@@ -1,9 +1,10 @@
 /**
  * Gateway peer → session mapping (gateway.peers.json).
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
+import { writeFileAtomic } from "./util.js";
 
 export const GATEWAY_PEERS_FILE = "gateway.peers.json";
 
@@ -35,7 +36,7 @@ export function saveGatewayPeers(dir: string, data: GatewayPeersFile): void {
   const cfg = loadConfig(dir);
   const root = resolve(dir, cfg.stateDir);
   mkdirSync(root, { recursive: true });
-  writeFileSync(peersPath(dir), JSON.stringify(data, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  writeFileAtomic(peersPath(dir), JSON.stringify(data, null, 2) + "\n");
 }
 
 export function peerKey(adapter: string, chatId: string): string {

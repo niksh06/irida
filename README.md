@@ -313,6 +313,8 @@ csagent cron qa                    # digest QA (after first nightly run)
 csagent cron tick    # launchd ai.csagent.cron-tick every 5 min, or system crontab
 ```
 
+Job extras: `"graceMinutes": 480` — lookback for missed slots (machine slept through 23:59); builtins `"builtin": "memory-audit"` and `"builtin": "session-export"` (daily transcripts → `Reports/sessions/`). Tick takes a cross-process lock (`cron.tick.lock`) — overlapping ticks skip instead of double-firing.
+
 Launchd (macOS home): `bash deploy/install-launchd.sh` runs `cron tick` — no manual crontab required.
 
 **From Telegram (preferred):** ask the agent to schedule a job → it calls MCP `cron_propose` → you confirm with `/schedule approve <code>`. Fallback slash: `/schedule add <cron> <id> <prompt…>` — see `/schedule help`. Skill `cron-ops` + gateway chat id required for MCP tools.

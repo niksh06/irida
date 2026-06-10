@@ -152,6 +152,8 @@ export class SqliteMemoryStore implements IMemoryStore {
     const target = resolve(stateRoot);
     mkdirSync(target, { recursive: true });
     this.db = new DatabaseSync(resolve(target, "state.sqlite"));
+    // Shares state.sqlite with SqliteStore (separate handle) — see store.ts.
+    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`);
     this.db.exec(SQLITE_MEMORY_DDL);
     const existing = this.db.prepare(`SELECT name, title, body FROM memory_notes`).all() as Array<{
       name: string;
@@ -326,7 +328,7 @@ export class SqliteMemoryStore implements IMemoryStore {
          WHERE subject=? AND (valid_to IS NULL OR valid_to='') AND created_at < ?`
       )
       .run(when, subject, cutoff);
-    return { matched, pruned: r.changes };
+    return { matched, pruned: Number(r.changes) };
   }
 
   async close(): Promise<void> {

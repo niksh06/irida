@@ -42,6 +42,16 @@ export async function markPostSeen(
   const cfg = loadConfig(dir);
   const store = createMemoryStore(dir, cfg.stateDir);
   try {
+    // Idempotent: repeated mark for the same post must not pile up duplicate
+    // current facts (they bloat the cron seen-posts preamble).
+    const existing = await store.queryFacts({
+      subject: SEEN_POST_SUBJECT,
+      predicate: seenPostPredicate(channel),
+      currentOnly: true,
+    });
+    const obj = seenPostObject(postId);
+    const dup = existing.find((f) => f.object === obj);
+    if (dup) return dup;
     return await store.addFact({
       subject: SEEN_POST_SUBJECT,
       predicate: seenPostPredicate(channel),

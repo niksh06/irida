@@ -98,7 +98,7 @@ export function validateUserCronDraft(
 export function buildUserCronJob(
   draft: UserCronDraft,
   notify: { chatId: string; telegram?: boolean }
-): CronJob {
+): CronJob & { prompt: string } {
   return {
     id: normalizeUserJobId(draft.id),
     cron: draft.cron.trim(),
@@ -258,10 +258,10 @@ export function listPendingCronSchedulesText(dir: string, chatId?: string): stri
   const rows = chatId ? data.pending.filter((p) => p.chatId === chatId) : data.pending;
   if (rows.length === 0) return "Нет pending proposals.";
   return rows
-    .map(
-      (p) =>
-        `${p.code} · ${p.job.id} · ${p.job.cron} · ${p.job.prompt.slice(0, 60)}${p.job.prompt.length > 60 ? "…" : ""}`
-    )
+    .map((p) => {
+      const prompt = p.job.prompt ?? "";
+      return `${p.code} · ${p.job.id} · ${p.job.cron} · ${prompt.slice(0, 60)}${prompt.length > 60 ? "…" : ""}`;
+    })
     .join("\n");
 }
 

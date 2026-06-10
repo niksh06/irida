@@ -120,8 +120,10 @@ export async function cmdMemoryAdd(
     return EXIT.usage;
   }
   try {
-    await withStore(dir, (s) => s.upsertNote({ name, body, wing: opts.wing }));
+    // File mirror first: @memory refs and previews read files, so on partial
+    // failure the read path must see the newer content, not a stale mirror.
     mirrorNoteFile(dir, name, body);
+    await withStore(dir, (s) => s.upsertNote({ name, body, wing: opts.wing }));
     console.log(`memory: saved ${name} (store + .agent/memory/${name.replace(/\.md$/i, "")}.md)`);
     return EXIT.ok;
   } catch (e) {

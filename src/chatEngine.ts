@@ -10,6 +10,7 @@ import {
   eventActivityDetail,
   eventThinkingText,
   parseStreamUsage,
+  sendAgentTurn,
   StartupError,
   type AgentLike,
   type RunLike,
@@ -74,6 +75,8 @@ export interface ChatSessionOptions {
   onActivity?: (entry: ActivityDetail) => void;
   /** Fired before resending a turn after agent rotation (idle refresh or run_error). */
   onTurnRetry?: (reason?: string) => void;
+  /** Fired when rotation starts — UI can show a pending state (I-13). */
+  onAgentRotating?: (info: { reason: string }) => void;
   /** Fired when SDK agent is replaced inside the same csagent session. */
   onAgentRotated?: (info: AgentRotatedInfo) => void;
 }
@@ -191,6 +194,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   let sessionCwd = opts.cwd ?? cfg.cwd;
   let sessionChannel = opts.channel ?? "";
   let lastAgentTouchAt = Date.now();
+  /** True when the previous agent was disposed but its replacement failed to start. */
+  let agentBroken = false;
 
   if (opts.resumeSessionId) {
     const existing = await store.getSession(opts.resumeSessionId);
@@ -268,16 +273,6 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       const msg = userMessage.trim();
       if (!msg) return { kind: "error", message: "empty message", fatal: false };
 
-      const gate = await safetyGate({
-        prompt: msg,
-        interactive,
-        confirm,
-        override: opts.yesIUnderstand,
-      });
-      if (!gate.allowed) {
-        return { kind: "blocked", reason: gate.reason };
-      }
-
       let sendMsg: string;
       try {
         const sessionMemoryBlocks =
@@ -294,6 +289,21 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         if (e instanceof MemoryError) return { kind: "error", message: e.message, fatal: false };
         throw e;
       }
+
+      // Gate the composed prompt (message + expanded @file/@memory refs), not
+      // the replay transcript — history was already gated when first sent.
+      const gate = await safetyGate({
+        prompt: sendMsg,
+        interactive,
+        confirm,
+        override: opts.yesIUnderstand,
+      });
+      if (!gate.allowed) {
+        return { kind: "blocked", reason: gate.reason };
+      }
+
+      // Composed prompt without any replay prefix — rotation regenerates its own.
+      const coreSendMsg = sendMsg;
       if (firstTurn && replayPrefix) {
         sendMsg = replayPrefix + "Continue. New request:\n\n" + sendMsg;
       }
@@ -307,18 +317,31 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         `[chat] sendTurn session=${sessionId} agent=${agent.agentId ?? "-"} userChars=${msg.length} composedChars=${sendMsg.length} replayPrefixChars=${replayPrefix.length}`
       );
 
-      const tryRotateAgent = async (reason: string): Promise<boolean> => {
-        if (rotated) return false;
-        rotated = true;
+      /** Replace the SDK agent. Does not consume the per-turn retry budget. */
+      const rotateAgent = async (reason: string): Promise<boolean> => {
         const previousAgentId = agent.agentId ?? null;
         log(`[chat] rotate start reason=${reason} oldAgent=${previousAgentId ?? "-"}`);
+        opts.onAgentRotating?.({ reason });
         await disposeAgent(agent);
-        agent = await createSession(sdk, {
-          apiKey,
-          model: cfg.model,
-          cwd: sessionCwd,
-          mcpServers: mcpServers,
-        });
+        let next: AgentLike;
+        try {
+          next = await createSession(sdk, {
+            apiKey,
+            model: cfg.model,
+            cwd: sessionCwd,
+            mcpServers: mcpServers,
+          });
+        } catch (e) {
+          // The old agent is already disposed; remember that so the next turn
+          // retries createSession instead of sending into a dead handle.
+          agentBroken = true;
+          const m = e instanceof StartupError ? e.message : String(e);
+          log(`[chat] rotate failed reason=${reason} ${redact(m)}`);
+          return false;
+        }
+        agentBroken = false;
+        agent = next;
+        lastAgentTouchAt = Date.now();
         session.agentId = agent.agentId ?? null;
         const replayRuns = Math.min(4, (await store.listRuns(sessionId)).length);
         const prefix = await replayPreamble(store, sessionId, replayRuns, 12_000);
@@ -341,17 +364,33 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           channel: sessionChannel,
         });
         attemptSendMsg = prefix
-          ? prefix + "Continue. New request:\n\n" + baseSendMsg
-          : baseSendMsg;
+          ? prefix + "Continue. New request:\n\n" + coreSendMsg
+          : coreSendMsg;
         opts.onTurnRetry?.(reason);
         return true;
       };
 
-      if (isAgentIdle(lastAgentTouchAt)) {
+      /** Error-path rotation: at most one retry per turn. */
+      const tryRotateAgent = async (reason: string): Promise<boolean> => {
+        if (rotated) return false;
+        rotated = true;
+        return rotateAgent(reason);
+      };
+
+      if (agentBroken) {
+        if (!(await rotateAgent("recover_failed_rotation"))) {
+          return {
+            kind: "error",
+            message: "agent unavailable (SDK session create failed); try again",
+            fatal: false,
+          };
+        }
+      } else if (isAgentIdle(lastAgentTouchAt)) {
         log(
           `[chat] idle refresh due lastTouch=${lastAgentTouchAt} idleMs=${resolveAgentIdleMs()} agoMs=${Date.now() - lastAgentTouchAt}`
         );
-        await tryRotateAgent(`idle_ttl ${resolveAgentIdleMs()}ms`);
+        // Proactive refresh — must not consume the error-retry budget for this turn.
+        await rotateAgent(`idle_ttl ${resolveAgentIdleMs()}ms`);
       }
 
       for (;;) {
@@ -366,7 +405,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           `[chat] run send attempt=${attempt} runId=${runId} promptChars=${attemptSendMsg.length} agent=${agent.agentId ?? "-"}`
         );
         try {
-          const run: RunLike = await agent.send(attemptSendMsg);
+          const run: RunLike = await sendAgentTurn(agent, attemptSendMsg, cfg.model);
           await consumeRunStream(run, (ev) => {
             const activity = eventActivityDetail(ev);
             if (activity) {
@@ -460,9 +499,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         } catch (e) {
           const formatted = formatSdkError(e);
           const rotateReason = `exception kind=${formatted.errorKind} ${formatted.message}`;
-          if (isAgentRotatableError(e) && (await tryRotateAgent(rotateReason))) continue;
-
           log(`[chat] sendTurn error kind=${formatted.errorKind} ${formatted.message}`);
+          // Record the failed attempt before any retry so transcript/replay keeps it.
           await store.recordRun({
             id: runId,
             session_id: sessionId,
@@ -479,6 +517,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             runtime: cfg.runtime,
             model: cfg.model,
           });
+          if (isAgentRotatableError(e) && (await tryRotateAgent(rotateReason))) continue;
+
           await store.upsertSession({
             id: sessionId,
             title: await resolveSessionTitle(store, sessionId, msg),
@@ -492,6 +532,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             kind: "error",
             message: formatted.message,
             fatal: !formatted.recoverable,
+            partialAssistantText: turnText.trim() ? turnText : undefined,
           };
         }
       }

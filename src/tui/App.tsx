@@ -52,6 +52,8 @@ import type { ActivityDetail } from "../host.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, TurnStats } from "./types.js";
 import type { SessionRecord } from "../store.js";
 import { resolveAgentLogger } from "../agentLog.js";
+import { resolve as resolvePath } from "node:path";
+import { loadConfig } from "../config.js";
 import { indexOfLastAssistant, indexOfStreamingAssistant } from "./streamingTarget.js";
 import { formatToolProgressLine } from "./toolProgress.js";
 import {
@@ -126,7 +128,16 @@ export function App(props: TuiOptions) {
   const bootGen = useRef(0);
   const bootChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const rowCacheRef = useRef<MessageRowCache>(new Map());
-  const agentLog = useMemo(() => resolveAgentLogger({ component: "tui" }), []);
+  const agentLog = useMemo(() => {
+    // stdout writes corrupt Ink rendering — TUI diagnostics go to <stateDir>/tui.log (I-17).
+    let stateDir = ".agent";
+    try {
+      stateDir = loadConfig(dir).stateDir;
+    } catch {
+      /* boot surfaces config errors elsewhere */
+    }
+    return resolveAgentLogger({ component: "tui", logFile: resolvePath(dir, stateDir, "tui.log") });
+  }, [dir]);
 
   const [meta, setMeta] = useState<SessionMeta | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
@@ -273,6 +284,15 @@ export function App(props: TuiOptions) {
         onThinkingDelta: (d) => patchThinking(d),
         onActivity: (entry) => noteActivity(entry),
         onTurnRetry: resetTurnRetry,
+        onAgentRotating: (info) => {
+          const idle = (info.reason ?? "").startsWith("idle_ttl");
+          noteActivity({
+            label: idle ? "refreshing idle agent…" : "reinitializing agent…",
+            kind: "other",
+            command: info.reason,
+            phase: "call",
+          });
+        },
         onAgentRotated: (info) => {
           const from = info.previousAgentId?.slice(0, 6) ?? "-";
           const to = info.newAgentId?.slice(0, 6) ?? "-";

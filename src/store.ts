@@ -142,6 +142,9 @@ export class SqliteStore implements IStore {
     const target = resolve(dir, stateDir);
     mkdirSync(target, { recursive: true });
     this.db = new DatabaseSync(resolve(target, "state.sqlite"));
+    // Session store + memory store open this file with separate handles
+    // (chatEngine + composePrompt) — WAL avoids SQLITE_BUSY on overlap.
+    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`);
     this.migrate();
   }
 
@@ -379,7 +382,8 @@ export class PostgresStore implements IStore {
     };
     await this.pool.query(
       `INSERT INTO runs (id,session_id,sdk_agent_id,sdk_run_id,prompt_preview,result_preview,status,error_kind,error_detail,started_at,finished_at,cwd,runtime,model)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       ON CONFLICT (id) DO NOTHING`,
       [
         rec.id,
         rec.session_id,

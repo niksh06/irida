@@ -44,9 +44,13 @@ export interface RunLike {
   wait(): Promise<{ status: string; id?: string }>;
 }
 
+export interface AgentSendOptions {
+  model?: { id: string };
+}
+
 export interface AgentLike {
   agentId?: string;
-  send(message: string): Promise<RunLike> | RunLike;
+  send(message: string, options?: AgentSendOptions): Promise<RunLike> | RunLike;
   close?(): Promise<void> | void;
   [Symbol.asyncDispose]?(): Promise<void>;
 }
@@ -178,7 +182,7 @@ export async function createSession(
 export interface SdkResumeLike {
   resume(
     agentId: string,
-    opts: { apiKey: string; mcpServers?: McpServers }
+    opts: { apiKey: string; model?: { id: string }; mcpServers?: McpServers }
   ): Promise<AgentLike> | AgentLike;
 }
 
@@ -186,16 +190,28 @@ export async function resumeSession(
   sdk: SdkResumeLike,
   agentId: string,
   apiKey: string,
-  mcpServers?: McpServers
+  mcpServers?: McpServers,
+  model?: string
 ): Promise<AgentLike> {
   try {
     return await sdk.resume(agentId, {
       apiKey,
+      ...(model?.trim() ? { model: { id: model.trim() } } : {}),
       ...(mcpServers && Object.keys(mcpServers).length ? { mcpServers } : {}),
     });
   } catch (e) {
     throw new StartupError((e as Error)?.message ?? String(e));
   }
+}
+
+/** Local SDK agents need model on each send after live resume. */
+export async function sendAgentTurn(
+  agent: AgentLike,
+  message: string,
+  model: string
+): Promise<RunLike> {
+  const run = agent.send(message, { model: { id: model.trim() } });
+  return run instanceof Promise ? run : Promise.resolve(run);
 }
 
 export async function disposeAgent(agent: AgentLike): Promise<void> {

@@ -129,6 +129,17 @@ export async function importHappyinKb(opts: ImportHappyinOptions): Promise<Impor
   let imported = 0;
   let aliases = 0;
 
+  /** Re-runs must converge: skip identical current facts, supersede stale ones. */
+  const setCurrentFact = async (predicate: string, object: string, subject = "happyin_kb") => {
+    const existing = await store.queryFacts({ subject, predicate, currentOnly: true });
+    for (const f of existing) {
+      if (f.object !== object) await store.invalidateFact(f.id);
+    }
+    if (!existing.some((f) => f.object === object)) {
+      await store.addFact({ subject, predicate, object, source: "import-happyin-kb" });
+    }
+  };
+
   try {
     for (const f of files) {
       const abs = join(kbRoot, f.relPath);
@@ -137,37 +148,18 @@ export async function importHappyinKb(opts: ImportHappyinOptions): Promise<Impor
       const canonical = `${f.domain}.${sanitizeSlug(f.slug)}`;
       if (name !== canonical || sanitizeSlug(f.slug) !== f.slug) {
         aliases++;
-        await store.addFact({
-          subject: "happyin_alias",
-          predicate: canonical,
-          object: name,
-          source: "import-happyin-kb",
-        });
+        await setCurrentFact(canonical, name, "happyin_alias");
       }
       const body = noteBody(f.relPath, commit, raw);
-      await store.upsertNote({ name, body, wing: f.domain });
+      // File mirror first — read path (@memory, previews) prefers files.
       saveMemory(memoryDir, name, body);
+      await store.upsertNote({ name, body, wing: f.domain });
       imported++;
     }
 
-    await store.addFact({
-      subject: "happyin_kb",
-      predicate: "commit",
-      object: commit,
-      source: "import-happyin-kb",
-    });
-    await store.addFact({
-      subject: "happyin_kb",
-      predicate: "articles",
-      object: String(imported),
-      source: "import-happyin-kb",
-    });
-    await store.addFact({
-      subject: "happyin_kb",
-      predicate: "synced_at",
-      object: nowIso(),
-      source: "import-happyin-kb",
-    });
+    await setCurrentFact("commit", commit);
+    await setCurrentFact("articles", String(imported));
+    await setCurrentFact("synced_at", nowIso());
   } finally {
     await store.close();
   }

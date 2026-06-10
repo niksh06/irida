@@ -85,7 +85,8 @@ export function listMemories(dir: string = process.cwd()): MemoryEntry[] {
     } catch {
       continue;
     }
-    const preview = body.replace(/\s+/g, " ").trim().slice(0, 80);
+    // Files written by older versions may predate redact-on-save.
+    const preview = redact(body).replace(/\s+/g, " ").trim().slice(0, 80);
     out.push({ name, path, title: titleFromContent(name, body), preview });
   }
   return out;

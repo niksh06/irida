@@ -2,9 +2,10 @@
  * Gateway pairing lite (I-26) — approve new chatIds via /approve <code>.
  */
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
+import { writeFileAtomic } from "./util.js";
 
 export const PAIRING_FILE = "gateway.pairing.json";
 
@@ -46,7 +47,7 @@ export function loadPairingFile(dir: string): PairingFile {
 export function savePairingFile(dir: string, data: PairingFile): void {
   const path = pairingPath(dir);
   mkdirSync(resolve(path, ".."), { recursive: true });
-  writeFileSync(path, JSON.stringify(data, null, 2) + "\n", "utf8");
+  writeFileAtomic(path, JSON.stringify(data, null, 2) + "\n");
 }
 
 export function isChatApproved(

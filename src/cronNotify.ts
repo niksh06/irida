@@ -110,11 +110,12 @@ export async function sendDigestQaAlertMessage(
     const secret = resolveEnv(target.secretEnv);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (secret) headers["X-Gateway-Secret"] = secret;
-    await fetch(target.webhookUrl, {
+    const res = await fetch(target.webhookUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({ chatId: target.chatId, text: alert }),
     });
+    if (!res.ok) throw new Error(`webhook responded ${res.status}`);
   } catch (e) {
     console.error(
       `[cron] digest QA alert failed job=${job.id}: ${e instanceof Error ? e.message : String(e)}`
@@ -185,11 +186,12 @@ export async function sendCronJobNotify(
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (secret) headers["X-Gateway-Secret"] = secret;
     const webhookText = postMortem ? `${text}\n\n---\n\n${postMortem}` : text;
-    await fetch(target.webhookUrl, {
+    const res = await fetch(target.webhookUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({ chatId: target.chatId, text: webhookText }),
     });
+    if (!res.ok) throw new Error(`webhook responded ${res.status}`);
     await sendDigestQaFollowUp(job, exec, at, dir, target);
   } catch (e) {
     console.error(

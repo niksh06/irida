@@ -1,15 +1,16 @@
 /**
  * Cron job definitions under .agent/cron.jobs.json (issue 038).
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
+import { writeFileAtomic } from "./util.js";
 import { CronError, parseCronExpression, validateCronExpression, cronMinuteKey } from "./cronSchedule.js";
 
 export const CRON_JOBS_FILE = "cron.jobs.json";
 export const CRON_STATE_FILE = "cron.state.json";
 
-export const CRON_BUILTIN_HANDLERS = ["memory-audit"] as const;
+export const CRON_BUILTIN_HANDLERS = ["memory-audit", "session-export"] as const;
 export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
 
 export interface CronJobNotify {
@@ -46,6 +47,11 @@ export interface CronJob {
   topicWindowHours?: number;
   /** Built-in CLI handler (no SDK prompt). */
   builtin?: CronBuiltinHandler;
+  /**
+   * Lookback window (minutes) for catching a missed slot, e.g. after machine
+   * sleep. Default CRON_DUE_GRACE_MINUTES; daily jobs may want 360-720.
+   */
+  graceMinutes?: number;
 }
 
 export interface CronJobsFile {
@@ -150,6 +156,9 @@ function validateJob(raw: unknown, index: number): CronJob {
   if (typeof o.topicWindowHours === "number" && o.topicWindowHours > 0) {
     job.topicWindowHours = Math.min(o.topicWindowHours, 72);
   }
+  if (typeof o.graceMinutes === "number" && o.graceMinutes > 0) {
+    job.graceMinutes = Math.min(Math.floor(o.graceMinutes), 24 * 60);
+  }
   if (builtinRaw) job.builtin = builtinRaw as CronBuiltinHandler;
   if (o.notify && typeof o.notify === "object" && !Array.isArray(o.notify)) {
     const n = o.notify as Record<string, unknown>;
@@ -211,7 +220,7 @@ export function saveCronState(dir: string, state: CronStateFile): void {
   const cfg = loadConfig(dir);
   const root = resolve(dir, cfg.stateDir);
   mkdirSync(root, { recursive: true });
-  writeFileSync(statePath(dir), JSON.stringify(state, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  writeFileAtomic(statePath(dir), JSON.stringify(state, null, 2) + "\n");
 }
 
 export function validateCronJobsFile(dir: string = process.cwd()): string[] {
@@ -240,15 +249,18 @@ export function findDueCronMinute(
   job: CronJob,
   at: Date,
   state: CronStateFile,
-  graceMinutes: number = CRON_DUE_GRACE_MINUTES
+  graceMinutes?: number
 ): Date | null {
   if (!cronJobEnabled(job)) return null;
+  const grace = graceMinutes ?? job.graceMinutes ?? CRON_DUE_GRACE_MINUTES;
   const cron = parseCronExpression(job.cron);
   const tick = new Date(at);
   tick.setSeconds(0, 0);
   const lastRan = parseCronMinuteKey(state.lastRun[job.id] ?? "");
 
-  for (let m = 0; m <= graceMinutes; m++) {
+  // Oldest due slot first: a tick at 10:07 for "*/5" must run the missed 10:00
+  // slot, not jump to 10:05 and skip 10:00 forever.
+  for (let m = grace; m >= 0; m--) {
     const probe = new Date(tick.getTime() - m * 60_000);
     probe.setSeconds(0, 0);
     if (!cron.matches(probe)) continue;
@@ -268,9 +280,5 @@ export function saveCronJobs(dir: string, jobs: CronJob[]): void {
   const cfg = loadConfig(dir);
   const root = resolve(dir, cfg.stateDir);
   mkdirSync(root, { recursive: true });
-  writeFileSync(
-    jobsPath(dir),
-    JSON.stringify({ version: 1, jobs }, null, 2) + "\n",
-    { encoding: "utf8", mode: 0o600 }
-  );
+  writeFileAtomic(jobsPath(dir), JSON.stringify({ version: 1, jobs }, null, 2) + "\n");
 }

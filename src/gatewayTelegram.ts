@@ -341,6 +341,72 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   const maxBackoffMs = 60_000;
   let lastHeartbeatLog = Date.now();
   const heartbeatMs = 15 * 60 * 1000;
+  /** Per-chat serial queues: one slow turn must not block other chats or the poll loop. */
+  const chatQueues = new Map<string, Promise<void>>();
+  let inflightTick: Promise<void> = Promise.resolve();
+
+  const SEND_RETRY_DELAY_MS = 1500;
+
+  /** Agent turn already ran — retry delivery once before giving up. */
+  const deliverWithRetry = async (chatId: string, text: string, long: boolean): Promise<void> => {
+    const send = async () => {
+      if (long) await telegramSendLongMessage(token, chatId, text, fetchFn);
+      else await telegramSendMessage(token, chatId, text, fetchFn);
+    };
+    try {
+      await send();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logError(`[gateway] telegram send failed chat=${chatId}: ${msg}; retrying once`);
+      await new Promise((r) => setTimeout(r, SEND_RETRY_DELAY_MS));
+      try {
+        await send();
+      } catch (e2) {
+        const msg2 = e2 instanceof Error ? e2.message : String(e2);
+        logError(
+          `[gateway] telegram reply LOST chat=${chatId}: ${msg2}; replyPreview=${text.slice(0, 200)}`
+        );
+      }
+    }
+  };
+
+  const handleUpdate = async (u: TelegramUpdate): Promise<void> => {
+    const result = await processTelegramUpdate(opts.cfg, opts.router, u, {
+      token,
+      fetchFn,
+      dir: opts.dir,
+    });
+    if (!result.handled || !result.chatId) return;
+    if (result.reply) {
+      await deliverWithRetry(result.chatId, result.reply, true);
+    } else if (result.error) {
+      logError(`[gateway] telegram chat=${result.chatId} error: ${result.error}`);
+      if (result.error === "busy" || result.error === "peer busy — previous turn still running") {
+        await deliverWithRetry(result.chatId, "Still working on your previous message…", false);
+      } else if (result.error === "chat not allowed") {
+        await deliverWithRetry(result.chatId, "This chat is not allowlisted.", false);
+      } else if (result.error === "message too long") {
+        await deliverWithRetry(result.chatId, "Message too long — please shorten it.", false);
+      } else {
+        // Internal error details stay in the service log, not in the chat.
+        await deliverWithRetry(result.chatId, "Something went wrong — check gateway logs.", false);
+      }
+    }
+  };
+
+  const enqueueUpdate = (u: TelegramUpdate): void => {
+    const chatKey = String(u.message?.chat.id ?? "-");
+    // Stored promises never reject (.catch below), so chaining is safe.
+    const prev = chatQueues.get(chatKey) ?? Promise.resolve();
+    const settled = prev
+      .then(() => handleUpdate(u))
+      .catch((e) => {
+        logError(
+          `[gateway] telegram update failed chat=${chatKey}: ${e instanceof Error ? e.message : String(e)}`
+        );
+      });
+    chatQueues.set(chatKey, settled);
+  };
 
   const tick = async () => {
     if (!running) return;
@@ -353,27 +419,9 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
         lastHeartbeatLog = Date.now();
       }
       for (const u of updates) {
+        if (!running) break;
         offset = Math.max(offset, u.update_id + 1);
-        const result = await processTelegramUpdate(opts.cfg, opts.router, u, {
-          token,
-          fetchFn,
-          dir: opts.dir,
-        });
-        if (!result.handled || !result.chatId) continue;
-        if (result.reply) {
-          await telegramSendLongMessage(token, result.chatId, result.reply, fetchFn);
-        } else if (result.error) {
-          logError(`[gateway] telegram chat=${result.chatId} error: ${result.error}`);
-          if (result.error === "busy") {
-            await telegramSendMessage(token, result.chatId, "Still working on your previous message…", fetchFn);
-          } else if (result.error === "chat not allowed") {
-            await telegramSendMessage(token, result.chatId, "This chat is not allowlisted.", fetchFn);
-          } else if (result.error === "peer busy — previous turn still running") {
-            await telegramSendMessage(token, result.chatId, "Still working on your previous message…", fetchFn);
-          } else {
-            await telegramSendMessage(token, result.chatId, `Error: ${result.error.slice(0, 500)}`, fetchFn);
-          }
-        }
+        enqueueUpdate(u);
       }
     } catch (e) {
       consecutiveErrors++;
@@ -381,7 +429,11 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       nextDelayMs = telegramPollRetryDelayMs(msg, consecutiveErrors, pollMs, maxBackoffMs);
       logError(`[gateway] telegram poll error (#${consecutiveErrors}): ${msg}; retry in ${nextDelayMs}ms`);
     }
-    if (running) timer = setTimeout(() => void tick(), nextDelayMs);
+    if (running) {
+      timer = setTimeout(() => {
+        inflightTick = tick();
+      }, nextDelayMs);
+    }
   };
 
   logInfo(`[gateway] telegram long-poll started (interval=${pollMs}ms)`);
@@ -390,14 +442,16 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
     .catch((e) =>
       logError(`[gateway] telegram setMyCommands failed: ${e instanceof Error ? e.message : String(e)}`)
     );
-  void tick();
+  inflightTick = tick();
 
   return {
-    stop: () =>
-      new Promise((resolve) => {
-        running = false;
-        if (timer) clearTimeout(timer);
-        resolve();
-      }),
+    stop: async () => {
+      running = false;
+      if (timer) clearTimeout(timer);
+      // Drain: finish the in-flight poll and all per-chat turns before the
+      // caller disposes router sessions.
+      await inflightTick.catch(() => {});
+      await Promise.allSettled([...chatQueues.values()]);
+    },
   };
 }

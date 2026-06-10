@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFil
 import { resolve } from "node:path";
 import { loadConfig, resolveMemoryRoot } from "./config.js";
 import { loadCronJobs } from "./cronJobs.js";
+import { redact } from "./redact.js";
 
 export interface MemorySilo {
   label: string;
@@ -70,7 +71,8 @@ export function alignMemorySilos(dir: string, dryRun = false): AlignSiloResult {
         continue;
       }
       if (!dryRun) {
-        writeFileSync(dest, readFileSync(src, "utf8"), "utf8");
+        // Silo files may predate redact-on-save; never copy raw secrets into canonical.
+        writeFileSync(dest, redact(readFileSync(src, "utf8")), "utf8");
       }
       result.copied++;
     }

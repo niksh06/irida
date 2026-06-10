@@ -65,12 +65,6 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     return { exitCode: EXIT.config, text: "" };
   }
 
-  const gate = await safetyGate({ prompt, interactive: false, override: opts.yesIUnderstand });
-  if (!gate.allowed) {
-    console.error(`run: blocked — ${gate.reason}. Use 'cursor-agent chat' or --yes-i-understand.`);
-    return { exitCode: EXIT.noperm, text: "" };
-  }
-
   let finalPrompt: string;
   let mcpServers: ReturnType<typeof resolveMcpServers>;
   try {
@@ -90,6 +84,14 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       return { exitCode: EXIT.usage, text: "" };
     }
     throw e;
+  }
+
+  // Gate the composed prompt: destructive content smuggled via @file/@memory
+  // refs must hit the same denylist as the raw message.
+  const gate = await safetyGate({ prompt: finalPrompt, interactive: false, override: opts.yesIUnderstand });
+  if (!gate.allowed) {
+    console.error(`run: blocked — ${gate.reason}. Use 'cursor-agent chat' or --yes-i-understand.`);
+    return { exitCode: EXIT.noperm, text: "" };
   }
 
   const store = createStore(dir, cfg.stateDir);

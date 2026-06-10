@@ -4,6 +4,7 @@
     {
       "id": "tparser-daily-digest",
       "cron": "59 23 * * *",
+      "graceMinutes": 480,
       "cwd": "/path/to/TParser",
       "skills": ["memory-ops", "browser-ops"],
       "memoryFactsSubject": "seen_post",
@@ -55,6 +56,12 @@
         "chatId": "YOUR_CHAT_ID",
         "telegram": true
       }
+    },
+    {
+      "id": "session-export-daily",
+      "cron": "0 23 * * *",
+      "enabled": false,
+      "builtin": "session-export"
     }
   ]
 }

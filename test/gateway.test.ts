@@ -15,6 +15,7 @@ import {
   peerKey,
 } from "../src/gatewayRouter.js";
 import { dispatchWebhookRequest, parseWebhookBody, webhookAuthOk } from "../src/gatewayWebhook.js";
+import { savePairingFile } from "../src/gatewayPairing.js";
 import { startGateway } from "../src/gateway_cmd.js";
 import { writeExampleGatewayConfig } from "../src/gateway_cmd.js";
 import { Store } from "../src/store.js";
@@ -193,8 +194,28 @@ test("dispatchWebhookRequest denies unknown chatId", async () => {
       const router = new GatewaySessionRouter({ dir, adapter: cfg.adapter, sdk: mockSdk({ v: false }) });
       const res = await dispatchWebhookRequest(cfg, router, {
         body: JSON.stringify({ chatId: "evil", text: "hi" }),
+        dir,
       });
       assert.equal(res.status, 403);
+      await router.closeAll();
+    });
+  });
+});
+
+test("dispatchWebhookRequest allows pairing-approved chatId (same auth as telegram)", async () => {
+  await withKey("k", async () => {
+    await withEnv({ GATEWAY_WEBHOOK_SECRET: "test-secret" }, async () => {
+      const dir = tmp();
+      const cfg = writeExampleGatewayConfig(dir);
+      savePairingFile(dir, { version: 1, approved: ["paired-1"], pending: [] });
+      const disposed = { v: false };
+      const router = new GatewaySessionRouter({ dir, adapter: cfg.adapter, sdk: mockSdk(disposed) });
+      const res = await dispatchWebhookRequest(cfg, router, {
+        body: JSON.stringify({ chatId: "paired-1", text: "ping" }),
+        dir,
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.ok, true);
       await router.closeAll();
     });
   });

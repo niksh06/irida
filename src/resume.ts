@@ -12,7 +12,7 @@
  * --yes-i-understand. Skills may be injected.
  */
 import { loadConfig, ConfigError, type AgentConfig } from "./config.js";
-import { disposeAgent, eventText, StartupError, type RunLike, type SdkResumeLike, type SdkCreateLike } from "./host.js";
+import { disposeAgent, eventText, sendAgentTurn, StartupError, type RunLike, type SdkResumeLike, type SdkCreateLike } from "./host.js";
 import { createStore } from "./store.js";
 import { safetyGate } from "./safety.js";
 import { loadSkills, SkillError } from "./skills.js";
@@ -81,19 +81,13 @@ export async function cmdResume(
       return EXIT.usage;
     }
 
-    const gate = await safetyGate({ prompt, interactive: false, override: opts.yesIUnderstand });
-    if (!gate.allowed) {
-      console.error(`resume: blocked — ${gate.reason}`);
-      return EXIT.noperm;
-    }
-
-  let finalPrompt: string;
-  let mcpServers: ReturnType<typeof resolveMcpServers>;
-  try {
-    const skillList = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
-    const sessionMemoryBlocks = await sessionStartMemoryBlocks(dir, cfg);
-    mcpServers = resolveMcpServers(cfg, dir);
-    finalPrompt = await composePrompt({
+    let finalPrompt: string;
+    let mcpServers: ReturnType<typeof resolveMcpServers>;
+    try {
+      const skillList = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
+      const sessionMemoryBlocks = await sessionStartMemoryBlocks(dir, cfg);
+      mcpServers = resolveMcpServers(cfg, dir);
+      finalPrompt = await composePrompt({
         userPrompt: prompt,
         cwd: cfg.cwd,
         dir,
@@ -106,6 +100,13 @@ export async function cmdResume(
         return EXIT.usage;
       }
       throw e;
+    }
+
+    // Gate composed prompt — @file/@memory content goes through the same denylist.
+    const gate = await safetyGate({ prompt: finalPrompt, interactive: false, override: opts.yesIUnderstand });
+    if (!gate.allowed) {
+      console.error(`resume: blocked — ${gate.reason}`);
+      return EXIT.noperm;
     }
 
     let sdk: ResumeSdk;
@@ -128,7 +129,7 @@ export async function cmdResume(
     const runId = newId("run");
     const startedAt = nowIso();
     try {
-      const run: RunLike = await agent.send(finalPrompt);
+      const run: RunLike = await sendAgentTurn(agent, finalPrompt, cfg.model);
       let turnText = "";
       if (typeof run.stream === "function") {
         for await (const ev of run.stream()) {

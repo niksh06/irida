@@ -2,9 +2,10 @@
  * Pending user cron jobs awaiting /schedule approve (chat confirm flow).
  */
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
+import { writeFileAtomic } from "./util.js";
 import type { CronJob } from "./cronJobs.js";
 
 export const CRON_SCHEDULE_PENDING_FILE = "cron.schedule.pending.json";
@@ -44,7 +45,7 @@ export function loadCronSchedulePending(dir: string): CronSchedulePendingFile {
 export function saveCronSchedulePending(dir: string, data: CronSchedulePendingFile): void {
   const path = pendingPath(dir);
   mkdirSync(resolve(path, ".."), { recursive: true });
-  writeFileSync(path, JSON.stringify(data, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  writeFileAtomic(path, JSON.stringify(data, null, 2) + "\n");
 }
 
 export function newScheduleCode(): string {

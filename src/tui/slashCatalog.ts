@@ -34,7 +34,7 @@ export function slashHelpLines(): string[] {
     "",
     "session tabs: 1-5 · Tab/Shift+Tab · ←→ (empty input) · Ctrl+[ ]",
     "trackpad scroll · @memory: · /rename · Ctrl+T · @file:<Tab> · Ctrl+O scroll",
-    "CSAGENT_LOG=1 → stderr diagnostics (rotation, runs); CSAGENT_AGENT_IDLE_MS=0 disables idle refresh",
+    "CSAGENT_LOG=1 → diagnostics in .agent/tui.log (rotation, runs); CSAGENT_AGENT_IDLE_MS=0 disables idle refresh",
   ];
 }
 

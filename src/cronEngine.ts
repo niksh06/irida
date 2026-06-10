@@ -1,6 +1,8 @@
 /**
  * Execute cron jobs via run or chatEngine (issue 038).
  */
+import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { loadConfig, ConfigError } from "./config.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 import { openChatSession } from "./chatEngine.js";
@@ -13,6 +15,8 @@ import { cronMinuteKey } from "./cronSchedule.js";
 import { sendCronJobNotify } from "./cronNotify.js";
 import {
   type CronJob,
+  findDueCronMinute,
+  loadCronJobs,
   loadCronState,
   saveCronState,
 } from "./cronJobs.js";
@@ -21,6 +25,7 @@ import { loadCronJobPromptText } from "./cronPrompt.js";
 import { validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
+import { exportRecentSessions } from "./sessionExport.js";
 import {
   saveCronJobResult,
   type CronExecuteResult,
@@ -82,6 +87,22 @@ export async function executeCronJob(
 
   if (job.builtin === "memory-audit") {
     return withDuration(started, await executeMemoryAuditBuiltin(configDir));
+  }
+  if (job.builtin === "session-export") {
+    try {
+      const out = await exportRecentSessions(configDir);
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `session-export: ${out.exported} session(s) → ${out.outDir}`,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `session-export failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
   }
 
   const promptBody = job.topicDelegates
@@ -192,20 +213,92 @@ export interface CronTickResult {
   errors: Array<{ id: string; message: string }>;
 }
 
+/** Stale-lock TTL — covers the longest topic-digest runs. */
+const CRON_TICK_LOCK_TTL_MS = 60 * 60 * 1000;
+
+interface CronTickLock {
+  release(): void;
+}
+
+/**
+ * Cross-process tick lock (launchd tick + manual `cron tick` overlap).
+ * `wx` open is atomic; a stale lock (crashed process) is broken by TTL.
+ */
+function acquireCronTickLock(dir: string): CronTickLock | null {
+  const { lockPath, tryAcquire, release } = cronTickLockOps(dir);
+  if (tryAcquire()) return { release };
+  try {
+    const stat = statSync(lockPath);
+    if (Date.now() - stat.mtimeMs > CRON_TICK_LOCK_TTL_MS) {
+      rmSync(lockPath, { force: true });
+      if (tryAcquire()) return { release };
+    }
+  } catch {
+    // Lock vanished between checks — one retry.
+    if (tryAcquire()) return { release };
+  }
+  return null;
+}
+
+function cronTickLockOps(dir: string): {
+  lockPath: string;
+  tryAcquire: () => boolean;
+  release: () => void;
+} {
+  const cfg = loadConfig(dir);
+  const root = resolvePath(dir, cfg.stateDir);
+  const lockPath = resolvePath(root, "cron.tick.lock");
+  return {
+    lockPath,
+    tryAcquire: () => {
+      try {
+        mkdirSync(root, { recursive: true });
+        writeFileSync(lockPath, `${process.pid} ${new Date().toISOString()}\n`, {
+          encoding: "utf8",
+          flag: "wx",
+          mode: 0o600,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    release: () => {
+      rmSync(lockPath, { force: true });
+    },
+  };
+}
+
 export async function cronTick(
   opts: CronExecuteOptions & { at?: Date; force?: boolean } = {}
 ): Promise<CronTickResult> {
   const dir = opts.dir ?? process.cwd();
-  const { loadCronJobs } = await import("./cronJobs.js");
   const jobs = loadCronJobs(dir);
-  const at = opts.at ?? new Date();
+  const at = new Date(opts.at ?? new Date());
   at.setSeconds(0, 0);
 
+  const lock = acquireCronTickLock(dir);
+  if (!lock) {
+    console.error("[cron] tick skipped — another tick is running (cron.tick.lock)");
+    return { ran: [], skipped: jobs.map((j) => j.id), errors: [] };
+  }
+  try {
+    return await cronTickLocked(dir, jobs, at, opts);
+  } finally {
+    lock.release();
+  }
+}
+
+async function cronTickLocked(
+  dir: string,
+  jobs: CronJob[],
+  at: Date,
+  opts: CronExecuteOptions & { force?: boolean }
+): Promise<CronTickResult> {
   const state = loadCronState(dir);
   const result: CronTickResult = { ran: [], skipped: [], errors: [] };
 
   for (const job of jobs) {
-    const { findDueCronMinute } = await import("./cronJobs.js");
     const dueAt = findDueCronMinute(job, at, state);
     if (!opts.force) {
       if (!dueAt) {
@@ -219,10 +312,13 @@ export async function cronTick(
 
     const slot = dueAt ?? at;
     console.error(`[cron] running job=${job.id} slot=${cronMinuteKey(slot)}`);
+    // Claim before executing: long jobs (topic digests run for minutes) must not
+    // be double-fired by an overlapping tick reading stale state. Claiming the
+    // tick minute (not the slot) collapses a missed-slot backlog into one run.
+    state.lastRun[job.id] = cronMinuteKey(at);
+    saveCronState(dir, state);
     try {
       const exec = await executeCronJob(job, opts);
-      state.lastRun[job.id] = cronMinuteKey(slot);
-      saveCronState(dir, state);
       saveCronJobResult(dir, job.id, exec, slot);
       await sendCronJobNotify(job, exec, slot, dir);
       if (exec.ok) {

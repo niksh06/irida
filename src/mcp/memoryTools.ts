@@ -101,8 +101,9 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
       },
     },
     async ({ name, body, wing }) => {
-      await withStore(ctx, (s) => s.upsertNote({ name, body, wing }));
+      // File mirror first — read path (@memory, previews) prefers files.
       saveMemory(ctx.dir, name, body);
+      await withStore(ctx, (s) => s.upsertNote({ name, body, wing }));
       return textResult(`Saved note: ${name}`);
     }
   );

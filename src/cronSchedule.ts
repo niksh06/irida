@@ -20,7 +20,8 @@ function parseField(part: string, min: number, max: number, label: string): Fiel
 
   if (p.startsWith("*/")) {
     const step = parseIntStrict(p.slice(2), 1, max, `${label} step`);
-    return (v) => v % step === 0;
+    // Vixie cron: */step == min-max/step, anchored at field min (matters for dom/month where min=1).
+    return (v) => (v - min) % step === 0;
   }
 
   const values = new Set<number>();
@@ -58,17 +59,17 @@ export function parseCronExpression(expr: string): ParsedCron {
   const monM = parseField(monP, 1, 12, "month");
   const dowM = parseField(dowP, 0, 7, "day-of-week");
 
+  const domRestricted = domP.trim() !== "*";
+  const dowRestricted = dowP.trim() !== "*";
+
   const matches = (date: Date): boolean => {
     const dow = date.getDay();
     const dowAlt = dow === 0 ? 7 : dow;
     const dowOk = dowM(dow) || dowM(dowAlt);
-    return (
-      minM(date.getMinutes()) &&
-      hourM(date.getHours()) &&
-      domM(date.getDate()) &&
-      monM(date.getMonth() + 1) &&
-      dowOk
-    );
+    const domOk = domM(date.getDate());
+    // Vixie cron: when both dom and dow are restricted, the day matches if EITHER does.
+    const dayOk = domRestricted && dowRestricted ? domOk || dowOk : domOk && dowOk;
+    return minM(date.getMinutes()) && hourM(date.getHours()) && monM(date.getMonth() + 1) && dayOk;
   };
 
   return { expr: expr.trim(), matches };
