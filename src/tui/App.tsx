@@ -32,8 +32,11 @@ import {
   estimateVisibleLines,
   maxScrollOffset,
   messagesToRowsCached,
+  nextSearchCursor,
   runsToMessages,
+  scrollOffsetForRow,
   scrollPositionLabel,
+  searchTranscriptRows,
   shouldVirtualizeTranscript,
   useNativeTrackpadScroll,
   viewportRows,
@@ -128,6 +131,7 @@ export function App(props: TuiOptions) {
   const bootGen = useRef(0);
   const bootChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const rowCacheRef = useRef<MessageRowCache>(new Map());
+  const searchRef = useRef<{ query: string; cursor: number | null }>({ query: "", cursor: null });
   const agentLog = useMemo(() => {
     // stdout writes corrupt Ink rendering — TUI diagnostics go to <stateDir>/tui.log (I-17).
     let stateDir = ".agent";
@@ -656,6 +660,31 @@ export function App(props: TuiOptions) {
           } else {
             pushMessage({ role: "error", text: "Clipboard copy failed (terminal may not support OSC52)" });
           }
+          return;
+        }
+        case "find": {
+          const query = slash.query ?? searchRef.current.query;
+          if (!query) {
+            pushMessage({ role: "error", text: "Usage: /find <text> (repeat /find for older matches)" });
+            return;
+          }
+          const allRows = messagesToRowsCached(messages, cols, rowCacheRef.current);
+          const matches = searchTranscriptRows(allRows, query);
+          if (matches.length === 0) {
+            searchRef.current = { query, cursor: null };
+            pushMessage({ role: "system", text: `No matches for «${query}»` });
+            return;
+          }
+          const isNewQuery = query !== searchRef.current.query;
+          const cursor = nextSearchCursor(matches.length, isNewQuery ? null : searchRef.current.cursor);
+          searchRef.current = { query, cursor };
+          const offset = scrollOffsetForRow(matches[cursor]!, allRows.length, estimateVisibleLines(rows));
+          setScrollMode(true);
+          setScrollLineOffset(offset);
+          pushMessage({
+            role: "system",
+            text: `Match ${cursor + 1}/${matches.length} for «${query}» — /find = older, Esc/q = exit scroll`,
+          });
           return;
         }
         case "export": {

@@ -144,6 +144,35 @@ export function maxScrollOffset(totalLines: number, visibleLines: number): numbe
   return Math.max(0, totalLines - Math.max(4, visibleLines));
 }
 
+/** Row indexes whose text contains the query (case-insensitive), top to bottom. */
+export function searchTranscriptRows(rows: TranscriptRow[], query: string): number[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const out: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i]!.text.toLowerCase().includes(q)) out.push(i);
+  }
+  return out;
+}
+
+/** scrollLineOffset that puts `rowIndex` at the top of the viewport (0 = bottom-pinned). */
+export function scrollOffsetForRow(
+  rowIndex: number,
+  totalLines: number,
+  visibleLines: number
+): number {
+  const cap = Math.max(4, visibleLines);
+  const offset = totalLines - rowIndex - cap;
+  return Math.min(maxScrollOffset(totalLines, visibleLines), Math.max(0, offset));
+}
+
+/** Reverse-i-search UX: first hit = newest match, repeats walk up into history, wrap. */
+export function nextSearchCursor(matchCount: number, cursor: number | null): number {
+  if (matchCount <= 0) return 0;
+  if (cursor == null) return matchCount - 1;
+  return (cursor - 1 + matchCount) % matchCount;
+}
+
 /** Human-readable scroll position for status bar. */
 export function scrollPositionLabel(
   totalLines: number,

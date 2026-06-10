@@ -216,7 +216,7 @@ During development: `npm run dev -- <subcommand>` (same as above).
 ### TUI (`csagent tui`)
 
 - **Session tabs** — recent `sess_` in the header; **`1`–`5`**, **Tab** / **Shift+Tab**, **←**/**→** (empty composer), **Ctrl+[** / **Ctrl+]** to switch.
-- **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/delegate <prompt>` (isolated run + **inject** into parent `sess_`), `/new`, `/resume <id>`, `/clear`, `/copy`, `/rename`, `/exit`, …
+- **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/delegate <prompt>` (isolated run + **inject** into parent `sess_`), `/find <text>` (transcript search; repeat = older match), `/new`, `/resume <id>`, `/clear`, `/copy`, `/rename`, `/exit`, …
 - **Overlays** — `/sessions`, `/skills`, `/memory`, `/model`, `/mcp` (Esc closes; scroll preserved).
 - **Composer** — multiline, `@file` Tab-complete, `@memory:` refs.
 - **Activity** — tool call banner during turns; thinking strip when model streams reasoning (Ctrl+T).

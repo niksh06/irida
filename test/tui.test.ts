@@ -6,6 +6,9 @@ import {
   viewportRows,
   maxScrollOffset,
   messagesToRows,
+  nextSearchCursor,
+  scrollOffsetForRow,
+  searchTranscriptRows,
   viewportMessages,
 } from "../src/tui/transcript.js";
 import {
@@ -88,6 +91,49 @@ describe("tui transcript line viewport", () => {
   it("wrapToWidth splits on spaces", () => {
     const lines = wrapToWidth("hello world foo bar baz", 12);
     assert.ok(lines.length >= 2);
+  });
+});
+
+describe("tui transcript search (/find)", () => {
+  const rows = messagesToRows(
+    [
+      { id: "u1", role: "user", text: "deploy the gateway" },
+      { id: "a1", role: "assistant", text: "Gateway deployed.\nUse launchd to keep it alive." },
+      { id: "u2", role: "user", text: "now check cron" },
+      { id: "a2", role: "assistant", text: "Cron tick is healthy. Gateway untouched." },
+    ],
+    60
+  );
+
+  it("finds case-insensitive matches top to bottom", () => {
+    const matches = searchTranscriptRows(rows, "gateway");
+    assert.ok(matches.length >= 3);
+    for (let i = 1; i < matches.length; i++) assert.ok(matches[i]! > matches[i - 1]!);
+    assert.deepEqual(searchTranscriptRows(rows, "no-such-text"), []);
+    assert.deepEqual(searchTranscriptRows(rows, "   "), []);
+  });
+
+  it("parseSlash handles /find with and without query", () => {
+    assert.deepEqual(parseSlash("/find gateway"), { type: "find", query: "gateway" });
+    assert.deepEqual(parseSlash("/find"), { type: "find", query: undefined });
+    assert.deepEqual(parseSlash("/search cron tick"), { type: "find", query: "cron tick" });
+  });
+
+  it("cursor starts at newest match and walks older with wrap", () => {
+    assert.equal(nextSearchCursor(3, null), 2);
+    assert.equal(nextSearchCursor(3, 2), 1);
+    assert.equal(nextSearchCursor(3, 0), 2);
+  });
+
+  it("scrollOffsetForRow puts the row inside the viewport", () => {
+    const total = 100;
+    const visible = 10;
+    const offset = scrollOffsetForRow(40, total, visible);
+    const v = viewportRows(Array.from({ length: total }, (_, i) => rows[0] ? { ...rows[0]!, key: `k${i}` } : rows[0]!), visible, offset);
+    assert.ok(v.hiddenAbove <= 40 && 40 < v.hiddenAbove + Math.max(4, visible));
+    // Bottom row clamps to 0..max.
+    assert.equal(scrollOffsetForRow(total - 1, total, visible), 0);
+    assert.ok(scrollOffsetForRow(0, total, visible) <= maxScrollOffset(total, visible));
   });
 });
 

@@ -14,6 +14,7 @@ export type SlashAction =
   | { type: "model" }
   | { type: "mcp" }
   | { type: "copy" }
+  | { type: "find"; query?: string }
   | { type: "export"; path?: string }
   | { type: "rename"; title: string }
   | { type: "delegate"; prompt: string }
@@ -65,6 +66,10 @@ export function parseSlash(input: string): SlashAction | null {
     case "copy":
     case "yank":
       return { type: "copy" };
+    case "find":
+    case "search":
+      // No arg = jump to next match of the previous query.
+      return { type: "find", query: arg || undefined };
     case "export":
       return { type: "export", path: arg || undefined };
     case "rename":

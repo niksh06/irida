@@ -17,6 +17,7 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { cmd: "model", desc: "Pick SDK model" },
   { cmd: "mcp", desc: "Show MCP server config" },
   { cmd: "copy", desc: "Copy last reply (OSC52)" },
+  { cmd: "find", desc: "Search transcript (repeat = older match)", args: "<text>" },
   { cmd: "export", desc: "Export transcript markdown", args: "[path]" },
   { cmd: "rename", desc: "Rename current session", args: "<title>" },
   { cmd: "delegate", desc: "Isolated subagent run (summary only)", args: "<prompt>" },
