@@ -62,6 +62,17 @@
       "cron": "0 23 * * *",
       "enabled": false,
       "builtin": "session-export"
+    },
+    {
+      "id": "watchdog",
+      "cron": "*/30 * * * *",
+      "enabled": false,
+      "catchUp": "skip",
+      "script": "deploy/scripts/csagent-watchdog.sh",
+      "notify": {
+        "chatId": "YOUR_CHAT_ID",
+        "telegram": true
+      }
     }
   ]
 }

@@ -52,6 +52,19 @@ export interface CronJob {
    * sleep. Default CRON_DUE_GRACE_MINUTES; daily jobs may want 360-720.
    */
   graceMinutes?: number;
+  /**
+   * Missed-slot policy (A3): "once" (default) — one catch-up run within grace;
+   * "skip" — stale slots are dropped (briefings that must not arrive late).
+   */
+  catchUp?: "once" | "skip";
+  /**
+   * Cheap pre-script (A1): runs before the SDK; last stdout line
+   * {"wakeAgent": false} skips the run entirely (no tokens, no notify).
+   * Fail-open: gate errors never block the job. Manual `cron run` bypasses.
+   */
+  gateScript?: string;
+  /** Deterministic shell job without SDK (A2): stdout becomes the notify text. */
+  script?: string;
 }
 
 export interface CronJobsFile {
@@ -107,6 +120,12 @@ function validateJob(raw: unknown, index: number): CronJob {
   }
   if (!cron) throw new CronJobsError(`jobs[${index}].cron is required`);
   const topicDelegates = o.topicDelegates === true;
+  const scriptRaw = typeof o.script === "string" ? o.script.trim() : "";
+  if (scriptRaw && (prompt || promptFile || builtinRaw || topicDelegates)) {
+    throw new CronJobsError(
+      `jobs[${index}] script is exclusive with prompt/promptFile/builtin/topicDelegates`
+    );
+  }
   if (topicDelegates) {
     const tp = typeof o.topicPromptFile === "string" ? o.topicPromptFile.trim() : "";
     const sp = typeof o.synthesizePromptFile === "string" ? o.synthesizePromptFile.trim() : "";
@@ -119,8 +138,8 @@ function validateJob(raw: unknown, index: number): CronJob {
         `jobs[${index}].builtin must be one of: ${CRON_BUILTIN_HANDLERS.join(", ")}`
       );
     }
-  } else if (!prompt && !promptFile) {
-    throw new CronJobsError(`jobs[${index}] requires prompt, promptFile, or builtin`);
+  } else if (!prompt && !promptFile && !scriptRaw) {
+    throw new CronJobsError(`jobs[${index}] requires prompt, promptFile, builtin, or script`);
   }
   if (prompt && promptFile) {
     throw new CronJobsError(`jobs[${index}] cannot set both prompt and promptFile`);
@@ -159,6 +178,16 @@ function validateJob(raw: unknown, index: number): CronJob {
   if (typeof o.graceMinutes === "number" && o.graceMinutes > 0) {
     job.graceMinutes = Math.min(Math.floor(o.graceMinutes), 24 * 60);
   }
+  if (o.catchUp !== undefined) {
+    if (o.catchUp !== "once" && o.catchUp !== "skip") {
+      throw new CronJobsError(`jobs[${index}].catchUp must be "once" or "skip"`);
+    }
+    job.catchUp = o.catchUp;
+  }
+  if (typeof o.gateScript === "string" && o.gateScript.trim()) {
+    job.gateScript = o.gateScript.trim();
+  }
+  if (scriptRaw) job.script = scriptRaw;
   if (builtinRaw) job.builtin = builtinRaw as CronBuiltinHandler;
   if (o.notify && typeof o.notify === "object" && !Array.isArray(o.notify)) {
     const n = o.notify as Record<string, unknown>;
@@ -252,7 +281,13 @@ export function findDueCronMinute(
   graceMinutes?: number
 ): Date | null {
   if (!cronJobEnabled(job)) return null;
-  const grace = graceMinutes ?? job.graceMinutes ?? CRON_DUE_GRACE_MINUTES;
+  // catchUp "skip": stale slots are dropped — never look back beyond the
+  // standard tick window even when graceMinutes is large (A3).
+  const jobGrace =
+    job.catchUp === "skip"
+      ? CRON_DUE_GRACE_MINUTES
+      : job.graceMinutes ?? CRON_DUE_GRACE_MINUTES;
+  const grace = graceMinutes ?? jobGrace;
   const cron = parseCronExpression(job.cron);
   const tick = new Date(at);
   tick.setSeconds(0, 0);

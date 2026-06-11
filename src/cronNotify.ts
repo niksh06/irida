@@ -179,6 +179,8 @@ export async function sendCronJobNotify(
   at: Date = new Date(),
   dir: string = process.cwd()
 ): Promise<void> {
+  // Healthy-quiet script jobs (empty stdout) deliver nothing.
+  if (exec.silent) return;
   const payload: CronNotifyPayload = {
     jobId: job.id,
     ok: exec.ok,

@@ -26,6 +26,7 @@ import { validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
 import { exportRecentSessions } from "./sessionExport.js";
+import { resolveCronScriptPath, runCronGate, runCronScript } from "./cronScript.js";
 import {
   saveCronJobResult,
   type CronExecuteResult,
@@ -80,9 +81,31 @@ export async function executeCronJob(
     });
   }
 
-  const guardErrs = job.builtin ? [] : validateCronJobPrompt(job, configDir);
+  const guardErrs = job.builtin || job.script ? [] : validateCronJobPrompt(job, configDir);
   if (guardErrs.length) {
     return withDuration(started, { ok: false, exitCode: EXIT.noperm, message: guardErrs.join("; ") });
+  }
+
+  // Script jobs (A2): deterministic shell, no SDK tokens. stdout = notify text;
+  // empty stdout = silent success.
+  if (job.script) {
+    const path = resolveCronScriptPath(job, configDir, job.script);
+    const run = runCronScript(path, { cwd: workDir });
+    if (run.error || run.timedOut || run.exitCode !== 0) {
+      const why = run.error ?? (run.timedOut ? "timeout" : `exit ${run.exitCode}`);
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `script failed (${why}): ${(run.stderr || run.stdout).slice(0, 300)}`,
+      });
+    }
+    return withDuration(started, {
+      ok: true,
+      exitCode: EXIT.ok,
+      message: run.stdout ? run.stdout.slice(0, 200) : "script ok (silent)",
+      output: run.stdout || undefined,
+      silent: !run.stdout,
+    });
   }
 
   if (job.builtin === "memory-audit") {
@@ -311,6 +334,23 @@ async function cronTickLocked(
     }
 
     const slot = dueAt ?? at;
+    // Wake-gate (A1): cheap pre-check may skip the SDK entirely. The slot is
+    // still claimed — "nothing new" consumes the slot, it does not retry.
+    const gate = runCronGate(job, dir);
+    if (!gate.wake) {
+      console.error(`[cron] job=${job.id} gated (skip): ${gate.reason}`);
+      state.lastRun[job.id] = cronMinuteKey(at);
+      saveCronState(dir, state);
+      saveCronJobResult(
+        dir,
+        job.id,
+        { ok: true, exitCode: EXIT.ok, message: `gated: ${gate.reason}`, durationMs: 0 },
+        slot
+      );
+      result.skipped.push(job.id);
+      continue;
+    }
+
     console.error(`[cron] running job=${job.id} slot=${cronMinuteKey(slot)}`);
     // Claim before executing: long jobs (topic digests run for minutes) must not
     // be double-fired by an overlapping tick reading stale state. Claiming the

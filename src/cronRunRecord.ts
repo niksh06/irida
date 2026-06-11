@@ -19,6 +19,8 @@ export interface CronExecuteResult {
   output?: string;
   durationMs?: number;
   topicSummaries?: CronTopicSummary[];
+  /** Suppress notify delivery (script jobs with empty stdout = healthy-quiet). */
+  silent?: boolean;
 }
 
 export function formatDurationMs(ms: number): string {
