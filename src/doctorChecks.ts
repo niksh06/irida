@@ -29,6 +29,8 @@ export interface DoctorCheck {
   name: string;
   ok: boolean;
   detail: string;
+  /** Copy-paste remediation shown under a failed check (A4). */
+  fix?: string;
 }
 
 export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
@@ -39,6 +41,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
     name: "CURSOR_API_KEY",
     ok: resolved.key.length > 0,
     detail: apiKeySourceLabel(resolved.source, dir),
+    fix: 'printf %s "cursor_..." | csagent auth login --stdin',
   });
 
   const major = Number(process.versions.node.split(".")[0]);
@@ -100,6 +103,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
       name: "cron jobs",
       ok: cronErrs.length === 0,
       detail: cronErrs.length ? cronErrs.join("; ") : "cron.jobs.json valid",
+      fix: `compare with deploy/cron.jobs.example.json, then: csagent cron list`,
     });
     if (cronErrs.length === 0) {
       const drift = gatherCronPromptDrift(dir);
@@ -124,6 +128,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
       name: "gateway",
       ok: gwErrs.length === 0,
       detail: gwErrs.length ? gwErrs.join("; ") : "gateway.json valid",
+      fix: "cp deploy/gateway.json.example .agent/gateway.json  # then set allowedChatIds + token: csagent auth telegram login --stdin",
     });
   }
 
@@ -177,6 +182,7 @@ function gatherCredentialsEnvChecks(dir: string): DoctorCheck[] {
       detail: plain
         ? "credentials.json still has plaintext — run auth login to migrate"
         : "no plaintext secrets on disk",
+      fix: 'printf %s "cursor_..." | csagent auth login --stdin  # re-save migrates to pgcrypto',
     });
   }
   return checks;
@@ -238,6 +244,7 @@ function gatherMemoryEnvChecks(dir: string): DoctorCheck[] {
       detail: aligned
         ? `${silo.path} aligned with ${memoryDir}`
         : `${silo.count} note(s) in ${silo.path} — run: csagent memory align-silo`,
+      fix: "csagent memory align-silo",
     });
   }
 

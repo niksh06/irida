@@ -15,6 +15,9 @@ export async function cmdDoctor(
   ];
   for (const c of checks) {
     console.log(`${c.ok ? "OK  " : "FAIL"}  ${c.name}: ${c.detail}`);
+    if (!c.ok && c.fix) {
+      console.log(`      ↳ fix: ${c.fix}`);
+    }
   }
   const allOk = doctorAllOk(checks);
   console.log(allOk ? "\ndoctor: all checks passed" : "\ndoctor: some checks failed");

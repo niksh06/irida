@@ -15,6 +15,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Cron wake-gate** (`gateScript`, borrowed from hermes-evolution) — cheap pre-script can skip the SDK run entirely (`{"wakeAgent": false}`): no tokens when there is nothing to do; fail-open on gate errors
+- **Cron script jobs** (`script`) — deterministic shell tasks with zero SDK: stdout → Telegram notify, empty stdout → silent; example watchdog `deploy/scripts/csagent-watchdog.sh`
+- **Cron `catchUp: "skip"`** — stale slots dropped instead of caught up (late briefings)
+- **Doctor remediation** — failed checks print `↳ fix:` copy-paste commands (CLI + TUI)
 - **Semantic memory search** (I-36) — local Ollama embeddings (`nomic-embed-text`, 768d) + pgvector hnsw: `memory search --semantic`, `memory reindex-embeddings`, MCP `memory_search semantic:true` (FTS fallback); embed-on-save fail-soft; secure notes never embedded; migration `008_memory_vector.sql`
 - **Docs split** (I-32) — README is now a 110-line pitch+quickstart; install/ops → `OPS.md`, full reference → `REFERENCE.md`; npm tarball ships both + `deploy/` + `skills/`
 - **Secure memory notes** (I-20) — `--wing secure` (Postgres): body pgcrypto-encrypted at rest, decrypt only via `memory show`/`memory_get`, masked in list/search, no `.md` mirror; sqlite refuses; migration `007_memory_secure.sql`

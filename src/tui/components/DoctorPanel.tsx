@@ -29,11 +29,19 @@ export function DoctorPanel(props: { dir: string; onClose: () => void }) {
   return (
     <OverlayPanel title={`doctor ${allOk ? "✓" : "✗"}`} footer="Esc or Enter to close">
       {checks.map((c) => (
-        <Text key={c.name}>
-          <Text color={c.ok ? theme.system : theme.error}>{c.ok ? "OK  " : "FAIL"}</Text>
-          {"  "}
-          {c.name}: <Text dimColor>{c.detail}</Text>
-        </Text>
+        <React.Fragment key={c.name}>
+          <Text>
+            <Text color={c.ok ? theme.system : theme.error}>{c.ok ? "OK  " : "FAIL"}</Text>
+            {"  "}
+            {c.name}: <Text dimColor>{c.detail}</Text>
+          </Text>
+          {!c.ok && c.fix ? (
+            <Text>
+              {"      "}
+              <Text color={theme.system}>↳ fix:</Text> <Text dimColor>{c.fix}</Text>
+            </Text>
+          ) : null}
+        </React.Fragment>
       ))}
     </OverlayPanel>
   );

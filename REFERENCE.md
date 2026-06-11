@@ -168,6 +168,9 @@ csagent cron tick    # launchd ai.csagent.cron-tick every 5 min, or system cront
 Job extras:
 
 - `"graceMinutes": 480` — lookback for missed slots (machine slept through the scheduled minute); missed-slot backlog collapses into one catch-up run.
+- `"catchUp": "skip"` — drop stale slots instead of catching up (briefings that must not arrive late). Default `"once"`.
+- `"gateScript": "path.sh"` — cheap pre-check before waking the SDK: last stdout line `{"wakeAgent": false, "reason": "…"}` skips the run entirely (no tokens, no notify; slot is consumed). Fail-open: gate errors never block the job. Manual `cron run` bypasses the gate.
+- `"script": "path.sh"` — deterministic shell job with **no SDK at all**: non-empty stdout → notify text; empty stdout → silent success; non-zero exit → failed with stderr. Example: `deploy/scripts/csagent-watchdog.sh` (gateway/outbox/cron health, zero tokens).
 - Builtins: `"builtin": "memory-audit"` (notes/facts/silo QA + seen_post TTL prune), `"builtin": "session-export"` (daily transcripts → `Reports/sessions/YYYY-MM-DD/`).
 - Tick takes a cross-process lock (`cron.tick.lock`) — overlapping ticks skip instead of double-firing.
 - Optional `sessionId` binds to an existing `sess_`. Destructive prompts denied unless `"yesIUnderstand": true`. Doctor checks the **cron prompt guard** (injection patterns).
