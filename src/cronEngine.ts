@@ -22,7 +22,7 @@ import {
 } from "./cronJobs.js";
 import { buildSeenPostsPromptSection } from "./memoryDedup.js";
 import { loadCronJobPromptText } from "./cronPrompt.js";
-import { validateCronJobPrompt } from "./cronPromptGuard.js";
+import { scanPromptText, validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
 import { exportRecentSessions } from "./sessionExport.js";
@@ -161,6 +161,18 @@ export async function executeCronJob(
   }
 
   const prompt = await resolveCronPrompt(job, configDir);
+
+  // Runtime scan of the fully assembled prompt (Wave B2): the seen_post facts
+  // preamble comes from memory and could carry injection text the create-time
+  // guard never saw.
+  const assembledHits = scanPromptText(prompt);
+  if (assembledHits.length) {
+    return withDuration(started, {
+      ok: false,
+      exitCode: EXIT.noperm,
+      message: `blocked — assembled prompt injection patterns: ${assembledHits.join(", ")}`,
+    });
+  }
 
   if (job.sessionId) {
     const store = createStore(configDir, loadConfig(configDir).stateDir);
