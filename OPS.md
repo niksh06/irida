@@ -164,3 +164,27 @@ After changing store: `bash deploy/setup-home.sh` and `install-launchd.sh` if yo
 Env injected into plists from `~/.csagent/csagent.env` by `install-launchd.sh`: `CSAGENT_DATABASE_URL`, `CSAGENT_SECRETS_KEY`, optional `OBSIDIAN_VAULT_PATH`.
 
 Health: `csagent gateway status` (launchd, logs, cron last results, 24h run metrics) or Telegram `/status`.
+
+## Secrets: corruption protection (postmortem 2026-06-12)
+
+Defense in depth after the "bot silent, 6-char token in PG" incident:
+
+1. **Write path:** `auth login` refuses values that fail format checks (truncated stdin, empty env).
+2. **History:** every overwrite of `credential_secrets` archives the previous ciphertext. `csagent auth history` lists versions (length + format verdict, never values); `csagent auth restore <id>` rolls back. A dev clone pointed at prod PG can no longer destroy a token irreversibly.
+3. **Read path self-heal:** if the PG value fails format checks but the file copy is valid, the valid value is used and a re-save hint is logged.
+4. **Gateway fail-fast:** `gateway run` refuses to start with a malformed bot token (one clear error instead of hundreds of poll `Not Found`).
+
+## Deploy checklist (prod)
+
+```bash
+cd /path/to/csagent-clone
+npm test && npm run build
+bash deploy/setup-home.sh                                  # never copies credentials.json
+~/.csagent/csagent/scripts/csagent-run.sh doctor           # MUST: format ok + API probe
+~/.csagent/csagent/scripts/csagent-run.sh auth status
+bash ~/.csagent/csagent/deploy/install-launchd.sh
+~/.csagent/csagent/scripts/csagent-run.sh gateway status
+tail -20 ~/.csagent/logs/gateway.error.log                 # no "Not Found"
+```
+
+Never run `auth login` from a dev clone with `CSAGENT_DATABASE_URL` pointing at prod — and if it happens, `auth history` has the rollback.

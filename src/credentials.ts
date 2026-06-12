@@ -182,6 +182,26 @@ export async function warmCredentialsCache(dir: string = process.cwd()): Promise
         await setPgCredentialSecret(name, file[name]!);
         loaded[name] = file[name];
         migrated = true;
+        continue;
+      }
+      // Self-heal read path (postmortem 2026-06-12): PG holds a corrupt value
+      // (short garbage that decrypts fine) while the file copy is valid —
+      // prefer the valid file value and say so. Write-back stays explicit.
+      if (loaded[name] && file[name]) {
+        const fmt =
+          name === "cursor_api_key"
+            ? validateCursorApiKeyFormat(loaded[name]!)
+            : validateTelegramBotTokenFormat(loaded[name]!);
+        const fileFmt =
+          name === "cursor_api_key"
+            ? validateCursorApiKeyFormat(file[name]!)
+            : validateTelegramBotTokenFormat(file[name]!);
+        if (!fmt.ok && fileFmt.ok) {
+          console.error(
+            `[credentials] ${name} in postgres is corrupt (${fmt.detail}); using valid file value — re-save with: csagent auth ${name === "cursor_api_key" ? "login" : "telegram login"} --stdin`
+          );
+          loaded[name] = file[name];
+        }
       }
     }
     if (migrated) {
@@ -204,6 +224,13 @@ export async function warmCredentialsCache(dir: string = process.cwd()): Promise
 async function persistSecret(name: CredentialSecretName, value: string, dir: string): Promise<void> {
   const trimmed = value.trim();
   if (!trimmed) throw new Error("secret must be a non-empty string");
+  const fmt =
+    name === "cursor_api_key"
+      ? validateCursorApiKeyFormat(trimmed)
+      : validateTelegramBotTokenFormat(trimmed);
+  if (!fmt.ok) {
+    throw new Error(`refusing to save ${name}: ${fmt.detail}`);
+  }
   if (pgSecretsEnabled()) {
     await setPgCredentialSecret(name, trimmed);
     pgSecretsCache = { ...(pgSecretsCache ?? {}), [name]: trimmed };

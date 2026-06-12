@@ -8,6 +8,7 @@ import {
   telegramGetUpdates,
   telegramSendMessage,
   telegramSendMessageHtml,
+  telegramSendFormattedMessage,
   telegramSendLongMessage,
   telegramSendChatAction,
   startTelegramPoller,
@@ -17,6 +18,7 @@ import {
   shouldEmitTelegramToolProgress,
   splitTelegramMessages,
   TELEGRAM_MESSAGE_MAX,
+  TELEGRAM_RICH_MESSAGE_MAX,
 } from "../src/gatewayTelegram.js";
 import { writeExampleGatewayConfig } from "../src/gateway_cmd.js";
 import { GatewaySessionRouter } from "../src/gatewayRouter.js";
@@ -225,6 +227,23 @@ test("tool progress: one message sent, later tools edit it (I-37)", async () => 
   });
 });
 
+test("startTelegramPoller fails fast on corrupt bot token (postmortem)", async () => {
+  await withKey("k", async () => {
+    const prev = process.env.TELEGRAM_BOT_TOKEN;
+    process.env.TELEGRAM_BOT_TOKEN = "garbage"; // 7 chars — the postmortem shape
+    const dir = tmp();
+    const cfg = writeExampleGatewayConfig(dir, { adapter: "telegram", allowedChatIds: ["42"] });
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+    assert.throws(
+      () => startTelegramPoller({ cfg, router, fetchFn: async () => new Response("{}") }),
+      /token is invalid.*auth telegram login/s
+    );
+    await router.closeAll();
+    if (prev === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prev;
+  });
+});
+
 test("telegramSendMessageHtml falls back to plain on parse error", async () => {
   const posts: Array<{ text: string; parse_mode?: string }> = [];
   const fetchFn = async (url: string, init?: RequestInit) => {
@@ -244,6 +263,41 @@ test("telegramSendMessageHtml falls back to plain on parse error", async () => {
   assert.match(posts[0]!.text, /<b>bold<\/b>/);
   assert.equal(posts[1]!.parse_mode, undefined);
   assert.equal(posts[1]!.text, "**bold** broken");
+});
+
+test("telegramSendFormattedMessage prefers sendRichMessage, falls back to HTML", async () => {
+  const methods: string[] = [];
+  const fetchFn = async (url: string, init?: RequestInit) => {
+    const method = url.split("/").pop()?.split("?")[0] ?? "";
+    methods.push(method);
+    if (method === "sendRichMessage") {
+      return new Response(JSON.stringify({ ok: false, description: "method not found" }));
+    }
+    if (method === "sendMessage") {
+      const body = JSON.parse(String(init?.body)) as { parse_mode?: string; text: string };
+      assert.equal(body.parse_mode, "HTML");
+      assert.match(body.text, /<b>hi<\/b>/);
+      return new Response(JSON.stringify({ ok: true, result: {} }));
+    }
+    return new Response(JSON.stringify({ ok: false }));
+  };
+  await telegramSendFormattedMessage("tok", "42", "**hi**", fetchFn, "rich");
+  assert.deepEqual(methods, ["sendRichMessage", "sendMessage"]);
+});
+
+test("telegramSendFormattedMessage uses sendRichMessage when supported", async () => {
+  let payload: Record<string, unknown> | null = null;
+  const fetchFn = async (url: string, init?: RequestInit) => {
+    if (url.includes("sendRichMessage")) {
+      payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ ok: true, result: {} }));
+    }
+    return new Response(JSON.stringify({ ok: false }));
+  };
+  await telegramSendFormattedMessage("tok", "42", "# Title\n\n- item", fetchFn, "rich");
+  assert.ok(payload);
+  const rm = (payload as { rich_message?: { markdown?: string } }).rich_message;
+  assert.equal(rm?.markdown, "# Title\n\n- item");
 });
 
 test("splitTelegramMessages and formatTelegramMultipartBodies respect limit", () => {
@@ -298,7 +352,7 @@ test("telegramGetUpdates and sendMessage use fetch mock", async () => {
 test("startTelegramPoller processes update and replies", async () => {
   await withKey("k", async () => {
     const prev = process.env.TELEGRAM_BOT_TOKEN;
-    process.env.TELEGRAM_BOT_TOKEN = "test-token";
+    process.env.TELEGRAM_BOT_TOKEN = "1234567890:TESTTOKENTESTTOKENTESTTOKENTESTTOKE";
     const dir = tmp();
     const cfg = writeExampleGatewayConfig(dir, {
       adapter: "telegram",
@@ -344,14 +398,14 @@ test("startTelegramPoller processes update and replies", async () => {
 test("startTelegramPoller splits long model replies", async () => {
   await withKey("k", async () => {
     const prev = process.env.TELEGRAM_BOT_TOKEN;
-    process.env.TELEGRAM_BOT_TOKEN = "test-token";
+    process.env.TELEGRAM_BOT_TOKEN = "1234567890:TESTTOKENTESTTOKENTESTTOKENTESTTOKE";
     const dir = tmp();
     const cfg = writeExampleGatewayConfig(dir, {
       adapter: "telegram",
       allowedChatIds: ["99"],
       telegramPollIntervalMs: 500,
     });
-    const longReply = "z".repeat(5000);
+    const longReply = "z".repeat(TELEGRAM_RICH_MESSAGE_MAX + 500);
     const disposed = { v: false };
     const stream: RunLike["stream"] = async function* () {
       yield { type: "assistant", message: { content: [{ type: "text", text: longReply }] } };
@@ -376,9 +430,12 @@ test("startTelegramPoller splits long model replies", async () => {
         }
         return new Response(JSON.stringify({ ok: true, result: [] }));
       }
-      if (url.includes("sendMessage")) {
-        const body = JSON.parse(String(init?.body)) as { text: string };
-        sent.push(body.text);
+      if (url.includes("sendRichMessage") || url.includes("sendMessage")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (typeof body.text === "string") sent.push(body.text);
+        else if (body.rich_message && typeof body.rich_message === "object") {
+          sent.push(String((body.rich_message as { markdown?: string }).markdown ?? ""));
+        }
         return new Response(JSON.stringify({ ok: true }));
       }
       if (url.includes("sendChatAction")) {
@@ -396,7 +453,7 @@ test("startTelegramPoller splits long model replies", async () => {
     await poller.stop();
     await router.closeAll();
     assert.ok(sent.length >= 2);
-    assert.ok(sent.every((t) => t.length <= TELEGRAM_MESSAGE_MAX));
+    assert.ok(sent.every((t) => t.length <= TELEGRAM_RICH_MESSAGE_MAX));
     assert.match(sent[0]!, /^\[1\/\d+\]\n/);
     if (prev === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = prev;

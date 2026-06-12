@@ -15,6 +15,8 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Secret corruption protection** (postmortem 2026-06-12) — overwrite history for `credential_secrets` (`auth history` / `auth restore <id>`), read-path self-heal (valid file beats corrupt PG value, with re-save hint), gateway fail-fast on malformed bot token; migration `009_credentials_history.sql`
+- **Skill `profile-ops`** — loads `user-profile.niksh` / `agent-profile.composer` from csagent-memory (profiles were notes, the skill file never existed)
 - **Cron wake-gate** (`gateScript`, borrowed from hermes-evolution) — cheap pre-script can skip the SDK run entirely (`{"wakeAgent": false}`): no tokens when there is nothing to do; fail-open on gate errors
 - **Cron script jobs** (`script`) — deterministic shell tasks with zero SDK: stdout → Telegram notify, empty stdout → silent; example watchdog `deploy/scripts/csagent-watchdog.sh`
 - **Cron `catchUp: "skip"`** — stale slots dropped instead of caught up (late briefings)

@@ -2,9 +2,13 @@
  * Telegram Bot API adapter (long polling, no extra deps) — issue 037 follow-up.
  */
 import { type GatewayConfig, isChatAllowed } from "./gatewayConfig.js";
-import { resolveTelegramBotToken } from "./credentials.js";
-import { formatTelegramHtml, telegramHtmlDiffers } from "./telegramFormat.js";
-import { drainOutbox, enqueueOutbox } from "./gatewayOutbox.js";
+import { resolveTelegramBotToken, validateTelegramBotTokenFormat } from "./credentials.js";
+import {
+  formatTelegramHtml,
+  telegramHtmlDiffers,
+  type TelegramMessageFormat,
+} from "./telegramFormat.js";
+import { drainOutbox, enqueueOutbox, resolveOutboxFormat } from "./gatewayOutbox.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { tryRegisterPairing } from "./gatewayPairing.js";
 import { gatewayTelegramBotCommands, isGatewaySlashCommand } from "./gatewaySlash.js";
@@ -76,8 +80,22 @@ export async function telegramGetUpdates(
 /** Telegram Bot API `sendMessage` text limit. */
 export const TELEGRAM_MESSAGE_MAX = 4096;
 
+/** Bot API 10.1+ `sendRichMessage` markdown limit (32768 UTF-8 chars). */
+export const TELEGRAM_RICH_MESSAGE_MAX = 32_000;
+
 /** Reserve for multipart header `[999/999]\n`. */
 const TELEGRAM_PART_HEADER_SLACK = 20;
+
+export type { TelegramMessageFormat };
+
+export function resolveTelegramSendFormat(
+  opts: { format?: TelegramMessageFormat; html?: boolean } = {}
+): TelegramMessageFormat {
+  if (opts.format) return opts.format;
+  if (opts.html === true) return "rich";
+  if (opts.html === false) return "plain";
+  return "plain";
+}
 
 export function splitTelegramMessages(text: string, maxLen = TELEGRAM_MESSAGE_MAX): string[] {
   const trimmed = text.trim();
@@ -95,15 +113,24 @@ export function splitTelegramMessages(text: string, maxLen = TELEGRAM_MESSAGE_MA
   return chunks;
 }
 
-/** Split long text; prefix `[i/N]` when there is more than one part (each body ≤ limit). */
-export function formatTelegramMultipartBodies(text: string): string[] {
+function formatMultipartBodies(text: string, maxLen: number): string[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
-  const rough = splitTelegramMessages(trimmed, TELEGRAM_MESSAGE_MAX);
+  const rough = splitTelegramMessages(trimmed, maxLen);
   if (rough.length === 1) return rough;
-  const bodyMax = TELEGRAM_MESSAGE_MAX - TELEGRAM_PART_HEADER_SLACK;
+  const bodyMax = maxLen - TELEGRAM_PART_HEADER_SLACK;
   const parts = splitTelegramMessages(trimmed, bodyMax);
   return parts.map((p, i) => `[${i + 1}/${parts.length}]\n${p}`);
+}
+
+/** Split long text; prefix `[i/N]` when there is more than one part (each body ≤ limit). */
+export function formatTelegramMultipartBodies(text: string): string[] {
+  return formatMultipartBodies(text, TELEGRAM_MESSAGE_MAX);
+}
+
+/** Split for `sendRichMessage` (larger limit than classic sendMessage). */
+export function formatTelegramRichMultipartBodies(text: string): string[] {
+  return formatMultipartBodies(text, TELEGRAM_RICH_MESSAGE_MAX);
 }
 
 export async function telegramSendMessage(
@@ -140,18 +167,67 @@ export async function telegramSendMessageHtml(
   }
 }
 
+/** Bot API 10.1+ native markdown via `sendRichMessage`. */
+export async function telegramSendMessageRich(
+  token: string,
+  chatId: string,
+  text: string,
+  fetchFn: TelegramFetch = fetch
+): Promise<void> {
+  await telegramApiPost(
+    token,
+    "sendRichMessage",
+    { chat_id: chatId, rich_message: { markdown: text } },
+    fetchFn
+  );
+}
+
+/**
+ * Rich markdown → HTML sendMessage → plain text.
+ * Rich is preferred for agent output (headings, lists, blockquotes without MarkdownV2 escaping).
+ */
+export async function telegramSendFormattedMessage(
+  token: string,
+  chatId: string,
+  text: string,
+  fetchFn: TelegramFetch = fetch,
+  format: TelegramMessageFormat = "rich"
+): Promise<void> {
+  if (format === "plain") {
+    await telegramSendMessage(token, chatId, text, fetchFn);
+    return;
+  }
+  if (format === "rich") {
+    try {
+      await telegramSendMessageRich(token, chatId, text, fetchFn);
+      return;
+    } catch {
+      /* old Bot API or unsupported markup — fall through to HTML */
+    }
+  }
+  await telegramSendMessageHtml(token, chatId, text, fetchFn);
+}
+
 /** Send text as one or more Telegram messages (same chunking as cron digest). */
 export async function telegramSendLongMessage(
   token: string,
   chatId: string,
   text: string,
   fetchFn: TelegramFetch = fetch,
-  opts: { html?: boolean } = {}
+  opts: { html?: boolean; format?: TelegramMessageFormat } = {}
 ): Promise<number> {
-  const bodies = formatTelegramMultipartBodies(text);
+  const format = resolveTelegramSendFormat(opts);
+  if (format === "plain") {
+    const bodies = formatTelegramMultipartBodies(text);
+    for (const body of bodies) await telegramSendMessage(token, chatId, body, fetchFn);
+    return bodies.length;
+  }
+  const bodies =
+    format === "rich"
+      ? formatTelegramRichMultipartBodies(text)
+      : formatTelegramMultipartBodies(text);
   for (const body of bodies) {
-    if (opts.html) await telegramSendMessageHtml(token, chatId, body, fetchFn);
-    else await telegramSendMessage(token, chatId, body, fetchFn);
+    await telegramSendFormattedMessage(token, chatId, body, fetchFn, format);
   }
   return bodies.length;
 }
@@ -415,6 +491,14 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   const dir = opts.dir ?? process.cwd();
   const token = telegramBotToken(opts.cfg, dir);
   if (!token) throw new Error(`telegram bot token env ${opts.cfg.telegramTokenEnv} is unset`);
+  // Fail fast on corrupt tokens (postmortem 2026-06-12): hundreds of poll
+  // "Not Found" errors hide the real cause — refuse to start instead.
+  const tokenFmt = validateTelegramBotTokenFormat(token);
+  if (!tokenFmt.ok) {
+    throw new Error(
+      `telegram bot token is invalid (${tokenFmt.detail}) — re-save: csagent auth telegram login --stdin (or auth history / auth restore)`
+    );
+  }
   const fetchFn = opts.fetchFn ?? fetch;
   const logInfo = (s: string) => emitServiceLog(s, "info", opts.onLog);
   const logError = (s: string) => emitServiceLog(s, "error", opts.onLog);
@@ -433,10 +517,14 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   const SEND_RETRY_DELAY_MS = 1500;
 
   /** Agent turn already ran — retry once, then park in the outbox (I-31). */
-  const deliverWithRetry = async (chatId: string, text: string, long: boolean): Promise<void> => {
+  const deliverWithRetry = async (chatId: string, text: string, formatted: boolean): Promise<void> => {
+    const format = formatted ? opts.cfg.telegramMessageFormat : "plain";
     const send = async () => {
-      if (long) await telegramSendLongMessage(token, chatId, text, fetchFn, { html: true });
-      else await telegramSendMessage(token, chatId, text, fetchFn);
+      if (formatted) {
+        await telegramSendLongMessage(token, chatId, text, fetchFn, { format });
+      } else {
+        await telegramSendMessage(token, chatId, text, fetchFn);
+      }
     };
     try {
       await send();
@@ -449,7 +537,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       } catch (e2) {
         const msg2 = e2 instanceof Error ? e2.message : String(e2);
         try {
-          enqueueOutbox(dir, { chatId, text, html: long });
+          enqueueOutbox(dir, { chatId, text, format: formatted ? format : "plain" });
           logError(`[gateway] telegram send parked in outbox chat=${chatId}: ${msg2}`);
         } catch (e3) {
           logError(
@@ -466,8 +554,12 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       const result = await drainOutbox(
         dir,
         async (entry) => {
-          if (entry.html) await telegramSendLongMessage(token, entry.chatId, entry.text, fetchFn, { html: true });
-          else await telegramSendMessage(token, entry.chatId, entry.text, fetchFn);
+          const format = resolveOutboxFormat(entry);
+          if (format === "plain") {
+            await telegramSendMessage(token, entry.chatId, entry.text, fetchFn);
+          } else {
+            await telegramSendLongMessage(token, entry.chatId, entry.text, fetchFn, { format });
+          }
         },
         {
           onDrop: (entry) =>

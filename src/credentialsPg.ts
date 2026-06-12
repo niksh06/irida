@@ -16,6 +16,10 @@ const CREDENTIALS_MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/004_credentials.sql"),
   "utf8"
 );
+const CREDENTIALS_HISTORY_MIGRATION = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/009_credentials_history.sql"),
+  "utf8"
+);
 
 let pool: pg.Pool | null = null;
 
@@ -45,6 +49,7 @@ let migrated = false;
 async function ensureMigrated(): Promise<void> {
   if (migrated) return;
   await getPool().query(CREDENTIALS_MIGRATION);
+  await getPool().query(CREDENTIALS_HISTORY_MIGRATION);
   migrated = true;
 }
 
@@ -74,6 +79,13 @@ export async function setPgCredentialSecret(name: CredentialSecretName, value: s
   if (!trimmed) throw new Error("secret value must be non-empty");
   const key = secretsKey();
   await ensureMigrated();
+  // Archive the previous ciphertext before overwriting — a bad login (dev
+  // clone on prod PG, truncated stdin) must be reversible via auth restore.
+  await getPool().query(
+    `INSERT INTO credential_secrets_history (name, ciphertext)
+     SELECT name, ciphertext FROM credential_secrets WHERE name = $1`,
+    [name]
+  );
   await getPool().query(
     `INSERT INTO credential_secrets (name, ciphertext, updated_at)
      VALUES ($1, pgp_sym_encrypt($2, $3), NOW())
@@ -82,6 +94,53 @@ export async function setPgCredentialSecret(name: CredentialSecretName, value: s
        updated_at = EXCLUDED.updated_at`,
     [name, trimmed, key]
   );
+}
+
+export interface CredentialHistoryEntry {
+  id: number;
+  name: string;
+  replaced_at: string;
+  /** Decrypted length only — values never leave this module via history list. */
+  valueLength: number;
+  formatOk: boolean;
+}
+
+/** List archived secret versions (newest first); never returns values. */
+export async function listPgCredentialHistory(
+  validate: (name: CredentialSecretName, value: string) => boolean
+): Promise<CredentialHistoryEntry[]> {
+  if (!pgSecretsEnabled()) return [];
+  await ensureMigrated();
+  const res = await getPool().query(
+    `SELECT id, name, replaced_at, pgp_sym_decrypt(ciphertext, $1) AS value
+     FROM credential_secrets_history
+     ORDER BY replaced_at DESC
+     LIMIT 20`,
+    [secretsKey()]
+  );
+  return (res.rows as Array<{ id: number; name: string; replaced_at: Date; value: string | null }>).map(
+    (r) => ({
+      id: Number(r.id),
+      name: r.name,
+      replaced_at: r.replaced_at.toISOString(),
+      valueLength: (r.value ?? "").length,
+      formatOk: validate(r.name as CredentialSecretName, r.value ?? ""),
+    })
+  );
+}
+
+/** Read one archived value by history id (for auth restore). */
+export async function readPgCredentialHistoryValue(id: number): Promise<{ name: CredentialSecretName; value: string } | null> {
+  if (!pgSecretsEnabled()) return null;
+  await ensureMigrated();
+  const res = await getPool().query(
+    `SELECT name, pgp_sym_decrypt(ciphertext, $1) AS value
+     FROM credential_secrets_history WHERE id = $2`,
+    [secretsKey(), id]
+  );
+  const row = res.rows[0] as { name: string; value: string | null } | undefined;
+  if (!row || !row.value) return null;
+  return { name: row.name as CredentialSecretName, value: row.value };
 }
 
 export async function deletePgCredentialSecret(name: CredentialSecretName): Promise<boolean> {

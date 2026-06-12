@@ -20,8 +20,12 @@ import {
   saveCredentials,
   saveTelegramBotToken,
   telegramTokenSourceLabel,
+  validateCursorApiKeyFormat,
+  validateTelegramBotTokenFormat,
   warmCredentialsCache,
 } from "./credentials.js";
+import { listPgCredentialHistory, readPgCredentialHistoryValue } from "./credentialsPg.js";
+import type { CredentialSecretName } from "./credentialsPg.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
 const AUTH_HELP = `csagent auth — local secrets storage (.agent/credentials.json or postgres pgcrypto)
@@ -34,6 +38,8 @@ Usage:
   csagent auth logout                     remove stored secrets
   csagent auth telegram logout            remove telegram token only
   csagent auth status                     key + telegram configured? (never prints secrets)
+  csagent auth history                    archived secret versions in postgres (no values)
+  csagent auth restore <id>               restore an archived version by history id
 
 Environment overrides stored secrets for both CURSOR_API_KEY and TELEGRAM_BOT_TOKEN.
 With CSAGENT_DATABASE_URL + CSAGENT_SECRETS_KEY, secrets are encrypted in Postgres (pgcrypto).
@@ -203,6 +209,46 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
       }
       return EXIT.ok;
     }
+    case "history": {
+      if (!pgSecretsEnabled()) {
+        console.error("auth history: requires CSAGENT_DATABASE_URL + CSAGENT_SECRETS_KEY (postgres store)");
+        return EXIT.config;
+      }
+      const entries = await listPgCredentialHistory(validateSecretFormat);
+      if (entries.length === 0) {
+        console.log("auth: no archived secret versions");
+        return EXIT.ok;
+      }
+      console.log("ID    NAME                 REPLACED AT            LEN  FORMAT");
+      for (const e of entries) {
+        console.log(
+          `${String(e.id).padEnd(5)} ${e.name.padEnd(20)} ${e.replaced_at.slice(0, 19).replace("T", " ")}  ${String(e.valueLength).padEnd(4)} ${e.formatOk ? "ok" : "INVALID"}`
+        );
+      }
+      console.log("\nRestore a valid version: csagent auth restore <id>");
+      return EXIT.ok;
+    }
+    case "restore": {
+      if (!pgSecretsEnabled()) {
+        console.error("auth restore: requires CSAGENT_DATABASE_URL + CSAGENT_SECRETS_KEY (postgres store)");
+        return EXIT.config;
+      }
+      const id = Number(rest[0]);
+      if (!Number.isInteger(id) || id <= 0) {
+        console.error("auth restore: usage — csagent auth restore <history-id> (see auth history)");
+        return EXIT.usage;
+      }
+      const entry = await readPgCredentialHistoryValue(id);
+      if (!entry) {
+        console.error(`auth restore: history id ${id} not found`);
+        return EXIT.usage;
+      }
+      // persistSecret re-validates format and archives the current value first.
+      if (entry.name === "cursor_api_key") await persistCursorApiKey(entry.value, dir);
+      else await persistTelegramBotToken(entry.value, dir);
+      console.log(`auth: restored ${entry.name} from history #${id} (previous value archived)`);
+      return EXIT.ok;
+    }
     case undefined:
     case "-h":
     case "--help":
@@ -213,4 +259,10 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
       console.error(`auth: unknown subcommand '${sub}'\n\n${AUTH_HELP}`);
       return EXIT.usage;
   }
+}
+
+function validateSecretFormat(name: CredentialSecretName, value: string): boolean {
+  return name === "cursor_api_key"
+    ? validateCursorApiKeyFormat(value).ok
+    : validateTelegramBotTokenFormat(value).ok;
 }
