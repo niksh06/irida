@@ -59,6 +59,7 @@ export interface AddFactInput {
 export interface QueryFactsInput {
   subject: string;
   predicate?: string;
+  object?: string;
   as_of?: string;
   currentOnly?: boolean;
 }
@@ -293,6 +294,10 @@ export class SqliteMemoryStore implements IMemoryStore {
     if (input.predicate?.trim()) {
       clauses.push(`predicate = ?`);
       params.push(input.predicate.trim());
+    }
+    if (input.object?.trim()) {
+      clauses.push(`object = ?`);
+      params.push(input.object.trim());
     }
     if (input.currentOnly !== false) {
       clauses.push(`(valid_to IS NULL OR valid_to = '')`);
@@ -593,6 +598,10 @@ export class PostgresMemoryStore implements IMemoryStore {
     if (input.predicate?.trim()) {
       clauses.push(`predicate = $${n++}`);
       params.push(input.predicate.trim());
+    }
+    if (input.object?.trim()) {
+      clauses.push(`object = $${n++}`);
+      params.push(input.object.trim());
     }
     if (input.currentOnly !== false) {
       clauses.push(`(valid_to IS NULL OR valid_to = '')`);

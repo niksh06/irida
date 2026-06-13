@@ -12,6 +12,17 @@ export interface MemoryMcpContext {
   stateDir: string;
 }
 
+/** Tool names registered on csagent-memory (doctor / docs). */
+export const MEMORY_MCP_TOOL_NAMES = [
+  "memory_get",
+  "memory_search",
+  "memory_list",
+  "memory_save",
+  "memory_fact_query",
+  "memory_fact_add",
+  "memory_fact_invalidate",
+] as const;
+
 export function resolveMemoryMcpContext(): MemoryMcpContext {
   const dir = process.env.CSAGENT_MEMORY_DIR?.trim() || process.cwd();
   const stateDir = process.env.CSAGENT_STATE_DIR?.trim() || resolveMemoryRoot(dir);
@@ -32,6 +43,48 @@ async function withStore<T>(
 
 function textResult(text: string) {
   return { content: [{ type: "text" as const, text }] };
+}
+
+export interface MemoryFactInvalidateInput {
+  fact_id?: string;
+  subject?: string;
+  predicate?: string;
+  object?: string;
+}
+
+/** Invalidate by id or by subject/predicate/object scope (I-53). */
+export async function handleMemoryFactInvalidate(
+  ctx: MemoryMcpContext,
+  input: MemoryFactInvalidateInput
+): Promise<string> {
+  const id = input.fact_id?.trim();
+  if (id) {
+    const ok = await withStore(ctx, (s) => s.invalidateFact(id));
+    return ok ? `fact invalidated: ${id}` : `fact not found or already ended: ${id}`;
+  }
+  const subject = input.subject?.trim();
+  if (!subject) return "Provide fact_id or subject.";
+  return withStore(ctx, async (s) => {
+    const facts = await s.queryFacts({
+      subject,
+      predicate: input.predicate,
+      object: input.object,
+      currentOnly: true,
+    });
+    if (facts.length === 0) return "No matching current facts.";
+    let n = 0;
+    for (const f of facts) {
+      if (await s.invalidateFact(f.id)) n++;
+    }
+    const scope = [
+      `subject=${subject}`,
+      input.predicate?.trim() ? `predicate=${input.predicate.trim()}` : "",
+      input.object?.trim() ? `object=${input.object.trim()}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return `invalidated ${n} fact(s) (${scope})`;
+  });
 }
 
 export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext): void {
@@ -164,16 +217,15 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
   server.registerTool(
     "memory_fact_invalidate",
     {
-      description: "Invalidate (close) a temporal fact by id — sets valid_to.",
+      description:
+        "Invalidate (close) temporal facts — by fact_id or by subject/predicate/object scope (sets valid_to).",
       inputSchema: {
-        fact_id: z.string().describe("Fact id from memory_fact_query"),
+        fact_id: z.string().optional().describe("Single fact id from memory_fact_query"),
+        subject: z.string().optional().describe("Match scope: subject (required if no fact_id)"),
+        predicate: z.string().optional().describe("Optional predicate filter"),
+        object: z.string().optional().describe("Optional object filter"),
       },
     },
-    async ({ fact_id }) => {
-      const ok = await withStore(ctx, (s) => s.invalidateFact(fact_id));
-      return textResult(
-        ok ? `fact invalidated: ${fact_id}` : `fact not found or already ended: ${fact_id}`
-      );
-    }
+    async (args) => textResult(await handleMemoryFactInvalidate(ctx, args))
   );
 }
