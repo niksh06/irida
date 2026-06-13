@@ -22,6 +22,7 @@ import {
   scheduleSlashHelpText,
 } from "./cronScheduleOps.js";
 import { runDelegate } from "./delegateRun.js";
+import { undoLastAction } from "./undoAction.js";
 import type { ChatSession } from "./chatEngine.js";
 
 import {
@@ -190,6 +191,11 @@ export async function handleGatewaySlash(
         return `[delegate]\n${out.summary}`;
       }
       return `Delegate failed: ${out.summary}`;
+    }
+
+    case "undo": {
+      const out = await undoLastAction(ctx.dir);
+      return out.message;
     }
 
     case "schedule": {

@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { writeFileAtomic } from "./util.js";
+import { validateContextFromGraph } from "./cronContextFrom.js";
 import { CronError, parseCronExpression, validateCronExpression, cronMinuteKey } from "./cronSchedule.js";
 
 export const CRON_JOBS_FILE = "cron.jobs.json";
@@ -66,6 +67,8 @@ export interface CronJob {
   gateScript?: string;
   /** Deterministic shell job without SDK (A2): stdout becomes the notify text. */
   script?: string;
+  /** Inject output from another job's context artifact (I-41). */
+  contextFrom?: string;
 }
 
 export interface CronJobsFile {
@@ -190,6 +193,15 @@ function validateJob(raw: unknown, index: number): CronJob {
   }
   if (scriptRaw) job.script = scriptRaw;
   if (builtinRaw) job.builtin = builtinRaw as CronBuiltinHandler;
+  const contextFrom = typeof o.contextFrom === "string" ? o.contextFrom.trim() : "";
+  if (contextFrom) {
+    if (topicDelegates || builtinRaw || scriptRaw) {
+      throw new CronJobsError(
+        `jobs[${index}] contextFrom is exclusive with topicDelegates/builtin/script`
+      );
+    }
+    job.contextFrom = contextFrom;
+  }
   if (o.notify && typeof o.notify === "object" && !Array.isArray(o.notify)) {
     const n = o.notify as Record<string, unknown>;
     const chatId = typeof n.chatId === "string" ? n.chatId.trim() : "";
@@ -226,6 +238,7 @@ export function loadCronJobs(dir: string = process.cwd()): CronJob[] {
     ids.add(job.id);
     jobs.push(job);
   });
+  validateContextFromGraph(jobs);
   return jobs;
 }
 
@@ -364,6 +377,7 @@ function validateJobsForSave(jobs: CronJob[]): CronJob[] {
     ids.add(job.id);
     validated.push(job);
   });
+  validateContextFromGraph(validated);
   return validated;
 }
 

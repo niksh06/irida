@@ -5,6 +5,7 @@ import { loadCronJobs, saveCronJobs, type CronJob } from "./cronJobs.js";
 import { validateCronExpression, formatCronWhen, nextCronRun } from "./cronSchedule.js";
 import { validateCronJobPrompt } from "./cronPromptGuard.js";
 import { CronJobsError } from "./cronJobs.js";
+import { recordCronUserAdd, recordCronUserRemove } from "./actionTranscript.js";
 import {
   loadCronSchedulePending,
   saveCronSchedulePending,
@@ -143,6 +144,7 @@ export function addUserCronJob(
   const job = buildUserCronJob(draft, notify);
   jobs.push(job);
   saveCronJobs(dir, jobs);
+  recordCronUserAdd(dir, job);
   const next = nextCronRun(job.cron);
   return {
     ok: true,
@@ -168,8 +170,10 @@ export function removeUserCronJob(dir: string, jobId: string): { ok: boolean; me
   }
   const idx = jobs.findIndex((j) => j.id === id);
   if (idx < 0) return { ok: false, message: `job '${id}' not found` };
+  const removed = jobs[idx]!;
   jobs.splice(idx, 1);
   saveCronJobs(dir, jobs);
+  recordCronUserRemove(dir, removed);
   return { ok: true, message: `OK: removed job '${id}'` };
 }
 

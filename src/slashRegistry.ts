@@ -38,6 +38,7 @@ export const SLASH_REGISTRY: SlashRegistryEntry[] = [
   { cmd: "status", desc: "Gateway and launchd status", descGateway: "Статус gateway и launchd", surfaces: ["gateway"] },
   { cmd: "approve", desc: "Approve pairing code", descGateway: "Подтвердить pairing-код", args: "<код>", surfaces: ["gateway"] },
   { cmd: "schedule", desc: "Cron schedule ops", descGateway: "Cron: list/add/approve", args: "[subcommand]", surfaces: ["gateway"] },
+  { cmd: "undo", desc: "Undo last reversible mutation", descGateway: "Отменить последнее действие", surfaces: ["tui", "gateway"] },
 ];
 
 export function slashEntriesForSurface(surface: SlashSurface): SlashRegistryEntry[] {

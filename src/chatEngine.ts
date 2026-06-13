@@ -26,7 +26,8 @@ import {
 } from "./sessionChannel.js";
 import { loadGatewayPeers } from "./gatewayPeers.js";
 import { safetyGate, type Confirmer } from "./safety.js";
-import { loadSkills, SkillError, type Skill } from "./skills.js";
+import { loadSkills, scanSkillThreat, SkillError, type Skill } from "./skills.js";
+import { runPreTurnHook, runPostTurnHook } from "./turnHooks.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
 import { sessionStartMemoryBlocks } from "./memory.js";
 import { autoRagMemoryBlocks } from "./autoRag.js";
@@ -168,7 +169,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   let skills: Skill[] = [];
   if (opts.skills?.length) {
     try {
-      skills = loadSkills(dir, cfg.skillsPath, opts.skills);
+      skills = loadSkills(dir, cfg.skillsPath, opts.skills, {
+        allowUnsafe: cfg.skillPolicy?.allowUnsafe,
+      });
     } catch (e) {
       return {
         ok: false,
@@ -304,6 +307,22 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       }
       // Profile/skills/onStart apply once per session — consume before gate so blocked first turns do not re-inject.
       firstTurn = false;
+
+      const hookEnv = {
+        prompt: msg,
+        sessionId,
+        channel: sessionChannel,
+        cwd: sessionCwd,
+      };
+      if (cfg.hooks?.preTurn) {
+        const pre = runPreTurnHook(cfg.hooks.preTurn, hookEnv);
+        if (!pre.allowed) {
+          return { kind: "blocked", reason: pre.reason ?? "preTurn hook denied" };
+        }
+        if (pre.appendStdout) {
+          sendMsg = `${sendMsg}\n\n[hook:preTurn]\n${pre.appendStdout}`;
+        }
+      }
 
       // Gate the composed prompt (message + expanded @file/@memory refs), not
       // the replay transcript — history was already gated when first sent.
@@ -511,6 +530,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           }
           log(`[chat] sendTurn ok status=${lastStatus} assistantChars=${turnText.length}`);
           lastAgentTouchAt = Date.now();
+          if (cfg.hooks?.postTurn) {
+            runPostTurnHook(cfg.hooks.postTurn, hookEnv, log);
+          }
           return { kind: "ok", status: lastStatus, assistantText: turnText, stats };
         } catch (e) {
           const formatted = formatSdkError(e);

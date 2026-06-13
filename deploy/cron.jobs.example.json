@@ -90,6 +90,23 @@
         "chatId": "YOUR_CHAT_ID",
         "telegram": true
       }
+    },
+    {
+      "id": "pipeline-source",
+      "cron": "0 7 * * *",
+      "enabled": false,
+      "script": "deploy/scripts/pipeline-echo.sh"
+    },
+    {
+      "id": "pipeline-synth",
+      "cron": "5 7 * * *",
+      "enabled": false,
+      "contextFrom": "pipeline-source",
+      "promptFile": "deploy/prompts/pipeline-synth.prompt.txt",
+      "notify": {
+        "chatId": "YOUR_CHAT_ID",
+        "telegram": true
+      }
     }
   ]
 }

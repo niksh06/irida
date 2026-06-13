@@ -16,6 +16,7 @@ import {
 } from "./memoryAudit.js";
 import { parseOlderThanDays, pruneSeenPostFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
 import { EXIT, type ExitCode } from "./exit.js";
+import { recordMemoryDelete } from "./actionTranscript.js";
 
 export interface MemoryCmdOptions {
   dir?: string;
@@ -146,8 +147,17 @@ export async function cmdMemoryRm(name: string, opts: MemoryCmdOptions = {}): Pr
     return EXIT.usage;
   }
   try {
+    const note = await withStore(dir, (s) => s.getNote(name));
     const removed = await withStore(dir, (s) => s.deleteNote(name));
     const fileRemoved = deleteMemory(dir, name);
+    if (removed && note) {
+      recordMemoryDelete(dir, {
+        name: note.name,
+        wing: note.wing,
+        body: note.body,
+        title: note.title,
+      });
+    }
     if (removed || fileRemoved) console.log(`memory: removed ${name}`);
     else console.log(`memory: not found: ${name}`);
     return EXIT.ok;

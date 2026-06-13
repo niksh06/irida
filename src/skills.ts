@@ -6,6 +6,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, basename } from "node:path";
 
+import { scanThreatPatterns } from "./promptThreatScan.js";
+
 export interface Skill {
   name: string;
   description: string;
@@ -141,7 +143,17 @@ export function suggestSkillNames(all: Skill[], want: string, max = 3): string[]
     .map((x) => x.name);
 }
 
-export function loadSkill(dir: string, skillsPath: string, name: string): Skill {
+export function scanSkillThreat(skill: Skill, allowUnsafe: string[] = []): string[] {
+  if (allowUnsafe.some((a) => a.toLowerCase() === skill.name.toLowerCase())) return [];
+  return scanThreatPatterns(skill.content);
+}
+
+export function loadSkill(
+  dir: string,
+  skillsPath: string,
+  name: string,
+  opts?: { allowUnsafe?: string[] }
+): Skill {
   const all = listSkills(dir, skillsPath);
   const want = name.trim().toLowerCase();
   const hit = all.find((s) => s.name.toLowerCase() === want);
@@ -151,11 +163,20 @@ export function loadSkill(dir: string, skillsPath: string, name: string): Skill 
     const didYouMean = hints.length ? ` Did you mean: ${hints.join(", ")}?` : "";
     throw new SkillError(`skill '${name}' not found. Available: ${avail}.${didYouMean}`);
   }
+  const hits = scanSkillThreat(hit, opts?.allowUnsafe ?? []);
+  if (hits.length) {
+    throw new SkillError(`skill '${name}' failed threat scan`);
+  }
   return hit;
 }
 
-export function loadSkills(dir: string, skillsPath: string, names: string[]): Skill[] {
-  return names.map((n) => loadSkill(dir, skillsPath, n));
+export function loadSkills(
+  dir: string,
+  skillsPath: string,
+  names: string[],
+  opts?: { allowUnsafe?: string[] }
+): Skill[] {
+  return names.map((n) => loadSkill(dir, skillsPath, n, opts));
 }
 
 export function skillExists(dir: string, skillsPath: string, name: string): boolean {

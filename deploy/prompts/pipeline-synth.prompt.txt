@@ -1,0 +1,6 @@
+Summarize the upstream pipeline output for Telegram (Russian, ≤500 chars).
+
+Upstream:
+{{context_from}}
+
+Output ONLY the summary paragraph.

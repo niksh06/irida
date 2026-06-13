@@ -20,6 +20,7 @@ import { cmdMemory } from "./memory_cmd.js";
 import { cmdCron } from "./cron_cmd.js";
 import { cmdGateway } from "./gateway_cmd.js";
 import { cmdStore } from "./store_cmd.js";
+import { cmdEval } from "./eval_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -113,6 +114,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdCron(rest);
     case "gateway":
       return cmdGateway(rest);
+    case "eval":
+      return cmdEval(rest);
     case undefined:
     case "-h":
     case "--help":

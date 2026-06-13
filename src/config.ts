@@ -46,6 +46,21 @@ export interface PreTurnConfig {
   modeEnv?: string;
 }
 
+/** Optional hook script (I-47). */
+export interface HookScriptConfig {
+  command: string;
+  timeoutMs?: number;
+}
+
+export interface HooksConfig {
+  preTurn?: HookScriptConfig;
+  postTurn?: HookScriptConfig;
+}
+
+export interface SkillPolicyConfig {
+  allowUnsafe?: string[];
+}
+
 /** Durable memory injected before the first turn of each chat session (issue 036). */
 export interface MemoryConfig {
   /** Optional: inject named notes on first turn only (prefer MCP tools). */
@@ -86,6 +101,8 @@ export interface AgentConfig {
   safety: SafetyConfig;
   memory: MemoryConfig;
   browser: BrowserConfig;
+  hooks?: HooksConfig;
+  skillPolicy?: SkillPolicyConfig;
 }
 
 export class ConfigError extends Error {}
@@ -351,6 +368,46 @@ function validate(obj: unknown, dir: string): AgentConfig {
         throw new ConfigError("browser.chromePath must be a non-empty string");
       }
       cfg.browser.chromePath = b.chromePath.trim();
+    }
+  }
+  if (o.hooks !== undefined) {
+    if (typeof o.hooks !== "object" || o.hooks === null || Array.isArray(o.hooks)) {
+      throw new ConfigError("hooks must be an object");
+    }
+    const h = o.hooks as Record<string, unknown>;
+    const hooks: HooksConfig = {};
+    for (const key of ["preTurn", "postTurn"] as const) {
+      const raw = h[key];
+      if (raw === undefined) continue;
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        throw new ConfigError(`hooks.${key} must be an object`);
+      }
+      const hook = raw as Record<string, unknown>;
+      const command = typeof hook.command === "string" ? hook.command.trim() : "";
+      if (!command) throw new ConfigError(`hooks.${key}.command must be a non-empty string`);
+      const parsed: HookScriptConfig = { command };
+      if (hook.timeoutMs !== undefined) {
+        if (typeof hook.timeoutMs !== "number" || hook.timeoutMs < 100) {
+          throw new ConfigError(`hooks.${key}.timeoutMs must be a number >= 100`);
+        }
+        parsed.timeoutMs = hook.timeoutMs;
+      }
+      hooks[key] = parsed;
+    }
+    cfg.hooks = hooks;
+  }
+  if (o.skillPolicy !== undefined) {
+    if (typeof o.skillPolicy !== "object" || o.skillPolicy === null || Array.isArray(o.skillPolicy)) {
+      throw new ConfigError("skillPolicy must be an object");
+    }
+    const sp = o.skillPolicy as Record<string, unknown>;
+    if (sp.allowUnsafe !== undefined) {
+      if (!Array.isArray(sp.allowUnsafe) || !sp.allowUnsafe.every((x) => typeof x === "string")) {
+        throw new ConfigError("skillPolicy.allowUnsafe must be an array of strings");
+      }
+      cfg.skillPolicy = {
+        allowUnsafe: sp.allowUnsafe.map((x) => x.trim()).filter(Boolean),
+      };
     }
   }
   return cfg;

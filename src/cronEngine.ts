@@ -29,6 +29,11 @@ import { exportRecentSessions } from "./sessionExport.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
 import { resolveCronScriptPath, runCronGate, runCronScript } from "./cronScript.js";
 import {
+  applyContextFromPlaceholder,
+  orderJobsForContextPipeline,
+  resolveContextFromOutput,
+} from "./cronContextFrom.js";
+import {
   saveCronJobResult,
   type CronExecuteResult,
   type CronTopicSummary,
@@ -46,7 +51,9 @@ export interface CronExecuteOptions {
 export type { CronExecuteResult, CronTopicSummary } from "./cronRunRecord.js";
 
 async function resolveCronPrompt(job: CronJob, dir: string): Promise<string> {
-  const text = loadCronJobPromptText(job, dir);
+  let text = loadCronJobPromptText(job, dir);
+  const ctx = resolveContextFromOutput(job, dir);
+  text = applyContextFromPlaceholder(text, ctx.output);
   let body = `[cron:${job.id}] ${text}`;
   if (job.memoryFactsSubject === "seen_post") {
     const block = await buildSeenPostsPromptSection(dir, { limit: job.memoryFactsLimit ?? 80 });
@@ -351,6 +358,7 @@ async function cronTickLocked(
   const state = loadCronState(dir);
   const result: CronTickResult = { ran: [], skipped: [], errors: [] };
 
+  const dueEntries: Array<{ job: CronJob; dueAt: Date }> = [];
   for (const job of jobs) {
     const dueAt = findDueCronMinute(job, at, state);
     if (!opts.force) {
@@ -358,14 +366,45 @@ async function cronTickLocked(
         result.skipped.push(job.id);
         continue;
       }
+      dueEntries.push({ job, dueAt });
     } else if (job.enabled === false) {
+      result.skipped.push(job.id);
+    } else {
+      dueEntries.push({ job, dueAt: dueAt ?? at });
+    }
+  }
+
+  const ordered = orderJobsForContextPipeline(dueEntries.map((e) => e.job));
+  const dueById = new Map(dueEntries.map((e) => [e.job.id, e]));
+  const dueIds = new Set(dueEntries.map((e) => e.job.id));
+  const failedDueThisTick = new Set<string>();
+
+  for (const job of ordered) {
+    const entry = dueById.get(job.id);
+    if (!entry) continue;
+    const { dueAt } = entry;
+    const slot = dueAt;
+
+    const upstream = job.contextFrom?.trim();
+    if (upstream && dueIds.has(upstream) && failedDueThisTick.has(upstream)) {
+      console.error(`[cron] job=${job.id} skipped — upstream '${upstream}' failed this tick`);
+      state.lastRun[job.id] = cronMinuteKey(at);
+      saveCronState(dir, state);
+      saveCronJobResult(
+        dir,
+        job.id,
+        {
+          ok: false,
+          exitCode: EXIT.software,
+          message: `skipped — upstream '${upstream}' failed this tick`,
+          durationMs: 0,
+        },
+        slot
+      );
       result.skipped.push(job.id);
       continue;
     }
 
-    const slot = dueAt ?? at;
-    // Wake-gate (A1): cheap pre-check may skip the SDK entirely. The slot is
-    // still claimed — "nothing new" consumes the slot, it does not retry.
     const gate = runCronGate(job, dir);
     if (!gate.wake) {
       console.error(`[cron] job=${job.id} gated (skip): ${gate.reason}`);
@@ -382,9 +421,6 @@ async function cronTickLocked(
     }
 
     console.error(`[cron] running job=${job.id} slot=${cronMinuteKey(slot)}`);
-    // Claim before executing: long jobs (topic digests run for minutes) must not
-    // be double-fired by an overlapping tick reading stale state. Claiming the
-    // tick minute (not the slot) collapses a missed-slot backlog into one run.
     state.lastRun[job.id] = cronMinuteKey(at);
     saveCronState(dir, state);
     try {
@@ -395,10 +431,12 @@ async function cronTickLocked(
         result.ran.push(job.id);
         console.error(`[cron] job=${job.id} ok`);
       } else {
+        failedDueThisTick.add(job.id);
         result.errors.push({ id: job.id, message: exec.message });
         console.error(`[cron] job=${job.id} failed: ${exec.message}`);
       }
     } catch (e) {
+      failedDueThisTick.add(job.id);
       const message = e instanceof Error ? e.message : String(e);
       result.errors.push({ id: job.id, message });
       console.error(`[cron] job=${job.id} error: ${message}`);

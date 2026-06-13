@@ -6,23 +6,10 @@ import { loadCronJobs } from "./cronJobs.js";
 import { loadCronJobPromptText } from "./cronPrompt.js";
 import type { CronJob } from "./cronJobs.js";
 
-const DENY_PATTERNS: RegExp[] = [
-  /ignore\s+(all\s+)?(previous|prior|above)\s+instructions/i,
-  /disregard\s+(your\s+)?(system|safety|rules)/i,
-  /you\s+are\s+now\s+(in\s+)?(developer|admin|root)\s+mode/i,
-  /\bDAN\b.*\bmode\b/i,
-  /reveal\s+(your\s+)?(system\s+)?prompt/i,
-  /print\s+(the\s+)?(full\s+)?system\s+prompt/i,
-  /<\s*script\b/i,
-  /\{\{\s*system\s*\}\}/i,
-];
+import { scanThreatPatterns } from "./promptThreatScan.js";
 
 export function scanPromptText(text: string): string[] {
-  const hits: string[] = [];
-  for (const re of DENY_PATTERNS) {
-    if (re.test(text)) hits.push(re.source);
-  }
-  return hits;
+  return scanThreatPatterns(text);
 }
 
 export function validateCronJobPrompt(job: CronJob, dir: string): string[] {

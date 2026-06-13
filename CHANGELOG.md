@@ -23,6 +23,11 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - **autoRag conservative pilot** (I-55) — `deploy/agent.config.example.json` reference config; `CSAGENT_LOG=1` one-line `autoRag hits=N chars=M notes=…`; doctor warns on `meta` wing; pilot runbook in `deploy/PERSONAL-OPS.md` (prod stays `enabled: false` until sign-off)
 - **Digest length policy** (I-60) — synthesizer prompt targets ≤3500 chars + TL;DR first; `cron qa` WARN tier for 3501–12000 (FAIL unchanged at >12k)
 - **Cron context artifacts** (I-40, Wave C1a) — successful runs with output write `.agent/cron.context/{jobId}.json` (redacted, 256 KiB cap); foundation for `contextFrom` (I-41)
+- **Cron contextFrom pipeline** (I-41, I-42) — job field `contextFrom` + `{{context_from}}` in prompts; tick topological order; skip downstream when upstream fails; example `pipeline-source` / `pipeline-synth` in `deploy/cron.jobs.example.json`
+- **Action transcript + `/undo`** (I-44, I-45) — append-only `.agent/action.transcript.jsonl` for reversible memory delete and cron user-remove; `/undo` in TUI + Telegram
+- **Skill threat scan** (I-46) — shared `promptThreatScan` patterns on skill load; doctor row `skills threat scan`
+- **Turn hooks** (I-47) — optional `hooks.preTurn` / `hooks.postTurn` script config; preTurn exit 2 denies turn; stdout appended (4 KiB cap)
+- **Eval battery** (I-49) — `eval/manifest.json` + `csagent eval run`; verify scripts without live SDK in CI
 - **Cron:** double-fire race (slot claimed before run), atomic state/jobs writes, vixie `*/N` anchor for dom/month, DOM-or-DOW semantics, oldest-missed-slot catch-up, per-job `graceMinutes` (daily digest after sleep), cross-process tick lock, webhook notify HTTP status check
 - **Chat engine:** dead agent handle after failed rotation (+ next-turn recovery), idle refresh no longer consumes error-retry budget or re-fires, failed attempts recorded, partial output surfaced on exception, replay prefix no longer duplicated
 - **Telegram gateway:** per-chat queues (one slow turn no longer blocks other chats), reply delivery retry, drain on stop before closing sessions, generic error text to chat (details in log), `uncaughtException` exits for launchd restart

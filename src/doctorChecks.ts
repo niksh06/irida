@@ -29,7 +29,7 @@ import { gatherCronContextDirIssue } from "./cronContextArtifact.js";
 import { loadGatewayConfig, validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
 import { gatherCronPromptGuardIssues } from "./cronPromptGuard.js";
-import { skillExists } from "./skills.js";
+import { listSkills, loadSkill, scanSkillThreat, skillExists } from "./skills.js";
 
 export interface DoctorCheck {
   name: string;
@@ -306,6 +306,27 @@ function gatherGatewaySkillsChecks(dir: string): DoctorCheck[] {
           ? `${gw.skills.join(", ")} present in skills/`
           : `missing: ${missing.join(", ")} (run deploy/setup-home.sh)`,
     });
+    const allowUnsafe = cfg.skillPolicy?.allowUnsafe ?? [];
+    const threatFails: string[] = [];
+    for (const name of gw.skills) {
+      try {
+        const skill = loadSkill(dir, cfg.skillsPath, name, { allowUnsafe });
+        const hits = scanSkillThreat(skill, allowUnsafe);
+        if (hits.length) threatFails.push(name);
+      } catch (e) {
+        threatFails.push(`${name} (${e instanceof Error ? e.message : String(e)})`);
+      }
+    }
+    if (gw.skills.length) {
+      checks.push({
+        name: "skills threat scan",
+        ok: threatFails.length === 0,
+        detail:
+          threatFails.length === 0
+            ? `${gw.skills.length} skill(s) ok`
+            : `FAIL: ${threatFails.join(", ")}`,
+      });
+    }
   } catch {
     /* gateway parse errors surfaced elsewhere */
   }

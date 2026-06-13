@@ -26,6 +26,7 @@ import { formatTranscriptMarkdown, resolveExportPath, writeTranscriptExport, Exp
 import { listMcpEntries } from "./mcpView.js";
 import { lastAssistantText, osc52Copy } from "./clipboard.js";
 import { runDelegate } from "../delegateRun.js";
+import { undoLastAction } from "../undoAction.js";
 import { parseSlash } from "./slash.js";
 import { commonSlashPrefix, filterSlashSuggestions } from "./slashCatalog.js";
 import {
@@ -755,6 +756,11 @@ export function App(props: TuiOptions) {
           }
           setBusy(false);
           return;
+        case "undo": {
+          const out = await undoLastAction(dir);
+          pushMessage({ role: out.ok ? "system" : "error", text: out.message });
+          return;
+        }
         case "unknown":
           pushMessage({ role: "error", text: `Unknown command: /${slash.command}` });
           return;

@@ -30,6 +30,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
     "accept": "tsx --test test/acceptance.test.ts",
+    "eval": "tsx src/cli.ts eval run",
     "smoke": "bash scripts/smoke.sh"
   },
   "engines": {
