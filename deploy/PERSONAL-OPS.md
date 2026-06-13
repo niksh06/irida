@@ -9,6 +9,10 @@
 | TParser daily digest | `59 23 * * *` | `~/.csagent/.agent/cron.jobs.json` → `tparser-daily-digest` |
 | cron-tick | каждые 300s | launchd `ai.csagent.cron-tick` |
 | gateway | always | launchd `ai.csagent.gateway` |
+| session-ingest | `5 0 * * *` | builtin → episodic memory notes (Wave B) |
+| introspection | `0 6 * * 1` | weekly proposal note via `introspection-ops` skill |
+
+**Wave B (memory loop):** nightly `session-ingest` → wing `episodic`; gateway `memory.autoRag` injects top-3 hits per turn (enable in `CSAGENT_ROOT/agent.config.json`). First backfill: `csagent memory ingest-sessions --window-hours 168`.
 
 После digest в Telegram приходят **два** сообщения:
 
