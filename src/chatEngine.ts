@@ -29,6 +29,7 @@ import { safetyGate, type Confirmer } from "./safety.js";
 import { loadSkills, SkillError, type Skill } from "./skills.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
 import { sessionStartMemoryBlocks } from "./memory.js";
+import { autoRagMemoryBlocks } from "./autoRag.js";
 import { connectAgentForSession, replayPreamble, type ConnectMode } from "./sessionConnect.js";
 import { resolveMcpServers } from "./mcpServers.js";
 import { redact } from "./redact.js";
@@ -277,12 +278,14 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       try {
         const sessionMemoryBlocks =
           firstTurn ? await sessionStartMemoryBlocks(dir, cfg) : [];
+        const autoRagBlocks = await autoRagMemoryBlocks(dir, msg, cfg);
         sendMsg = await composePrompt({
           userPrompt: msg,
           cwd: sessionCwd,
           dir,
           skills: firstTurn ? skills : [],
           sessionMemoryBlocks,
+          autoRagBlocks,
         });
       } catch (e) {
         if (e instanceof ContextRefError) return { kind: "error", message: e.message, fatal: false };

@@ -64,6 +64,23 @@
       "builtin": "session-export"
     },
     {
+      "id": "session-ingest-daily",
+      "cron": "30 23 * * *",
+      "enabled": false,
+      "builtin": "session-ingest"
+    },
+    {
+      "id": "introspection-weekly",
+      "cron": "0 6 * * 1",
+      "enabled": false,
+      "skills": ["memory-ops", "introspection-ops"],
+      "promptFile": "deploy/prompts/introspection-weekly.prompt.txt",
+      "notify": {
+        "chatId": "YOUR_CHAT_ID",
+        "telegram": true
+      }
+    },
+    {
       "id": "watchdog",
       "cron": "*/30 * * * *",
       "enabled": false,

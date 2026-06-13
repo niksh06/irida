@@ -118,6 +118,28 @@ csagent memory reindex-embeddings     # backfill notes saved before enabling
 
 MCP: `memory_search` accepts `semantic: true` (falls back to keyword FTS when no vectors match). Requires `ollama pull nomic-embed-text` and the Postgres store.
 
+### Episodic memory (session ingest, P3-2)
+
+Recent chat sessions are upserted as searchable notes in wing **`episodic`** (`ep.<sessionId>`). Idempotent: re-ingests only when `session.updated_at` is newer than the note.
+
+```bash
+csagent memory ingest-sessions              # last 7 days (default)
+csagent memory ingest-sessions --window-hours 48 --force
+```
+
+Cron builtin: `"builtin": "session-ingest"` (example: nightly after `session-export`). Episodic notes are for MCP/`memory_search` — not bulk `@memory:*` injection.
+
+### Auto-RAG (optional)
+
+When enabled, each turn silently runs memory search on the user message and prepends top hits (before skills). Default off — MCP-first.
+
+```json
+"memory": {
+  "mcp": true,
+  "autoRag": { "enabled": true, "limit": 3, "semantic": true, "wings": ["default", "episodic"] }
+}
+```
+
 ## Cron (scheduled jobs)
 
 `.agent/cron.jobs.json` (five-field cron, **local time**, Vixie semantics: dom OR dow when both restricted). Examples: `deploy/cron.jobs.example.json`.
@@ -171,7 +193,7 @@ Job extras:
 - `"catchUp": "skip"` — drop stale slots instead of catching up (briefings that must not arrive late). Default `"once"`.
 - `"gateScript": "path.sh"` — cheap pre-check before waking the SDK: last stdout line `{"wakeAgent": false, "reason": "…"}` skips the run entirely (no tokens, no notify; slot is consumed). Fail-open: gate errors never block the job. Manual `cron run` bypasses the gate.
 - `"script": "path.sh"` — deterministic shell job with **no SDK at all**: non-empty stdout → notify text; empty stdout → silent success; non-zero exit → failed with stderr. Example: `deploy/scripts/csagent-watchdog.sh` (gateway/outbox/cron health, zero tokens).
-- Builtins: `"builtin": "memory-audit"` (notes/facts/silo QA + seen_post TTL prune), `"builtin": "session-export"` (daily transcripts → `Reports/sessions/YYYY-MM-DD/`).
+- Builtins: `"builtin": "memory-audit"` (notes/facts/silo QA + seen_post TTL prune), `"builtin": "session-export"` (daily transcripts → `Reports/sessions/YYYY-MM-DD/`), `"builtin": "session-ingest"` (sessions → episodic memory notes).
 - Tick takes a cross-process lock (`cron.tick.lock`) — overlapping ticks skip instead of double-firing.
 - Optional `sessionId` binds to an existing `sess_`. Destructive prompts denied unless `"yesIUnderstand": true`. Doctor checks the **cron prompt guard** (injection patterns).
 

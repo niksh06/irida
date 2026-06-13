@@ -22,6 +22,20 @@ export interface EmbeddingsConfig {
   model?: string;
 }
 
+/** Silent top-k memory retrieval before each turn (Wave B auto-RAG). */
+export interface AutoRagConfig {
+  /** When true, search memory for the user message and prepend top hits. */
+  enabled?: boolean;
+  /** Max notes to inject (default 3, max 10). */
+  limit?: number;
+  /** Prefer semantic search when embeddings are enabled (FTS fallback). */
+  semantic?: boolean;
+  /** Total chars cap for injected note bodies (default 12 KiB). */
+  maxChars?: number;
+  /** Restrict to these wings (default: all except secure). */
+  wings?: string[];
+}
+
 /** Durable memory injected before the first turn of each chat session (issue 036). */
 export interface MemoryConfig {
   /** Optional: inject named notes on first turn only (prefer MCP tools). */
@@ -32,6 +46,8 @@ export interface MemoryConfig {
   mcp?: boolean;
   /** Local embeddings for semantic search (Postgres + pgvector only). */
   embeddings?: EmbeddingsConfig;
+  /** Silent memory_search before each turn — inject top matching notes. */
+  autoRag?: AutoRagConfig;
 }
 
 /** Stealth browser MCP (puppeteer-extra + persistent Chromium profile). */
@@ -229,6 +245,42 @@ function validate(obj: unknown, dir: string): AgentConfig {
         emb.model = e.model.trim();
       }
       cfg.memory.embeddings = emb;
+    }
+    if (m.autoRag !== undefined) {
+      if (typeof m.autoRag !== "object" || m.autoRag === null || Array.isArray(m.autoRag)) {
+        throw new ConfigError("memory.autoRag must be an object");
+      }
+      const a = m.autoRag as Record<string, unknown>;
+      const autoRag: AutoRagConfig = {};
+      if (a.enabled !== undefined) {
+        if (typeof a.enabled !== "boolean") throw new ConfigError("memory.autoRag.enabled must be a boolean");
+        autoRag.enabled = a.enabled;
+      }
+      if (a.limit !== undefined) {
+        if (typeof a.limit !== "number" || a.limit < 1) {
+          throw new ConfigError("memory.autoRag.limit must be a number >= 1");
+        }
+        autoRag.limit = a.limit;
+      }
+      if (a.semantic !== undefined) {
+        if (typeof a.semantic !== "boolean") {
+          throw new ConfigError("memory.autoRag.semantic must be a boolean");
+        }
+        autoRag.semantic = a.semantic;
+      }
+      if (a.maxChars !== undefined) {
+        if (typeof a.maxChars !== "number" || a.maxChars < 512) {
+          throw new ConfigError("memory.autoRag.maxChars must be a number >= 512");
+        }
+        autoRag.maxChars = a.maxChars;
+      }
+      if (a.wings !== undefined) {
+        if (!Array.isArray(a.wings) || !a.wings.every((w) => typeof w === "string")) {
+          throw new ConfigError("memory.autoRag.wings must be an array of strings");
+        }
+        autoRag.wings = a.wings.map((w) => w.trim()).filter(Boolean);
+      }
+      cfg.memory.autoRag = autoRag;
     }
   }
   if (o.browser !== undefined) {

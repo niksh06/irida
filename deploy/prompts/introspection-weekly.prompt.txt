@@ -1,0 +1,9 @@
+[cron:introspection-weekly]
+
+Weekly csagent introspection (Wave B1). Follow skill introspection-ops.
+
+1. Read `<stateDir>/logs/runs.jsonl` — last 7 days of runs (jq-friendly JSONL: status, error_kind, duration_ms).
+2. memory_search episodic wing + keyword search for failures, cron, gateway, digest.
+3. Write one proposal note `introspection-YYYY-MM-DD` via memory_save (Summary, Failures, Friction, Suggested notes, Suggested issues).
+
+No code changes, no cron edits, no git. Proposals only.

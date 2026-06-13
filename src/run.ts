@@ -12,6 +12,7 @@ import { loadSkills, SkillError } from "./skills.js";
 import { resolveMcpServers } from "./mcpServers.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
 import { sessionStartMemoryBlocks } from "./memory.js";
+import { autoRagMemoryBlocks } from "./autoRag.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -70,6 +71,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
   try {
     const skills = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
     const sessionMemoryBlocks = await sessionStartMemoryBlocks(dir, cfg);
+    const autoRagBlocks = await autoRagMemoryBlocks(dir, prompt, cfg);
     mcpServers = resolveMcpServers(cfg, dir);
     finalPrompt = await composePrompt({
       userPrompt: prompt,
@@ -77,6 +79,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       dir,
       skills,
       sessionMemoryBlocks,
+      autoRagBlocks,
     });
   } catch (e) {
     if (e instanceof ContextRefError || e instanceof MemoryError || e instanceof SkillError) {
