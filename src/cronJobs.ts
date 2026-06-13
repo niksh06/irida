@@ -10,7 +10,7 @@ import { CronError, parseCronExpression, validateCronExpression, cronMinuteKey }
 export const CRON_JOBS_FILE = "cron.jobs.json";
 export const CRON_STATE_FILE = "cron.state.json";
 
-export const CRON_BUILTIN_HANDLERS = ["memory-audit", "session-export"] as const;
+export const CRON_BUILTIN_HANDLERS = ["memory-audit", "session-export", "session-ingest"] as const;
 export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
 
 export interface CronJobNotify {

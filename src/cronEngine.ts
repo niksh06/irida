@@ -26,6 +26,7 @@ import { scanPromptText, validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
 import { exportRecentSessions } from "./sessionExport.js";
+import { ingestRecentSessions } from "./sessionIngest.js";
 import { resolveCronScriptPath, runCronGate, runCronScript } from "./cronScript.js";
 import {
   saveCronJobResult,
@@ -124,6 +125,23 @@ export async function executeCronJob(
         ok: false,
         exitCode: EXIT.software,
         message: `session-export failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "session-ingest") {
+    try {
+      const out = await ingestRecentSessions(configDir);
+      const total = out.ingested + out.updated;
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `session-ingest: ${total} note(s) (${out.ingested} new, ${out.updated} updated, ${out.skipped} skipped)`,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `session-ingest failed: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }

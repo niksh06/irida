@@ -7,6 +7,7 @@ import { importHappyinKb } from "./importHappyinKb.js";
 import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from "./memory.js";
 import { alignMemorySilos } from "./memorySiloOps.js";
 import { createMemoryStore, SECURE_WING } from "./memoryStore.js";
+import { ingestRecentSessions } from "./sessionIngest.js";
 import {
   evaluateMemoryAudit,
   formatMemoryAuditReport,
@@ -396,6 +397,39 @@ export async function cmdMemoryReindexEmbeddings(opts: MemoryCmdOptions = {}): P
   }
 }
 
+export async function cmdMemoryIngestSessions(
+  argv: string[],
+  opts: MemoryCmdOptions = {}
+): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  let windowHours = 168;
+  let force = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--force") force = true;
+    else if (a === "--window-hours" && argv[i + 1]) {
+      windowHours = Number(argv[++i]);
+    }
+  }
+  if (!Number.isFinite(windowHours) || windowHours < 1) {
+    console.error("memory ingest-sessions: --window-hours must be a positive number");
+    return EXIT.usage;
+  }
+  try {
+    loadConfig(dir);
+    const out = await ingestRecentSessions(dir, { windowHours, force });
+    const total = out.ingested + out.updated;
+    console.log(
+      `session-ingest: ${total} note(s) (${out.ingested} new, ${out.updated} updated, ${out.skipped} skipped)`
+    );
+    for (const name of out.names) console.log(`  ${name}`);
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory ingest-sessions: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
 export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
   const [sub, name, ...rest] = argv;
   switch (sub) {
@@ -413,6 +447,8 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
     }
     case "reindex-embeddings":
       return cmdMemoryReindexEmbeddings(opts);
+    case "ingest-sessions":
+      return cmdMemoryIngestSessions([name ?? "", ...rest].filter(Boolean), opts);
     case "fact":
       return cmdMemoryFact([name ?? "", ...rest], opts);
     case "audit":
@@ -445,6 +481,8 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory add <name> [--wing W] [--stdin]
   csagent memory search <query> [--semantic]   keyword (FTS) or vector search
   csagent memory reindex-embeddings        embed notes missing a vector (PG)
+  csagent memory ingest-sessions [--window-hours N] [--force]
+                                           ingest recent sessions → episodic notes
   csagent memory rm <name>
   csagent memory import-md --kb-root PATH [--dir CSAGENT_ROOT] [--domains kafka,python] [--dry-run]
   csagent memory align-silo [--dry-run]   merge repo/cron silos → canonical ~/.csagent/.agent/memory
