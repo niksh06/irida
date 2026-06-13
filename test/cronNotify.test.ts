@@ -16,6 +16,16 @@ import { DEFAULT_DIGEST_JOB_ID } from "../src/digestQa.js";
 import { loadOutbox } from "../src/gatewayOutbox.js";
 import type { CronJob } from "../src/cronJobs.js";
 
+/** Text from sendMessage or sendRichMessage request body. */
+function telegramBodyText(body: Record<string, unknown>): string {
+  if (typeof body.text === "string") return body.text;
+  const rm = body.rich_message;
+  if (rm && typeof rm === "object" && rm !== null && "markdown" in rm) {
+    return String((rm as { markdown: unknown }).markdown);
+  }
+  return "";
+}
+
 function topicDigestNotifyDir(): string {
   const dir = mkdtempSync(resolve(tmpdir(), "cron-notify-"));
   mkdirSync(join(dir, ".agent"), { recursive: true });
@@ -150,8 +160,8 @@ test("sendCronJobNotify sends digest post-mortem for topicDelegates", async () =
     dir
   );
   assert.equal(posts.length, 2);
-  assert.match(String(posts[0]!.text), /TParser/);
-  assert.match(String(posts[1]!.text), /post-mortem/);
+  assert.match(telegramBodyText(posts[0]!), /TParser/);
+  assert.match(telegramBodyText(posts[1]!), /post-mortem/);
   globalThis.fetch = prevFetch;
   if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
   else process.env.TELEGRAM_BOT_TOKEN = prevToken;
@@ -202,7 +212,7 @@ test("sendCronJobNotify parks only post-mortem when digest sent but post-mortem 
     sendCalls++;
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (sendCalls === 1) {
-      assert.match(String(body.text), /TParser/);
+      assert.match(telegramBodyText(body), /TParser/);
       return new Response(JSON.stringify({ ok: true, result: {} }));
     }
     throw new Error("network blip");
@@ -309,7 +319,7 @@ test("sendCronJobNotify sends digest via telegram API", async () => {
   );
   assert.equal(posts.length, 1);
   assert.equal(posts[0]!.chat_id, "123456789");
-  assert.match(String(posts[0]!.text), /digest/);
+  assert.match(telegramBodyText(posts[0]!), /digest/);
   globalThis.fetch = prevFetch;
   if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
   else process.env.TELEGRAM_BOT_TOKEN = prevToken;

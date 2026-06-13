@@ -208,6 +208,7 @@ export function writeExampleGatewayConfig(dir: string, partial: Partial<GatewayC
     telegramShowTyping: true,
     telegramShowToolProgress: false,
     telegramToolProgressMode: "new",
+    telegramMessageFormat: "rich",
     ...partial,
   };
   const json: Record<string, unknown> = {
@@ -227,6 +228,7 @@ export function writeExampleGatewayConfig(dir: string, partial: Partial<GatewayC
       showTyping: example.telegramShowTyping,
       showToolProgress: example.telegramShowToolProgress,
       toolProgressMode: example.telegramToolProgressMode,
+      messageFormat: example.telegramMessageFormat,
     };
   }
   writeFileSync(resolve(root, GATEWAY_FILE), JSON.stringify(json, null, 2) + "\n", {

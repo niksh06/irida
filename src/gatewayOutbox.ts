@@ -8,6 +8,8 @@ import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { newId, writeFileAtomic } from "./util.js";
 
+import type { TelegramMessageFormat } from "./telegramFormat.js";
+
 export const OUTBOX_FILE = "gateway.outbox.json";
 export const OUTBOX_MAX_ENTRIES = 100;
 export const OUTBOX_MAX_ATTEMPTS = 20;
@@ -17,12 +19,21 @@ export interface OutboxEntry {
   id: string;
   chatId: string;
   text: string;
-  /** Send with HTML formatting helper (long message path). */
-  html: boolean;
+  /** @deprecated use `format`. Kept for entries written before rich messages. */
+  html?: boolean;
+  /** rich = sendRichMessage markdown; html = sendMessage HTML; plain = no parse_mode. */
+  format?: TelegramMessageFormat;
   createdAt: string;
   attempts: number;
   nextAttemptAt: string;
   lastError?: string;
+}
+
+/** Resolve delivery format for an outbox row (backward compatible with `html`). */
+export function resolveOutboxFormat(entry: OutboxEntry): TelegramMessageFormat {
+  if (entry.format) return entry.format;
+  if (entry.html === true) return "rich";
+  return "plain";
 }
 
 export interface OutboxFile {
@@ -87,14 +98,17 @@ export function mergeOutboxAfterDrain(
 
 export function enqueueOutbox(
   dir: string,
-  input: { chatId: string; text: string; html?: boolean },
+  input: { chatId: string; text: string; html?: boolean; format?: TelegramMessageFormat },
   now: Date = new Date()
 ): OutboxEntry {
+  const format =
+    input.format ?? (input.html === true ? "rich" : input.html === false ? "plain" : "plain");
   const entry: OutboxEntry = {
     id: newId("out"),
     chatId: input.chatId,
     text: input.text,
-    html: input.html ?? false,
+    format,
+    html: format === "rich" || format === "html",
     createdAt: now.toISOString(),
     attempts: 0,
     nextAttemptAt: now.toISOString(),

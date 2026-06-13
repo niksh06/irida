@@ -17,7 +17,7 @@ test("converts bold, code, links", () => {
 
 test("fenced code block becomes pre and is not inline-processed", () => {
   const out = formatTelegramHtml("before\n```bash\nrm -rf **not bold** <tag>\n```\nafter");
-  assert.match(out, /<pre>rm -rf \*\*not bold\*\* &lt;tag&gt;<\/pre>/);
+  assert.match(out, /<pre><code class="language-bash">rm -rf \*\*not bold\*\* &lt;tag&gt;<\/code><\/pre>/);
   assert.doesNotMatch(out, /<b>not bold<\/b>/);
 });
 
@@ -32,4 +32,16 @@ test("telegramHtmlDiffers false for plain text", () => {
   assert.equal(telegramHtmlDiffers(plain, formatTelegramHtml(plain)), false);
   const md = "**bold**";
   assert.equal(telegramHtmlDiffers(md, formatTelegramHtml(md)), true);
+});
+
+test("converts italic, strike, spoiler, blockquote, fenced language", () => {
+  const out = formatTelegramHtml(
+    "*italic* and _also_\n> quoted **bold**\n~~gone~~ ||secret||\n```py\nx = 1\n```"
+  );
+  assert.match(out, /<i>italic<\/i>/);
+  assert.match(out, /<i>also<\/i>/);
+  assert.match(out, /<blockquote>quoted <b>bold<\/b><\/blockquote>/);
+  assert.match(out, /<s>gone<\/s>/);
+  assert.match(out, /<tg-spoiler>secret<\/tg-spoiler>/);
+  assert.match(out, /class="language-py"/);
 });

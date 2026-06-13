@@ -150,7 +150,7 @@ function formatNotifyText(payload: CronNotifyPayload, exec: CronExecuteResult): 
 
 interface TelegramNotifyPart {
   text: string;
-  html: boolean;
+  format: "rich" | "html" | "plain";
 }
 
 /** Park unsent Telegram parts for gateway outbox drain (I-31). */
@@ -164,7 +164,7 @@ function parkTelegramNotifyParts(
   for (let i = fromIndex; i < parts.length; i++) {
     const p = parts[i]!;
     try {
-      enqueueOutbox(dir, { chatId, text: p.text, html: p.html });
+      enqueueOutbox(dir, { chatId, text: p.text, format: p.format });
       parked++;
     } catch {
       /* best-effort */
@@ -206,13 +206,13 @@ export async function sendCronJobNotify(
         return;
       }
       const parts: TelegramNotifyPart[] = [];
-      if (text) parts.push({ text, html: true });
-      if (postMortem) parts.push({ text: postMortem, html: false });
+      if (text) parts.push({ text, format: "rich" });
+      if (postMortem) parts.push({ text: postMortem, format: "plain" });
       let nextIndex = 0;
       try {
         for (; nextIndex < parts.length; nextIndex++) {
           const p = parts[nextIndex]!;
-          await telegramSendLongMessage(token, target.chatId, p.text, fetch, { html: p.html });
+          await telegramSendLongMessage(token, target.chatId, p.text, fetch, { format: p.format });
         }
         await sendDigestQaFollowUp(job, exec, at, dir, target);
       } catch (e) {

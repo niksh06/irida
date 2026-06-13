@@ -3,8 +3,9 @@
   "adapter": "telegram",
   "telegram": {
     "tokenEnv": "TELEGRAM_BOT_TOKEN",
-    "pollIntervalMs": 2000
+    "pollIntervalMs": 2000,
+    "messageFormat": "rich"
   },
   "allowedChatIds": ["YOUR_CHAT_ID"],
-  "skills": ["memory-ops", "browser-ops", "obsidian-ops", "cron-ops"]
+  "skills": ["memory-ops", "browser-ops", "obsidian-ops", "cron-ops", "profile-ops"]
 }

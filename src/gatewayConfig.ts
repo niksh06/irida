@@ -30,6 +30,8 @@ export interface GatewayConfig {
   telegramShowToolProgress: boolean;
   /** "new" = only when tool name changes; "all" = every tool call. */
   telegramToolProgressMode: "new" | "all";
+  /** Outbound formatting: rich (sendRichMessage markdown) | html | plain. */
+  telegramMessageFormat: "rich" | "html" | "plain";
 }
 
 export class GatewayConfigError extends Error {}
@@ -105,6 +107,10 @@ export function loadGatewayConfig(dir: string = process.cwd()): GatewayConfig {
   const toolProgressRaw =
     typeof telegram.toolProgressMode === "string" ? telegram.toolProgressMode.trim() : "new";
   const telegramToolProgressMode = toolProgressRaw === "all" ? "all" : "new";
+  const formatRaw =
+    typeof telegram.messageFormat === "string" ? telegram.messageFormat.trim().toLowerCase() : "rich";
+  const telegramMessageFormat =
+    formatRaw === "html" || formatRaw === "plain" ? formatRaw : "rich";
   const skills = Array.isArray(o.skills)
     ? o.skills.filter((s): s is string => typeof s === "string" && s.trim() !== "").map((s) => s.trim())
     : [];
@@ -124,6 +130,7 @@ export function loadGatewayConfig(dir: string = process.cwd()): GatewayConfig {
     telegramShowTyping,
     telegramShowToolProgress,
     telegramToolProgressMode,
+    telegramMessageFormat,
   };
 }
 

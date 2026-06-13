@@ -208,7 +208,7 @@ curl -X POST http://127.0.0.1:18789/hook \
 {
   "version": 1,
   "adapter": "telegram",
-  "telegram": { "tokenEnv": "TELEGRAM_BOT_TOKEN", "pollIntervalMs": 2000 },
+  "telegram": { "tokenEnv": "TELEGRAM_BOT_TOKEN", "pollIntervalMs": 2000, "messageFormat": "rich" },
   "allowedChatIds": ["YOUR_CHAT_ID"],
   "skills": ["memory-ops", "browser-ops", "obsidian-ops"]
 }
@@ -221,7 +221,7 @@ csagent gateway run --adapter telegram
 
 Each `chatId` → stable `sess_` (visible in `csagent sessions` / TUI). Allowlist required; unknown chats get a **pairing code** (capped, 24h TTL) — admin in allowlist runs `/approve <code>`. Both adapters honor approved pairings.
 
-Delivery: replies render markdown via Telegram HTML parse_mode (plain-text fallback); tool progress is one self-updating message per turn. Failed sends park in `gateway.outbox.json` and drain with backoff — replies and digests survive restarts and network outages. Per-chat queues keep one slow turn from blocking other chats.
+Delivery: agent replies and digests use Bot API **Rich Messages** (`sendRichMessage` + native markdown, default) with fallback to HTML `sendMessage`, then plain text. Set `telegram.messageFormat` to `"html"` or `"plain"` in `gateway.json`. Tool progress stays plain one-liners (self-updating via `editMessageText`). Failed sends park in `gateway.outbox.json` and drain with backoff — replies and digests survive restarts and network outages. Per-chat queues keep one slow turn from blocking other chats.
 
 **Telegram slash commands (csagent catalog, no LLM):**
 
