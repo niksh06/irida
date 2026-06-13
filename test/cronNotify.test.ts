@@ -250,7 +250,7 @@ test("sendCronJobNotify parks only post-mortem when digest sent but post-mortem 
     new Date(),
     dir
   );
-  assert.equal(sendCalls, 2);
+  assert.equal(sendCalls, 3);
   const outbox = loadOutbox(dir);
   assert.equal(outbox.entries.length, 1);
   assert.match(outbox.entries[0]!.text, /post-mortem/);

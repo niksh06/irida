@@ -9,6 +9,12 @@ import {
   loadOutbox,
   mergeOutboxAfterDrain,
   outboxBackoffMs,
+  assessOutboxHealth,
+  formatOutboxStatusDetail,
+  summarizeOutbox,
+  sendOutboxParkAck,
+  OUTBOX_PARK_ACK_TEXT,
+  OUTBOX_STALE_MS,
   resolveOutboxDeliveryFormat,
   saveOutbox,
   OUTBOX_MAX_ATTEMPTS,
@@ -197,4 +203,63 @@ test("enqueue succeeds after outbox clobbered by concurrent writer", () => {
   assert.equal(entries.length, 1);
   assert.equal(entries[0]!.id, second.id);
   assert.equal(entries[0]!.text, "second");
+});
+
+test("assessOutboxHealth empty is ok", () => {
+  const dir = tmp();
+  const h = assessOutboxHealth(dir);
+  assert.equal(h.ok, true);
+  assert.equal(h.detail, "empty");
+});
+
+test("assessOutboxHealth FAIL when oldest pending exceeds stale threshold", () => {
+  const dir = tmp();
+  const now = new Date();
+  saveOutbox(dir, {
+    version: 1,
+    entries: [
+      {
+        id: "out_stale",
+        chatId: "42",
+        text: "stuck",
+        createdAt: new Date(now.getTime() - OUTBOX_STALE_MS - 60_000).toISOString(),
+        attempts: 1,
+        nextAttemptAt: now.toISOString(),
+      },
+    ],
+  });
+  const h = assessOutboxHealth(dir, now);
+  assert.equal(h.ok, false);
+  assert.match(h.detail, /1 pending/);
+  assert.match(h.detail, /oldest 6m/);
+});
+
+test("summarizeOutbox reports next retry delay", () => {
+  const now = new Date();
+  const summary = summarizeOutbox(
+    [
+      {
+        id: "out_1",
+        chatId: "42",
+        text: "x",
+        createdAt: now.toISOString(),
+        attempts: 1,
+        nextAttemptAt: new Date(now.getTime() + 45_000).toISOString(),
+      },
+    ],
+    now
+  );
+  assert.equal(summary.count, 1);
+  assert.equal(summary.stale, false);
+  assert.match(formatOutboxStatusDetail(summary), /next retry ~45s/);
+});
+
+test("sendOutboxParkAck sends ack text once", async () => {
+  const sent: string[] = [];
+  const logs: string[] = [];
+  await sendOutboxParkAck(async (t) => {
+    sent.push(t);
+  }, (l) => logs.push(l), "out_test");
+  assert.deepEqual(sent, [OUTBOX_PARK_ACK_TEXT]);
+  assert.match(logs[0] ?? "", /id=out_test ack sent/);
 });

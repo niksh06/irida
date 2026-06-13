@@ -14,6 +14,11 @@ export const OUTBOX_FILE = "gateway.outbox.json";
 export const OUTBOX_MAX_ENTRIES = 100;
 export const OUTBOX_MAX_ATTEMPTS = 20;
 export const OUTBOX_TTL_MS = 48 * 60 * 60 * 1000;
+/** FAIL `gateway status` outbox row when oldest pending exceeds this (I-50). */
+export const OUTBOX_STALE_MS = 5 * 60 * 1000;
+
+/** Short plain ack when a reply is parked for retry (I-51). */
+export const OUTBOX_PARK_ACK_TEXT = "Ответ готов, доставляю частями…";
 
 export interface OutboxEntry {
   id: string;
@@ -77,6 +82,67 @@ export function saveOutbox(dir: string, data: OutboxFile): void {
   const path = outboxPath(dir);
   mkdirSync(resolve(path, ".."), { recursive: true });
   writeFileAtomic(path, JSON.stringify(data, null, 2) + "\n");
+}
+
+export interface OutboxStatusSummary {
+  count: number;
+  oldestAgeMs: number | null;
+  nextRetryMs: number | null;
+  stale: boolean;
+}
+
+export function summarizeOutbox(entries: OutboxEntry[], now: Date = new Date()): OutboxStatusSummary {
+  if (entries.length === 0) {
+    return { count: 0, oldestAgeMs: null, nextRetryMs: null, stale: false };
+  }
+  const nowMs = now.getTime();
+  let oldestCreated = Number.POSITIVE_INFINITY;
+  let earliestNext = Number.POSITIVE_INFINITY;
+  for (const e of entries) {
+    oldestCreated = Math.min(oldestCreated, Date.parse(e.createdAt));
+    earliestNext = Math.min(earliestNext, Date.parse(e.nextAttemptAt));
+  }
+  const oldestAgeMs = nowMs - oldestCreated;
+  const nextRetryMs = Math.max(0, earliestNext - nowMs);
+  return {
+    count: entries.length,
+    oldestAgeMs,
+    nextRetryMs,
+    stale: oldestAgeMs > OUTBOX_STALE_MS,
+  };
+}
+
+export function formatOutboxStatusDetail(summary: OutboxStatusSummary): string {
+  if (summary.count === 0) return "empty";
+  const ageMin = Math.floor((summary.oldestAgeMs ?? 0) / 60_000);
+  const retryPart =
+    summary.nextRetryMs === 0
+      ? "retry due"
+      : `next retry ~${Math.ceil((summary.nextRetryMs ?? 0) / 1000)}s`;
+  return `${summary.count} pending · oldest ${ageMin}m · ${retryPart}`;
+}
+
+/** Health row for `gateway status` / `/status` (I-50). */
+export function assessOutboxHealth(dir: string, now: Date = new Date()): { ok: boolean; detail: string } {
+  const summary = summarizeOutbox(loadOutbox(dir).entries, now);
+  if (summary.count === 0) return { ok: true, detail: "empty" };
+  return { ok: !summary.stale, detail: formatOutboxStatusDetail(summary) };
+}
+
+/** Best-effort user ack after parking a reply (I-51). */
+export async function sendOutboxParkAck(
+  sendPlain: (text: string) => Promise<void>,
+  log?: (line: string) => void,
+  entryId?: string
+): Promise<void> {
+  const idTag = entryId ? ` id=${entryId}` : "";
+  try {
+    await sendPlain(OUTBOX_PARK_ACK_TEXT);
+    log?.(`[gateway] outbox parked${idTag} ack sent`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    log?.(`[gateway] outbox parked${idTag} ack failed: ${msg}`);
+  }
 }
 
 /** Exponential backoff: 30s, 60s, 2m … capped at 1h. */

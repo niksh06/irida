@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gatherGatewayStatus } from "../src/gatewayStatus.js";
 import { writeExampleGatewayConfig } from "../src/gateway_cmd.js";
+import { enqueueOutbox } from "../src/gatewayOutbox.js";
 
 test("gatherGatewayStatus reports gateway config when present", () => {
   const dir = mkdtempSync(join(tmpdir(), "gwstat-"));
@@ -35,4 +36,14 @@ test("gatherGatewayStatus reads gateway.log for operational health", () => {
   assert.match(health!.detail, /long-poll started|sendTurn ok/);
   if (prev === undefined) delete process.env.CSAGENT_HOME;
   else process.env.CSAGENT_HOME = prev;
+});
+
+test("gatherGatewayStatus reports outbox pending count", () => {
+  const dir = mkdtempSync(join(tmpdir(), "gwstat-outbox-"));
+  writeExampleGatewayConfig(dir);
+  enqueueOutbox(dir, { chatId: "99", text: "pending reply" });
+  const row = gatherGatewayStatus(dir).find((r) => r.name === "outbox");
+  assert.ok(row);
+  assert.equal(row!.ok, true);
+  assert.match(row!.detail, /1 pending/);
 });

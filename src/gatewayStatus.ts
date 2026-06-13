@@ -11,6 +11,7 @@ import { gatherCronContextDirIssue } from "./cronContextArtifact.js";
 import { cronJobsPath, loadCronJobs, loadCronState, validateCronJobsFile } from "./cronJobs.js";
 import { formatCronLastResultSummary } from "./cronRunRecord.js";
 import { formatRunMetrics, loadRunMetrics } from "./runMetrics.js";
+import { assessOutboxHealth } from "./gatewayOutbox.js";
 
 export interface GatewayStatusLine {
   name: string;
@@ -134,6 +135,9 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   if (ctxIssue) {
     rows.push({ name: "cron context dir", ok: false, detail: ctxIssue });
   }
+
+  const outbox = assessOutboxHealth(dir);
+  rows.push({ name: "outbox", ok: outbox.ok, detail: outbox.detail });
 
   const cfg = loadConfig(dir);
   try {

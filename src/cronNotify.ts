@@ -2,8 +2,8 @@
  * Optional cron completion notifications (webhook or direct Telegram).
  */
 import { resolveTelegramBotToken } from "./credentials.js";
-import { telegramSendLongMessage } from "./gatewayTelegram.js";
-import { enqueueOutbox } from "./gatewayOutbox.js";
+import { telegramSendLongMessage, telegramSendMessage } from "./gatewayTelegram.js";
+import { enqueueOutbox, sendOutboxParkAck } from "./gatewayOutbox.js";
 import type { CronJob } from "./cronJobs.js";
 import {
   evaluateDigestQa,
@@ -222,6 +222,10 @@ export async function sendCronJobNotify(
         const parked = parkTelegramNotifyParts(dir, target.chatId, parts, nextIndex);
         if (parked > 0) {
           console.error(`[cron] notify parked in outbox job=${job.id} parts=${parked}`);
+          await sendOutboxParkAck(
+            (ack) => telegramSendMessage(token, target.chatId, ack, fetch),
+            (line) => console.error(line)
+          );
         }
       }
       return;

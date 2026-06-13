@@ -8,7 +8,7 @@ import {
   telegramHtmlDiffers,
   type TelegramMessageFormat,
 } from "./telegramFormat.js";
-import { drainOutbox, enqueueOutbox, resolveOutboxDeliveryFormat } from "./gatewayOutbox.js";
+import { drainOutbox, enqueueOutbox, resolveOutboxDeliveryFormat, sendOutboxParkAck } from "./gatewayOutbox.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { tryRegisterPairing } from "./gatewayPairing.js";
 import { gatewayTelegramBotCommands, isGatewaySlashCommand } from "./gatewaySlash.js";
@@ -580,8 +580,13 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       } catch (e2) {
         const msg2 = e2 instanceof Error ? e2.message : String(e2);
         try {
-          enqueueOutbox(dir, { chatId, text, format: formatted ? format : "plain" });
-          logError(`[gateway] telegram send parked in outbox chat=${chatId}: ${msg2}`);
+          const entry = enqueueOutbox(dir, { chatId, text, format: formatted ? format : "plain" });
+          logError(`[gateway] telegram send parked in outbox chat=${chatId} id=${entry.id}: ${msg2}`);
+          await sendOutboxParkAck(
+            (ack) => telegramSendMessage(token, chatId, ack, fetchFn),
+            logInfo,
+            entry.id
+          );
         } catch (e3) {
           logError(
             `[gateway] telegram reply LOST chat=${chatId}: ${msg2}; outbox failed: ${e3 instanceof Error ? e3.message : String(e3)}; replyPreview=${text.slice(0, 200)}`
