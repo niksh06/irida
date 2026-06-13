@@ -132,17 +132,24 @@ bash ~/.csagent/csagent/deploy/backup-personal.sh
 
 ```bash
 cd "/path/to/csagent-clone"
+npm test && npm run build
 bash deploy/setup-home.sh
-launchctl kickstart -k gui/$(id -u)/ai.csagent.gateway
-launchctl kickstart -k gui/$(id -u)/ai.csagent.cron-tick
+~/.csagent/csagent/scripts/csagent-run.sh doctor          # format секретов + API probe — обязательно
+bash ~/.csagent/csagent/deploy/install-launchd.sh
 bash deploy/prod-check.sh
 ```
+
+Post-mortem деплоя 2026-06-12 (битые секреты в PG, не «стирание» pgcrypto): [Reports/analysis/postmortem-deploy-secrets-2026-06-12.md](../Reports/analysis/postmortem-deploy-secrets-2026-06-12.md).
+
+**Важно:** `setup-home.sh` синхронизирует **код**, не Postgres. Секреты в PG перезаписывает только `auth login`. `doctor` должен показывать `CURSOR_API_KEY format: ok` и `TELEGRAM_BOT_TOKEN format: ok` (длина ~69 и ~46) **до** restart launchd.
 
 ## Когда что-то сломалось
 
 | Симптом | Действие |
 |---------|----------|
 | digest не пришёл | `cron list`, `cron run tparser-daily-digest`, лог `cron-tick.error.log` |
-| `/status` FAIL gateway | `gateway status`, `tail gateway.error.log`, `auth telegram login` |
-| doctor API key | `auth login --stdin` из dev credentials |
+| `/status` FAIL gateway | `gateway status`, `tail gateway.error.log`, `doctor` (format секретов) |
+| poll `Not Found` | битый token в PG → `auth telegram login --from-env` или `--stdin` |
+| turn `ERROR_NOT_LOGGED_IN` | битый Cursor key в PG → `auth login --from-env` или `--stdin` |
+| doctor format FAIL | секрет в PG мусор — пере-save через auth, не трогать `CSAGENT_SECRETS_KEY` без re-encrypt |
 | topics 0/5 в post-mortem | TParser cwd, API, delegate logs в cron-tick |

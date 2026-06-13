@@ -16,7 +16,8 @@ migrate_agent() {
     return 0
   fi
   echo "Migrating runtime from $src → $STATE_DIR"
-  for f in credentials.json gateway.json gateway.peers.json cron.jobs.json cron.state.json state.sqlite; do
+  # Never copy credentials.json — prod secrets live in PG or ~/.csagent/.agent only.
+  for f in gateway.json gateway.peers.json cron.jobs.json cron.state.json state.sqlite; do
     if [[ -f "$src/$f" && ! -f "$STATE_DIR/$f" ]]; then
       cp -p "$src/$f" "$STATE_DIR/"
       echo "  copied $f"
