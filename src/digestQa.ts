@@ -26,6 +26,9 @@ export const DIGEST_MAX_DURATION_MS = 60 * 60_000;
 /** Minimum topic delegates that must succeed. */
 export const DIGEST_MIN_TOPIC_OK = 4;
 
+/** Max digest body size for automated QA (Telegram splits long digests). */
+export const DIGEST_QA_MAX_BODY_CHARS = 12_000;
+
 export interface DigestQaCheck {
   name: string;
   ok: boolean;
@@ -170,7 +173,7 @@ export function evaluateDigestQa(
     );
 
     const len = body.length;
-    const lenOk = empty ? len >= 20 && len <= 500 : len >= 100 && len <= 4500;
+    const lenOk = empty ? len >= 20 && len <= 500 : len >= 100 && len <= DIGEST_QA_MAX_BODY_CHARS;
     checks.push(check("digest length", lenOk, `${len} chars`));
 
     const links = countTmeLinks(body);

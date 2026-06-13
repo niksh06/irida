@@ -29,7 +29,26 @@ migrate_agent() {
   fi
 }
 
-migrate_agent "$SOURCE_ROOT/.agent"
+should_migrate_agent() {
+  local src="$SOURCE_ROOT/.agent"
+  [[ -d "$src" ]] || return 1
+  local src_abs state_abs
+  src_abs="$(cd "$src" && pwd)"
+  state_abs="$(cd "$STATE_DIR" && pwd)"
+  if [[ "$src_abs" == "$state_abs" ]]; then
+    echo "setup-home: skip .agent migrate (source is CSAGENT_HOME/.agent)"
+    return 1
+  fi
+  if [[ -f "$STATE_DIR/cron.jobs.json" || -f "$STATE_DIR/gateway.json" ]]; then
+    echo "setup-home: skip .agent migrate (prod state already exists in $STATE_DIR)"
+    return 1
+  fi
+  return 0
+}
+
+if should_migrate_agent; then
+  migrate_agent "$SOURCE_ROOT/.agent"
+fi
 
 sync_install() {
   if [[ "$SOURCE_ROOT" == "$CSAGENT_ROOT" ]]; then

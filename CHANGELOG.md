@@ -6,7 +6,13 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Fixed (audit 2026-06-10)
 
+- **Digest QA length** — max body check raised to 12k chars (real digests ~8–9k were false morning FAIL)
+- **setup-home** — skip `.agent` migrate when prod state already exists (I-38 follow-up)
 - **Prod cron guard** (I-38) — `saveCronJobs` validates before write, timestamped `.bak` on overwrite, test-run block on `CSAGENT_HOME/.agent`; `gateway status` FAIL on invalid jobs; doctor suggests restore from latest backup; morning launchd `ai.csagent.prod-check-morning` (08:05) + `doctor morning-alert` → Telegram on cron health FAIL
+
+### Added
+
+- **Cron context artifacts** (I-40, Wave C1a) — successful runs with output write `.agent/cron.context/{jobId}.json` (redacted, 256 KiB cap); foundation for `contextFrom` (I-41)
 - **Cron:** double-fire race (slot claimed before run), atomic state/jobs writes, vixie `*/N` anchor for dom/month, DOM-or-DOW semantics, oldest-missed-slot catch-up, per-job `graceMinutes` (daily digest after sleep), cross-process tick lock, webhook notify HTTP status check
 - **Chat engine:** dead agent handle after failed rotation (+ next-turn recovery), idle refresh no longer consumes error-retry budget or re-fires, failed attempts recorded, partial output surfaced on exception, replay prefix no longer duplicated
 - **Telegram gateway:** per-chat queues (one slow turn no longer blocks other chats), reply delivery retry, drain on stop before closing sessions, generic error text to chat (details in log), `uncaughtException` exits for launchd restart

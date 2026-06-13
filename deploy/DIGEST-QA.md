@@ -21,7 +21,7 @@ bash ~/.csagent/csagent/deploy/digest-qa.sh
 | duration | 30s – 60m |
 | topics | ≥ 4/5 delegates ok |
 | digest header | `📬` или `TParser` (или empty-day шаблон) |
-| digest length | 100–4500 chars (или короткий empty-day) |
+| digest length | 100–12000 chars (или короткий empty-day) |
 | tg links | ≥ 1 `t.me/` (кроме empty-day) |
 | topic sections | ≥ 3 заголовков тем в теле |
 
