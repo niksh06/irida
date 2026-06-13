@@ -4,6 +4,8 @@
  */
 import { gatherDoctorChecks, gatherDoctorApiChecks, gatherDoctorStoreChecks, doctorAllOk, type ModelsListFn } from "./doctorChecks.js";
 
+export { cmdDoctorMorningAlert } from "./doctorCronAlert.js";
+
 export async function cmdDoctor(
   dir: string = process.cwd(),
   opts?: { listModels?: ModelsListFn }

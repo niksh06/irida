@@ -58,6 +58,7 @@ bash ~/.csagent/csagent/deploy/install-launchd.sh
 | `ai.csagent.cron-tick` | `csagent cron tick` | every 300s |
 | `ai.csagent.backup-weekly` | `backup-personal.sh` | Sun 05:00 |
 | `ai.csagent.digest-qa-morning` | `digest-qa-morning.sh` | daily 08:00 |
+| `ai.csagent.prod-check-morning` | `prod-check-morning.sh` | daily 08:05 |
 
 Logs: `~/.csagent/logs/{gateway,cron-tick}.{log,error.log}`
 

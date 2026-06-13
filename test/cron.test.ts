@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -105,12 +105,37 @@ test("loadCronJobs validates jobs file", () => {
   assert.equal(jobs[0]!.id, "nightly");
 });
 
-test("loadCronJobs rejects duplicate ids", () => {
+test("saveCronJobs rejects duplicate ids", () => {
   const dir = tmp();
-  writeExampleCronJobs(dir, [
-    { id: "a", cron: "* * * * *", prompt: "one" },
-    { id: "a", cron: "* * * * *", prompt: "two" },
-  ]);
+  assert.throws(
+    () =>
+      writeExampleCronJobs(dir, [
+        { id: "a", cron: "* * * * *", prompt: "one" },
+        { id: "a", cron: "* * * * *", prompt: "two" },
+      ]),
+    CronJobsError
+  );
+  assert.equal(existsSync(join(dir, ".agent", "cron.jobs.json")), false);
+});
+
+test("loadCronJobs rejects duplicate ids in existing file", () => {
+  const dir = tmp();
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  writeFileSync(
+    join(dir, ".agent", "cron.jobs.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        jobs: [
+          { id: "a", cron: "* * * * *", prompt: "one" },
+          { id: "a", cron: "* * * * *", prompt: "two" },
+        ],
+      },
+      null,
+      2
+    ) + "\n",
+    "utf8"
+  );
   assert.throws(() => loadCronJobs(dir), CronJobsError);
 });
 
@@ -363,7 +388,12 @@ test("cmdCronList and cmdCronRun", async () => {
 
 test("doctor validates cron jobs file when present", () => {
   const dir = tmp();
-  writeExampleCronJobs(dir, [{ id: "x", cron: "not valid cron", prompt: "p" }]);
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  writeFileSync(
+    join(dir, ".agent", "cron.jobs.json"),
+    JSON.stringify({ version: 1, jobs: [{ id: "x", cron: "not valid cron", prompt: "p" }] }, null, 2) + "\n",
+    "utf8"
+  );
   const checks = gatherDoctorChecks(dir);
   const cron = checks.find((c) => c.name === "cron jobs");
   assert.ok(cron);

@@ -1,13 +1,14 @@
 /**
  * Cron job definitions under .agent/cron.jobs.json (issue 038).
  */
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { writeFileAtomic } from "./util.js";
 import { CronError, parseCronExpression, validateCronExpression, cronMinuteKey } from "./cronSchedule.js";
 
 export const CRON_JOBS_FILE = "cron.jobs.json";
+export const CRON_JOBS_BACKUP_PREFIX = "cron.jobs.json.bak-";
 export const CRON_STATE_FILE = "cron.state.json";
 
 export const CRON_BUILTIN_HANDLERS = ["memory-audit", "session-export", "session-ingest"] as const;
@@ -311,9 +312,70 @@ export function isJobDue(job: CronJob, at: Date, state: CronStateFile): boolean 
 
 export { jobsPath as cronJobsPath, statePath as cronStatePath };
 
+function isTestRun(): boolean {
+  return (
+    process.env.npm_lifecycle_event === "test" ||
+    process.argv.includes("--test") ||
+    process.execArgv.some((a) => a.includes("test"))
+  );
+}
+
+/** Block writes to CSAGENT_HOME/.agent during npm test (I-38). */
+function guardProdStateWrite(stateRoot: string): void {
+  const home = process.env.CSAGENT_HOME?.trim();
+  if (!home || !isTestRun()) return;
+  if (process.env.CSAGENT_ALLOW_PROD_STATE_WRITE === "1") return;
+  const prodAgent = resolve(home, ".agent");
+  if (resolve(stateRoot) === resolve(prodAgent)) {
+    throw new CronJobsError(
+      `refusing to write ${CRON_JOBS_FILE} under CSAGENT_HOME/.agent during npm test — use a temp directory`
+    );
+  }
+}
+
+function backupTimestamp(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+function backupCronJobsFile(path: string): void {
+  copyFileSync(path, `${path}.bak-${backupTimestamp()}`, 0);
+}
+
+/** Latest timestamped backup under state dir, or null. */
+export function findLatestCronJobsBackup(dir: string = process.cwd()): string | null {
+  const cfg = loadConfig(dir);
+  const root = resolve(dir, cfg.stateDir);
+  if (!existsSync(root)) return null;
+  const matches = readdirSync(root)
+    .filter((f) => f.startsWith(CRON_JOBS_BACKUP_PREFIX))
+    .sort()
+    .reverse();
+  return matches.length ? resolve(root, matches[0]!) : null;
+}
+
+function validateJobsForSave(jobs: CronJob[]): CronJob[] {
+  const ids = new Set<string>();
+  const validated: CronJob[] = [];
+  jobs.forEach((j, i) => {
+    const job = validateJob(j, i);
+    if (ids.has(job.id)) throw new CronJobsError(`duplicate job id '${job.id}'`);
+    ids.add(job.id);
+    validated.push(job);
+  });
+  return validated;
+}
+
 export function saveCronJobs(dir: string, jobs: CronJob[]): void {
   const cfg = loadConfig(dir);
   const root = resolve(dir, cfg.stateDir);
+  guardProdStateWrite(root);
+  const validated = validateJobsForSave(jobs);
+  const path = jobsPath(dir);
   mkdirSync(root, { recursive: true });
-  writeFileAtomic(jobsPath(dir), JSON.stringify({ version: 1, jobs }, null, 2) + "\n");
+  if (existsSync(path)) {
+    backupCronJobsFile(path);
+  }
+  writeFileAtomic(path, JSON.stringify({ version: 1, jobs: validated }, null, 2) + "\n");
 }

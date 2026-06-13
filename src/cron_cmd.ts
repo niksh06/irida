@@ -1,14 +1,12 @@
 /**
  * `csagent cron list|run|tick` — scheduled jobs (issue 038).
  */
-import { writeFileSync, mkdirSync } from "node:fs";
-import { resolve } from "node:path";
 import { loadConfig, ConfigError } from "./config.js";
 import {
   CronJobsError,
-  CRON_JOBS_FILE,
   cronJobsPath,
   loadCronJobs,
+  saveCronJobs,
   type CronJob,
 } from "./cronJobs.js";
 import { formatCronWhen, nextCronRun } from "./cronSchedule.js";
@@ -203,14 +201,7 @@ Job JSON:
   }
 }
 
-/** Write example jobs file (for tests/docs). */
+/** Write example jobs file (for tests/docs). Validates before write (I-38). */
 export function writeExampleCronJobs(dir: string, jobs: CronJob[]): void {
-  const cfg = loadConfig(dir);
-  const root = resolve(dir, cfg.stateDir);
-  mkdirSync(root, { recursive: true });
-  writeFileSync(
-    resolve(root, CRON_JOBS_FILE),
-    JSON.stringify({ version: 1, jobs }, null, 2) + "\n",
-    { encoding: "utf8", mode: 0o600 }
-  );
+  saveCronJobs(dir, jobs);
 }

@@ -81,6 +81,16 @@ launchd `ai.csagent.digest-qa-morning` → `cron qa --morning --alert`.
 bash ~/.csagent/csagent/deploy/digest-qa-morning.sh   # ручной прогон
 ```
 
+### Утренний cron health (08:05)
+
+launchd `ai.csagent.prod-check-morning` → `doctor morning-alert`.
+
+Если `cron.jobs.json` missing/invalid — **🌅 morning cron health FAIL** в Telegram (с `fix:` из doctor).
+
+```bash
+bash ~/.csagent/csagent/deploy/prod-check-morning.sh   # ручной прогон
+```
+
 ### Digest follow-up (H2)
 
 После вечернего digest в чате бота (без `/`):

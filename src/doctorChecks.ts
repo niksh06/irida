@@ -18,7 +18,12 @@ import {
 } from "./credentials.js";
 import { probePgCredentialStore, SECRETS_KEY_ENV, secretsKey } from "./credentialsPg.js";
 import { probePostgresStore } from "./store.js";
-import { loadCronJobs, validateCronJobsFile, cronJobsPath } from "./cronJobs.js";
+import {
+  findLatestCronJobsBackup,
+  loadCronJobs,
+  validateCronJobsFile,
+  cronJobsPath,
+} from "./cronJobs.js";
 import { gatherCronPromptDrift } from "./cronPromptDrift.js";
 import { loadGatewayConfig, validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
@@ -99,11 +104,13 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   const cronPath = cronJobsPath(dir);
   if (existsSync(cronPath)) {
     const cronErrs = validateCronJobsFile(dir);
+    const bak = cronErrs.length ? findLatestCronJobsBackup(dir) : null;
+    const fixBase = "compare with deploy/cron.jobs.example.json, then: csagent cron list";
     checks.push({
       name: "cron jobs",
       ok: cronErrs.length === 0,
       detail: cronErrs.length ? cronErrs.join("; ") : "cron.jobs.json valid",
-      fix: `compare with deploy/cron.jobs.example.json, then: csagent cron list`,
+      fix: bak ? `${fixBase}; restore: cp "${bak}" "${cronPath}"` : fixBase,
     });
     if (cronErrs.length === 0) {
       const drift = gatherCronPromptDrift(dir);

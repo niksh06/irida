@@ -8,7 +8,7 @@ import { loadCsagentEnv } from "./loadEnv.js";
 import { warmCredentialsCache } from "./credentials.js";
 loadCsagentEnv();
 
-import { cmdDoctor } from "./doctor.js";
+import { cmdDoctor, cmdDoctorMorningAlert } from "./doctor.js";
 import { cmdRun } from "./run.js";
 import { cmdChat } from "./chat.js";
 import { cmdSessions } from "./sessions_cmd.js";
@@ -27,6 +27,7 @@ const HELP = `csagent — local Cursor SDK agent
 
 Usage:
   csagent doctor              environment checks
+  csagent doctor morning-alert   cron jobs health + Telegram alert on FAIL (launchd 08:05)
   csagent run "<prompt>"      one-shot local task (Agent.prompt, local cwd)
   csagent chat                interactive multi-turn session (Agent.create)
   csagent tui                 Hermes-style Ink TUI for chat
@@ -67,8 +68,11 @@ async function main(argv: string[]): Promise<number> {
   await warmCredentialsCache(process.cwd());
   const [cmd, ...rest] = argv;
   switch (cmd) {
-    case "doctor":
+    case "doctor": {
+      const sub = rest[0];
+      if (sub === "morning-alert") return cmdDoctorMorningAlert();
       return await cmdDoctor();
+    }
     case "run": {
       const { skills, yes, rest: r } = extractFlags(rest);
       return cmdRun(r.join(" "), { skills, yesIUnderstand: yes });

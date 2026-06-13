@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
 import { assessGatewayServiceHealth, tailLogLines } from "./gatewayLogHealth.js";
-import { loadCronJobs, loadCronState } from "./cronJobs.js";
+import { cronJobsPath, loadCronJobs, loadCronState, validateCronJobsFile } from "./cronJobs.js";
 import { formatCronLastResultSummary } from "./cronRunRecord.js";
 import { formatRunMetrics, loadRunMetrics } from "./runMetrics.js";
 
@@ -112,14 +112,24 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
     rows.push({ name: "cron log", ok: true, detail: tail.slice(0, 160) });
   }
 
-  const cfg = loadConfig(dir);
-  const cronPath = resolve(dir, cfg.stateDir, "cron.jobs.json");
-  rows.push({
-    name: "cron jobs",
-    ok: existsSync(cronPath),
-    detail: existsSync(cronPath) ? cronPath : "cron.jobs.json missing",
-  });
+  const cronPath = cronJobsPath(dir);
+  if (!existsSync(cronPath)) {
+    rows.push({ name: "cron jobs", ok: false, detail: "cron.jobs.json missing" });
+  } else {
+    const cronErrs = validateCronJobsFile(dir);
+    if (cronErrs.length) {
+      rows.push({ name: "cron jobs", ok: false, detail: cronErrs.join("; ") });
+    } else {
+      const count = loadCronJobs(dir).length;
+      rows.push({
+        name: "cron jobs",
+        ok: true,
+        detail: count ? `${count} job(s) · valid` : "empty · valid",
+      });
+    }
+  }
 
+  const cfg = loadConfig(dir);
   try {
     const metrics = loadRunMetrics(dir, cfg.stateDir, 24);
     rows.push({ name: "runs 24h", ok: true, detail: formatRunMetrics(metrics, 24) });
