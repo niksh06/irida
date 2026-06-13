@@ -8,7 +8,7 @@ import {
   telegramHtmlDiffers,
   type TelegramMessageFormat,
 } from "./telegramFormat.js";
-import { drainOutbox, enqueueOutbox, resolveOutboxFormat } from "./gatewayOutbox.js";
+import { drainOutbox, enqueueOutbox, resolveOutboxDeliveryFormat } from "./gatewayOutbox.js";
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { tryRegisterPairing } from "./gatewayPairing.js";
 import { gatewayTelegramBotCommands, isGatewaySlashCommand } from "./gatewaySlash.js";
@@ -143,7 +143,7 @@ export async function telegramSendMessage(
 }
 
 /** Send with HTML formatting; fall back to plain text when the API rejects parse (I-37). */
-export async function telegramSendMessageHtml(
+async function telegramSendMessageHtmlSingle(
   token: string,
   chatId: string,
   text: string,
@@ -165,6 +165,22 @@ export async function telegramSendMessageHtml(
     // Unbalanced tags after multipart split etc. — content over formatting.
     await telegramSendMessage(token, chatId, text, fetchFn);
   }
+}
+
+export async function telegramSendMessageHtml(
+  token: string,
+  chatId: string,
+  text: string,
+  fetchFn: TelegramFetch = fetch
+): Promise<void> {
+  const maxSingle = TELEGRAM_MESSAGE_MAX - TELEGRAM_PART_HEADER_SLACK;
+  if (text.length > maxSingle) {
+    for (const part of formatTelegramMultipartBodies(text)) {
+      await telegramSendMessageHtmlSingle(token, chatId, part, fetchFn);
+    }
+    return;
+  }
+  await telegramSendMessageHtmlSingle(token, chatId, text, fetchFn);
 }
 
 /** Bot API 10.1+ native markdown via `sendRichMessage`. */
@@ -208,6 +224,30 @@ export async function telegramSendFormattedMessage(
   await telegramSendMessageHtml(token, chatId, text, fetchFn);
 }
 
+/** Rich send with cascade to 4096 multipart HTML/plain when rich or HTML fails. */
+async function telegramSendRichWithFallback(
+  token: string,
+  chatId: string,
+  text: string,
+  fetchFn: TelegramFetch = fetch
+): Promise<number> {
+  try {
+    await telegramSendMessageRich(token, chatId, text, fetchFn);
+    return 1;
+  } catch {
+    /* fall through to classic sendMessage limits */
+  }
+  const parts = formatTelegramMultipartBodies(text);
+  for (const part of parts) {
+    try {
+      await telegramSendMessageHtmlSingle(token, chatId, part, fetchFn);
+    } catch {
+      await telegramSendMessage(token, chatId, part, fetchFn);
+    }
+  }
+  return parts.length;
+}
+
 /** Send text as one or more Telegram messages (same chunking as cron digest). */
 export async function telegramSendLongMessage(
   token: string,
@@ -222,14 +262,17 @@ export async function telegramSendLongMessage(
     for (const body of bodies) await telegramSendMessage(token, chatId, body, fetchFn);
     return bodies.length;
   }
-  const bodies =
-    format === "rich"
-      ? formatTelegramRichMultipartBodies(text)
-      : formatTelegramMultipartBodies(text);
-  for (const body of bodies) {
-    await telegramSendFormattedMessage(token, chatId, body, fetchFn, format);
+  if (format === "html") {
+    const bodies = formatTelegramMultipartBodies(text);
+    for (const body of bodies) await telegramSendMessageHtml(token, chatId, body, fetchFn);
+    return bodies.length;
   }
-  return bodies.length;
+  const richBodies = formatTelegramRichMultipartBodies(text);
+  let sent = 0;
+  for (const body of richBodies) {
+    sent += await telegramSendRichWithFallback(token, chatId, body, fetchFn);
+  }
+  return sent;
 }
 
 export async function telegramSendChatAction(
@@ -554,9 +597,9 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       const result = await drainOutbox(
         dir,
         async (entry) => {
-          const format = resolveOutboxFormat(entry);
+          const format = resolveOutboxDeliveryFormat(entry);
           if (format === "plain") {
-            await telegramSendMessage(token, entry.chatId, entry.text, fetchFn);
+            await telegramSendLongMessage(token, entry.chatId, entry.text, fetchFn, { format: "plain" });
           } else {
             await telegramSendLongMessage(token, entry.chatId, entry.text, fetchFn, { format });
           }

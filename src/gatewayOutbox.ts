@@ -23,6 +23,8 @@ export interface OutboxEntry {
   html?: boolean;
   /** rich = sendRichMessage markdown; html = sendMessage HTML; plain = no parse_mode. */
   format?: TelegramMessageFormat;
+  /** Set after sendRichMessage/HTML fails (e.g. message too long) — retry as plain multipart. */
+  degradedFormat?: TelegramMessageFormat;
   createdAt: string;
   attempts: number;
   nextAttemptAt: string;
@@ -34,6 +36,20 @@ export function resolveOutboxFormat(entry: OutboxEntry): TelegramMessageFormat {
   if (entry.format) return entry.format;
   if (entry.html === true) return "rich";
   return "plain";
+}
+
+export function isTelegramTooLongError(message: string): boolean {
+  return /message is too long/i.test(message);
+}
+
+/** Delivery format for drain — auto-downgrade rich/html after too-long failures. */
+export function resolveOutboxDeliveryFormat(entry: OutboxEntry): TelegramMessageFormat {
+  if (entry.degradedFormat) return entry.degradedFormat;
+  const base = resolveOutboxFormat(entry);
+  if (base !== "plain" && entry.lastError && isTelegramTooLongError(entry.lastError)) {
+    return "plain";
+  }
+  return base;
 }
 
 export interface OutboxFile {
@@ -167,13 +183,18 @@ export async function drainOutbox(
       sent++;
     } catch (e) {
       failed++;
+      const errMsg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
       const attempts = entry.attempts + 1;
-      keep.push({
+      const next: OutboxEntry = {
         ...entry,
         attempts,
         nextAttemptAt: new Date(now.getTime() + outboxBackoffMs(attempts)).toISOString(),
-        lastError: (e instanceof Error ? e.message : String(e)).slice(0, 300),
-      });
+        lastError: errMsg,
+      };
+      if (isTelegramTooLongError(errMsg) && resolveOutboxDeliveryFormat(entry) !== "plain") {
+        next.degradedFormat = "plain";
+      }
+      keep.push(next);
     }
   }
 

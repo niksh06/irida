@@ -311,6 +311,29 @@ test("splitTelegramMessages and formatTelegramMultipartBodies respect limit", ()
   assert.match(bodies[0]!, /^\[1\/\d+\]\n/);
 });
 
+test("telegramSendLongMessage rich fallback splits at 4096 when sendRichMessage fails", async () => {
+  const posts: string[] = [];
+  const fetchFn = async (url: string, init?: RequestInit) => {
+    if (url.includes("sendRichMessage")) {
+      return new Response(
+        JSON.stringify({ ok: false, description: "Bad Request: message is too long" })
+      );
+    }
+    if (url.includes("sendMessage")) {
+      const body = JSON.parse(String(init?.body)) as { text: string };
+      posts.push(body.text);
+      return new Response(JSON.stringify({ ok: true }));
+    }
+    return new Response(JSON.stringify({ ok: false }));
+  };
+  const text = "x".repeat(5408);
+  const n = await telegramSendLongMessage("tok", "42", text, fetchFn, { format: "rich" });
+  assert.ok(n >= 2);
+  assert.equal(posts.length, n);
+  assert.ok(posts.every((p) => p.length <= TELEGRAM_MESSAGE_MAX));
+  assert.match(posts[0]!, /^\[1\/\d+\]\n/);
+});
+
 test("telegramSendLongMessage posts multiple sendMessage calls", async () => {
   const posts: string[] = [];
   const fetchFn = async (url: string, init?: RequestInit) => {

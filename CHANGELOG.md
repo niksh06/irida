@@ -6,6 +6,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Fixed (audit 2026-06-10)
 
+- **Telegram long replies** — rich `sendRichMessage` failure now cascades to 4096 multipart HTML/plain; outbox auto-downgrades to plain after `message is too long` (post-mortem 2026-06-13)
 - **Digest QA length** — max body check raised to 12k chars (real digests ~8–9k were false morning FAIL)
 - **setup-home** — skip `.agent` migrate when prod state already exists (I-38 follow-up)
 - **Prod cron guard** (I-38) — `saveCronJobs` validates before write, timestamped `.bak` on overwrite, test-run block on `CSAGENT_HOME/.agent`; `gateway status` FAIL on invalid jobs; doctor suggests restore from latest backup; morning launchd `ai.csagent.prod-check-morning` (08:05) + `doctor morning-alert` → Telegram on cron health FAIL

@@ -9,6 +9,7 @@ import {
   loadOutbox,
   mergeOutboxAfterDrain,
   outboxBackoffMs,
+  resolveOutboxDeliveryFormat,
   saveOutbox,
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_MAX_ENTRIES,
@@ -140,6 +141,51 @@ test("drain preserves entries enqueued while send is in flight", async () => {
   const entries = loadOutbox(dir).entries;
   assert.equal(entries.length, 1);
   assert.equal(entries[0]!.text, "concurrent");
+});
+
+test("resolveOutboxDeliveryFormat downgrades rich after message is too long", () => {
+  const entry: OutboxEntry = {
+    id: "out_x",
+    chatId: "42",
+    text: "long",
+    format: "rich",
+    createdAt: new Date().toISOString(),
+    attempts: 3,
+    nextAttemptAt: new Date().toISOString(),
+    lastError: "Bad Request: message is too long",
+  };
+  assert.equal(resolveOutboxDeliveryFormat(entry), "plain");
+});
+
+test("drain retries rich outbox as plain after too-long error", async () => {
+  const dir = tmp();
+  const now = new Date();
+  saveOutbox(dir, {
+    version: 1,
+    entries: [
+      {
+        id: "out_stuck",
+        chatId: "42",
+        text: "y".repeat(5408),
+        format: "rich",
+        createdAt: now.toISOString(),
+        attempts: 2,
+        nextAttemptAt: now.toISOString(),
+        lastError: "Bad Request: message is too long",
+      },
+    ],
+  });
+  let seenFormat: string | undefined;
+  const result = await drainOutbox(
+    dir,
+    async (e) => {
+      seenFormat = resolveOutboxDeliveryFormat(e);
+    },
+    { now }
+  );
+  assert.equal(result.sent, 1);
+  assert.equal(seenFormat, "plain");
+  assert.equal(loadOutbox(dir).entries.length, 0);
 });
 
 test("enqueue succeeds after outbox clobbered by concurrent writer", () => {
