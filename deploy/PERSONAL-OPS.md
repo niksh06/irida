@@ -12,7 +12,7 @@
 | session-ingest | `5 0 * * *` | builtin → episodic memory notes (Wave B) |
 | introspection | `0 6 * * 1` | weekly proposal note via `introspection-ops` skill |
 
-**Wave B (memory loop):** nightly `session-ingest` → wing `episodic`; gateway `memory.autoRag` injects top-3 hits per turn (enable in `CSAGENT_ROOT/agent.config.json`). First backfill: `csagent memory ingest-sessions --window-hours 168`.
+**Wave B (memory loop):** nightly `session-ingest` → wing `episodic`; weekly `introspection-weekly` → proposal note. **autoRag off in prod** (MCP-first); pilot config: [autoRag pilot](#autorag-pilot). First backfill: `csagent memory ingest-sessions --window-hours 168`.
 
 После digest в Telegram приходят **два** сообщения:
 
@@ -141,6 +141,42 @@ bash ~/.csagent/csagent/deploy/backup-personal.sh
 - `cron.state.json` (last run + post-mortem)
 
 Восстановление PG — см. [deploy/README.md](README.md#backup).
+
+## autoRag pilot
+
+**Prod default:** `enabled: false` (MCP-first). Profiles → `memory.preTurn`, not autoRag.
+
+Reference: `deploy/agent.config.example.json` (conservative: `limit: 2`, `semantic: false`, `wings: ["default"]` only).
+
+### Enable (after HITL sign-off)
+
+1. Edit `~/.csagent/csagent/agent.config.json` — merge `memory.autoRag` from example; set `"enabled": true`.
+2. **Do not** add wing `meta` without separate approval.
+3. Optional observability: `export CSAGENT_LOG=1` in `csagent.env`.
+4. Deploy + restart:
+
+```bash
+cd "/path/to/csagent-clone"
+npm test && npm run build && bash deploy/setup-home.sh
+launchctl kickstart -k gui/$(id -u)/ai.csagent.gateway
+```
+
+5. `doctor` — row `autoRag` should show `enabled · limit=2 · wings=default`.
+
+### Rollback
+
+Set `"enabled": false` (or remove `autoRag` block), `setup-home.sh`, restart gateway. No DB migration.
+
+### Metrics (1–2 weeks)
+
+| Signal | OK | Investigate |
+|--------|-----|-------------|
+| Gateway p50 turn duration | stable ±10% | p95 up >25% |
+| Short-message context ratio | no spike in composed size | irrelevant memory quoted in replies |
+| Errors | none | context overflow / rotation churn |
+| Logs (`CSAGENT_LOG=1`) | `hits=0–2`, sensible note names | always `hits=2` with unrelated names |
+
+Inspect: `tail -f ~/.csagent/logs/gateway.log | grep autoRag`, `/status` runs 24h row.
 
 ## После правок в Downloads
 

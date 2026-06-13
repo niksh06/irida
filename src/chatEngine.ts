@@ -277,21 +277,22 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       if (!msg) return { kind: "error", message: "empty message", fatal: false };
 
       let sendMsg: string;
+      const isFirstTurn = firstTurn;
       try {
         const { taskText, blocks: preTurnBlocks } = await buildPreTurnBlocks({
           dir,
           cfg,
           rawMessage: msg,
-          includeProfile: firstTurn,
+          includeProfile: isFirstTurn,
         });
         const sessionMemoryBlocks =
-          firstTurn ? await sessionStartMemoryBlocks(dir, cfg) : [];
+          isFirstTurn ? await sessionStartMemoryBlocks(dir, cfg) : [];
         const autoRagBlocks = await autoRagMemoryBlocks(dir, taskText, cfg);
         sendMsg = await composePrompt({
           userPrompt: taskText,
           cwd: sessionCwd,
           dir,
-          skills: firstTurn ? skills : [],
+          skills: isFirstTurn ? skills : [],
           sessionMemoryBlocks,
           preTurnBlocks,
           autoRagBlocks,
@@ -301,6 +302,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         if (e instanceof MemoryError) return { kind: "error", message: e.message, fatal: false };
         throw e;
       }
+      // Profile/skills/onStart apply once per session — consume before gate so blocked first turns do not re-inject.
+      firstTurn = false;
 
       // Gate the composed prompt (message + expanded @file/@memory refs), not
       // the replay transcript — history was already gated when first sent.
@@ -316,11 +319,10 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
       // Composed prompt without any replay prefix — rotation regenerates its own.
       const coreSendMsg = sendMsg;
-      if (firstTurn && replayPrefix) {
+      if (isFirstTurn && replayPrefix) {
         sendMsg = replayPrefix + "Continue. New request:\n\n" + sendMsg;
       }
       const baseSendMsg = sendMsg;
-      firstTurn = false;
 
       let attemptSendMsg = sendMsg;
       let rotated = false;

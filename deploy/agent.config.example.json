@@ -2,7 +2,14 @@
   "model": "composer-2.5",
   "runtime": "local",
   "memory": {
-    "mcp": true
+    "mcp": true,
+    "autoRag": {
+      "enabled": false,
+      "limit": 2,
+      "semantic": false,
+      "maxChars": 4000,
+      "wings": ["default"]
+    }
   },
   "browser": {
     "mcp": true,

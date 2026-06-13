@@ -210,6 +210,51 @@ test("autoRagMemoryBlocks injects matching notes when enabled", async () => {
   assert.match(composed, /fix gateway/);
 });
 
+test("autoRagMemoryBlocks logs hits when CSAGENT_LOG=1", async () => {
+  const dir = tmp();
+  const memory = createMemoryStore(dir, ".agent");
+  await memory.upsertNote({
+    name: "ops.gateway",
+    wing: "default",
+    title: "Gateway ops",
+    body: "# Gateway\n\nTelegram long-poll and outbox drain.",
+  });
+  await memory.close();
+
+  const cfg: AgentConfig = {
+    model: "m",
+    runtime: "local",
+    cwd: dir,
+    skillsPath: "skills",
+    stateDir: ".agent",
+    mcpServers: {},
+    safety: { allowCloud: false, allowAutoPr: false },
+    memory: { autoRag: { enabled: true, limit: 2 } },
+    browser: {},
+  };
+
+  const prevLog = process.env.CSAGENT_LOG;
+  process.env.CSAGENT_LOG = "1";
+  const captured: string[] = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+    captured.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
+  }) as typeof process.stdout.write;
+
+  try {
+    await autoRagMemoryBlocks(dir, "telegram outbox", cfg);
+    const joined = captured.join("");
+    assert.match(joined, /\[autoRag\]/);
+    assert.match(joined, /hits=1/);
+    assert.match(joined, /notes=ops\.gateway/);
+  } finally {
+    process.stdout.write = origWrite;
+    if (prevLog === undefined) delete process.env.CSAGENT_LOG;
+    else process.env.CSAGENT_LOG = prevLog;
+  }
+});
+
 test("ingestSessionRecord returns skipped for empty runs", async () => {
   const dir = tmp();
   const memory = createMemoryStore(dir, ".agent");

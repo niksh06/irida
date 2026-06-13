@@ -261,6 +261,31 @@ function gatherMemoryEnvChecks(dir: string): DoctorCheck[] {
     });
   }
 
+  try {
+    const cfg = loadConfig(dir);
+    const ar = cfg.memory?.autoRag;
+    if (ar?.enabled) {
+      const wings = ar.wings ?? [];
+      const hasMeta = wings.includes("meta");
+      checks.push({
+        name: "autoRag",
+        ok: !hasMeta,
+        detail: hasMeta
+          ? "wings includes meta — use preTurn for profiles, not autoRag"
+          : `enabled · limit=${ar.limit ?? 3} · wings=${wings.length ? wings.join(",") : "all"}`,
+        fix: hasMeta ? 'remove "meta" from memory.autoRag.wings or set enabled: false' : undefined,
+      });
+    } else {
+      checks.push({
+        name: "autoRag",
+        ok: true,
+        detail: "disabled (MCP-first); pilot: deploy/PERSONAL-OPS.md#autorag-pilot",
+      });
+    }
+  } catch {
+    /* config check reported separately */
+  }
+
   return checks;
 }
 

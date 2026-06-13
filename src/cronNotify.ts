@@ -2,7 +2,7 @@
  * Optional cron completion notifications (webhook or direct Telegram).
  */
 import { resolveTelegramBotToken } from "./credentials.js";
-import { telegramSendLongMessage, telegramSendMessage } from "./gatewayTelegram.js";
+import { telegramSendLongMessage, telegramSendMessage, type TelegramFetch } from "./gatewayTelegram.js";
 import { enqueueOutbox, sendOutboxParkAck } from "./gatewayOutbox.js";
 import type { CronJob } from "./cronJobs.js";
 import {
@@ -13,6 +13,8 @@ import {
   type DigestQaReport,
 } from "./digestQa.js";
 import { formatCronPostMortem, type CronExecuteResult } from "./cronRunRecord.js";
+
+const httpFetch: TelegramFetch = (url, init) => globalThis.fetch(url, init);
 
 export interface CronJobNotifyWebhook {
   mode: "webhook";
@@ -111,7 +113,7 @@ export async function sendDigestQaAlertMessage(
     const secret = resolveEnv(target.secretEnv);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (secret) headers["X-Gateway-Secret"] = secret;
-    const res = await fetch(target.webhookUrl, {
+    const res = await httpFetch(target.webhookUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({ chatId: target.chatId, text: alert }),
@@ -212,7 +214,7 @@ export async function sendCronJobNotify(
       try {
         for (; nextIndex < parts.length; nextIndex++) {
           const p = parts[nextIndex]!;
-          await telegramSendLongMessage(token, target.chatId, p.text, fetch, { format: p.format });
+          await telegramSendLongMessage(token, target.chatId, p.text, httpFetch, { format: p.format });
         }
         await sendDigestQaFollowUp(job, exec, at, dir, target);
       } catch (e) {
@@ -223,7 +225,7 @@ export async function sendCronJobNotify(
         if (parked > 0) {
           console.error(`[cron] notify parked in outbox job=${job.id} parts=${parked}`);
           await sendOutboxParkAck(
-            (ack) => telegramSendMessage(token, target.chatId, ack, fetch),
+            (ack) => telegramSendMessage(token, target.chatId, ack, httpFetch),
             (line) => console.error(line)
           );
         }
@@ -234,7 +236,7 @@ export async function sendCronJobNotify(
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (secret) headers["X-Gateway-Secret"] = secret;
     const webhookText = postMortem ? `${text}\n\n---\n\n${postMortem}` : text;
-    const res = await fetch(target.webhookUrl, {
+    const res = await httpFetch(target.webhookUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({ chatId: target.chatId, text: webhookText }),

@@ -129,16 +129,28 @@ csagent memory ingest-sessions --window-hours 48 --force
 
 Cron builtin: `"builtin": "session-ingest"` (example: nightly after `session-export`). Episodic notes are for MCP/`memory_search` — not bulk `@memory:*` injection.
 
-### Auto-RAG (optional)
+### Auto-RAG (optional, conservative pilot — I-55)
 
-When enabled, each turn silently runs memory search on the user message and prepends top hits (before skills). Default off — MCP-first.
+When enabled, each turn silently runs memory search on the user message and prepends top hits **after** preTurn (profile/mode) and **before** `# Task`. Default **off** — MCP-first (`memory_search` on demand).
+
+**Separate from preTurn (I-52):** profiles and mode prefixes belong in `memory.preTurn`, not autoRag. Do **not** include wing `meta` in `autoRag.wings` without explicit HITL sign-off — doctor warns if `meta` is listed while enabled.
+
+Reference config (`deploy/agent.config.example.json`):
 
 ```json
 "memory": {
   "mcp": true,
-  "autoRag": { "enabled": true, "limit": 3, "semantic": true, "wings": ["default", "episodic"] }
+  "autoRag": {
+    "enabled": false,
+    "limit": 2,
+    "semantic": false,
+    "maxChars": 4000,
+    "wings": ["default"]
+  }
 }
 ```
+
+Pilot enable/rollback and metrics: [deploy/PERSONAL-OPS.md](deploy/PERSONAL-OPS.md#autorag-pilot). With `CSAGENT_LOG=1`, each turn logs one line: `autoRag hits=N chars=M notes=name1,name2` (names only, no body).
 
 ### Turn context — mode prefix + profile excerpt (I-52)
 

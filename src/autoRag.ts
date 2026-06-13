@@ -2,6 +2,7 @@
  * Silent memory retrieval before each chat turn (Wave B auto-RAG).
  * Injects top matching notes without requiring the model to call memory_search first.
  */
+import { agentLogEnabled, resolveAgentLogger } from "./agentLog.js";
 import { loadConfig, type AgentConfig } from "./config.js";
 import { createMemoryStore, SECURE_WING, type MemoryNote } from "./memoryStore.js";
 
@@ -73,6 +74,7 @@ export async function autoRagMemoryBlocks(
   try {
     const notes = await searchForAutoRag(store, q, opts.limit, opts.semantic);
     const blocks: string[] = [];
+    const noteNames: string[] = [];
     let total = 0;
     for (const note of notes) {
       if (note.wing === SECURE_WING) continue;
@@ -81,7 +83,13 @@ export async function autoRagMemoryBlocks(
       const block = formatAutoRagBlock(note);
       if (total + block.length > opts.maxChars) break;
       blocks.push(block);
+      noteNames.push(note.name);
       total += block.length;
+    }
+    if (agentLogEnabled()) {
+      const log = resolveAgentLogger({ component: "autoRag" });
+      const names = noteNames.length ? noteNames.join(",") : "-";
+      log(`hits=${blocks.length} chars=${total} notes=${names}`);
     }
     return blocks;
   } finally {

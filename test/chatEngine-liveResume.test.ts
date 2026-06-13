@@ -190,3 +190,41 @@ test("live resume skips profile excerpt but keeps mode prefix", async () => {
     await opened2.session.close();
   });
 });
+
+test("profile excerpt only on first sendTurn in session", async () => {
+  await withKey(async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), "chat-preturn-first-"));
+    saveMemory(dir, "user-profile.niksh", "UNIQUE_PROFILE_FIRST_ONLY_777");
+    writeFileSync(
+      join(dir, "agent.config.json"),
+      JSON.stringify({
+        skillsPath: "skills",
+        memory: { preTurn: { profileNote: "user-profile.niksh" } },
+      })
+    );
+
+    const sent: string[] = [];
+    const sdk: SdkCreateLike = {
+      create: async () => ({
+        agentId: "agent-first-only",
+        send: async (msg: string) => {
+          sent.push(msg);
+          return okRun();
+        },
+        close: async () => {},
+      }),
+    };
+
+    const opened = await openChatSession({ sdk, dir, interactive: false });
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+
+    await opened.session.sendTurn("turn one");
+    await opened.session.sendTurn("turn two");
+
+    assert.match(sent[0] ?? "", /UNIQUE_PROFILE_FIRST_ONLY_777/);
+    assert.doesNotMatch(sent[1] ?? "", /UNIQUE_PROFILE_FIRST_ONLY_777/);
+    assert.match(sent[1] ?? "", /turn two/);
+    await opened.session.close();
+  });
+});

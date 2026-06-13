@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { cmdDoctor } from "../src/doctor.js";
 import { gatherDoctorApiChecks, gatherDoctorChecks } from "../src/doctorChecks.js";
 
@@ -82,4 +82,31 @@ test("gatherDoctorApiChecks reports model count", async () => {
     assert.equal(checks[0]?.ok, true);
     assert.match(checks[0]?.detail ?? "", /2 model/);
   });
+});
+
+test("gatherDoctorChecks reports autoRag disabled by default", () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "doc-ar-off-"));
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  writeFileSync(join(dir, "agent.config.json"), JSON.stringify({ model: "m", runtime: "local" }));
+  const ar = gatherDoctorChecks(dir).find((c) => c.name === "autoRag");
+  assert.ok(ar);
+  assert.equal(ar!.ok, true);
+  assert.match(ar!.detail, /disabled/);
+});
+
+test("gatherDoctorChecks fails autoRag when meta wing enabled", () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "doc-ar-meta-"));
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  writeFileSync(
+    join(dir, "agent.config.json"),
+    JSON.stringify({
+      model: "m",
+      runtime: "local",
+      memory: { autoRag: { enabled: true, wings: ["default", "meta"] } },
+    })
+  );
+  const ar = gatherDoctorChecks(dir).find((c) => c.name === "autoRag");
+  assert.ok(ar);
+  assert.equal(ar!.ok, false);
+  assert.match(ar!.detail, /meta/);
 });
