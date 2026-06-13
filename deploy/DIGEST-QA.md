@@ -22,6 +22,7 @@ bash ~/.csagent/csagent/deploy/digest-qa.sh
 | topics | ≥ 4/5 delegates ok |
 | digest header | `📬` или `TParser` (или empty-day шаблон) |
 | digest length | 100–12000 chars (или короткий empty-day) |
+| digest tg length | **WARN** (not FAIL) when 3501–12000 chars — above Telegram target ≤3500 |
 | tg links | ≥ 1 `t.me/` (кроме empty-day) |
 | topic sections | ≥ 3 заголовков тем в теле |
 
@@ -71,7 +72,7 @@ Alert prefix: `🌅 morning QA FAIL` (отличается от ночного `
 - [ ] Сводка дня — 3–5 bullets, не вода
 - [ ] У каждого поста: структура + **Вердикт агента** + строка `t.me/…` (не markdown-ссылка)
 - [ ] Нет выдуманных постов (сверка с TParser при сомнении)
-- [ ] Длина одного сообщения ≤ ~4000 символов
+- [ ] Длина одного сообщения ≤ ~3500 символов (WARN в `cron qa` при 3501–12000, FAIL только >12000)
 - [ ] Пустой день: `релевантных постов не было` — ок, не баг
 
 ## Если FAIL

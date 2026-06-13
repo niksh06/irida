@@ -168,3 +168,73 @@ test("evaluateDigestQa accepts empty-day digest", () => {
   const report = evaluateDigestQa(dir, DEFAULT_DIGEST_JOB_ID);
   assert.equal(report.ok, true);
 });
+
+test("evaluateDigestQa warns but passes when digest 3501-12000 chars", () => {
+  const dir = setupDir();
+  const at = new Date(Date.now() - 2 * 3_600_000).toISOString();
+  saveCronState(dir, {
+    version: 1,
+    lastRun: { [DEFAULT_DIGEST_JOB_ID]: "2026-06-13 23:59" },
+    lastResult: {
+      [DEFAULT_DIGEST_JOB_ID]: {
+        at,
+        ok: true,
+        durationMs: 600_000,
+        message: "finished",
+        topicOk: 5,
+        topicTotal: 5,
+      },
+    },
+  });
+  const pad = "x".repeat(1200);
+  const body = [
+    "📬 TParser · день",
+    "**TL;DR:** краткий итог дня для Telegram.",
+    "## AI / ML / LLM",
+    "Вердикт агента: ok",
+    "https://t.me/example/1",
+    pad,
+    "## AISec / MLSec",
+    "https://t.me/example/2",
+    pad,
+    "## InfoSec / AppSec",
+    "https://t.me/example/3",
+    pad,
+    "## Programming / devtools",
+    "https://t.me/example/4",
+  ].join("\n");
+  assert.ok(body.length > 3500 && body.length <= 12_000, `body len=${body.length}`);
+  saveDigestOutput(dir, DEFAULT_DIGEST_JOB_ID, body);
+  const report = evaluateDigestQa(dir, DEFAULT_DIGEST_JOB_ID);
+  assert.equal(report.ok, true);
+  const tgLen = report.checks.find((c) => c.name === "digest tg length");
+  assert.ok(tgLen?.warn);
+  assert.ok(tgLen?.ok);
+  const hardLen = report.checks.find((c) => c.name === "digest length");
+  assert.equal(hardLen?.ok, true);
+});
+
+test("evaluateDigestQa fails when digest exceeds 12000 chars", () => {
+  const dir = setupDir();
+  const at = new Date(Date.now() - 2 * 3_600_000).toISOString();
+  saveCronState(dir, {
+    version: 1,
+    lastRun: { [DEFAULT_DIGEST_JOB_ID]: "2026-06-13 23:59" },
+    lastResult: {
+      [DEFAULT_DIGEST_JOB_ID]: {
+        at,
+        ok: true,
+        durationMs: 600_000,
+        message: "finished",
+        topicOk: 5,
+        topicTotal: 5,
+      },
+    },
+  });
+  const body = ("📬 TParser · день\nhttps://t.me/x/1\n").repeat(700);
+  assert.ok(body.length > 12_000);
+  saveDigestOutput(dir, DEFAULT_DIGEST_JOB_ID, body);
+  const report = evaluateDigestQa(dir, DEFAULT_DIGEST_JOB_ID);
+  assert.equal(report.ok, false);
+  assert.ok(report.checks.some((c) => c.name === "digest length" && !c.ok));
+});

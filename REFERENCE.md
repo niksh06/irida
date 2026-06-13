@@ -201,6 +201,8 @@ Fail-soft write; downstream prompt injection is [I-41](issues/I-41-cron-context-
 
 **TParser daily digest** (`topicDelegates: true`) — five isolated `runDelegate` passes (AI/ML, AISec, InfoSec, Programming, DevOps) over a 24h window, then a synthesizer `runPrompt` → Telegram digest + **post-mortem** (`status`, duration, topics). Default schedule: **`59 23 * * *`**. Prompts: `deploy/prompts/tparser-daily-topic.prompt.txt`, `tparser-daily-synthesize.prompt.txt`.
 
+Synthesizer targets **≤3500 chars** with a **TL;DR** paragraph first (I-60). Transport still accepts up to 12k (multipart/outbox); `cron qa` **WARN**s on 3501–12000, **FAIL** only above 12k. Optional future job field `notify.maxChars` (documented, not enforced yet) would cap notify text before send.
+
 ```json
 {
   "version": 1,

@@ -1,6 +1,8 @@
 TParser **daily digest synthesizer**. Window: last {WINDOW_HOURS}h (`{WINDOW_START}` → `{WINDOW_END}` UTC).
 
-You receive five topic delegate reports below. Output **ONLY** the final Telegram message body (Russian). **Hard limit ~4000 characters** (one message).
+You receive five topic delegate reports below. Output **ONLY** the final Telegram message body (Russian).
+
+**Hard limit ≤3500 characters** (one Telegram message, readable in ~2 minutes). If delegates exceed budget, compress вердикты and drop lower-priority posts — never drop `t.me/` links.
 
 ## Input (topic delegates)
 
@@ -11,6 +13,8 @@ You receive five topic delegate reports below. Output **ONLY** the final Telegra
 ```
 📬 TParser · день · {WINDOW_END}
 5 тем · {total_posts} постов проанализировано
+
+**TL;DR:** 2–3 sentences — главный итог дня для Telegram (must be first content after header stats).
 
 ## Сводка дня
 - 3–5 bullets: главные тренды across topics.
@@ -41,10 +45,11 @@ Stats: {raw approximate totals}
 
 ## Rules
 
+- **TL;DR first:** immediately after the header line, before `## Сводка дня`.
 - Preserve each post block: **Структура поста**, **Вердикт агента**, **Telegram** link on its own line.
 - Do not drop tg_link lines. Do not use markdown link syntax for t.me.
 - If a topic delegate reported 0 posts, one line: «нет релевантных постов».
-- Compress only when over char limit — shorten вердикт, never drop links.
+- Compress when over 3500 chars — shorten вердикт, trim lower-priority posts, never drop links.
 - Do not re-fetch API; work from delegate sections only.
 - Do not invent posts.
 

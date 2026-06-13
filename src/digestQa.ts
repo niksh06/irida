@@ -29,10 +29,15 @@ export const DIGEST_MIN_TOPIC_OK = 4;
 /** Max digest body size for automated QA (Telegram splits long digests). */
 export const DIGEST_QA_MAX_BODY_CHARS = 12_000;
 
+/** Target length for Telegram UX (I-60); over this → QA warn, not FAIL. */
+export const DIGEST_TG_TARGET_CHARS = 3_500;
+
 export interface DigestQaCheck {
   name: string;
   ok: boolean;
   detail: string;
+  /** Soft signal — does not fail overall QA (I-60). */
+  warn?: boolean;
 }
 
 export interface DigestQaReport {
@@ -63,8 +68,8 @@ export function loadDigestOutput(dir: string, jobId: string): string | null {
   return readFileSync(path, "utf8").trim() || null;
 }
 
-function check(name: string, ok: boolean, detail: string): DigestQaCheck {
-  return { name, ok, detail };
+function check(name: string, ok: boolean, detail: string, warn = false): DigestQaCheck {
+  return warn ? { name, ok: true, detail, warn: true } : { name, ok, detail };
 }
 
 function hoursSince(iso: string): number {
@@ -174,7 +179,18 @@ export function evaluateDigestQa(
 
     const len = body.length;
     const lenOk = empty ? len >= 20 && len <= 500 : len >= 100 && len <= DIGEST_QA_MAX_BODY_CHARS;
-    checks.push(check("digest length", lenOk, `${len} chars`));
+    checks.push(check("digest length", lenOk, `${len} chars (max ${DIGEST_QA_MAX_BODY_CHARS})`));
+
+    if (!empty && len > DIGEST_TG_TARGET_CHARS && len <= DIGEST_QA_MAX_BODY_CHARS) {
+      checks.push(
+        check(
+          "digest tg length",
+          true,
+          `${len} chars — above Telegram target ≤${DIGEST_TG_TARGET_CHARS} (multipart/outbox likely)`,
+          true
+        )
+      );
+    }
 
     const links = countTmeLinks(body);
     if (empty) {
@@ -207,7 +223,8 @@ export function evaluateDigestQa(
 export function formatDigestQaReport(report: DigestQaReport): string {
   const lines = [`digest QA · ${report.jobId} · ${report.ok ? "PASS" : "FAIL"}`, ""];
   for (const c of report.checks) {
-    lines.push(`${c.ok ? "OK" : "FAIL"} ${c.name}: ${c.detail}`);
+    const tag = c.warn ? "WARN" : c.ok ? "OK" : "FAIL";
+    lines.push(`${tag} ${c.name}: ${c.detail}`);
   }
   return lines.join("\n");
 }
