@@ -259,7 +259,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     channel: sessionChannel,
   });
 
-  let firstTurn = true;
+  // Live resume keeps SDK context — skip skills/onStart reinjection (gateway restart post-mortem 2026-06-13).
+  let firstTurn = connectMode !== "resumed";
   const confirm: Confirmer = opts.confirm ?? (async () => false);
 
   const session: ChatSession = {

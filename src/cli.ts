@@ -70,7 +70,7 @@ async function main(argv: string[]): Promise<number> {
   switch (cmd) {
     case "doctor": {
       const sub = rest[0];
-      if (sub === "morning-alert") return cmdDoctorMorningAlert();
+      if (sub === "morning-alert") return await cmdDoctorMorningAlert();
       return await cmdDoctor();
     }
     case "run": {
