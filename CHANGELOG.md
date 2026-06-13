@@ -15,6 +15,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Unified slash registry** (Wave C2) — `src/slashRegistry.ts` is the single catalog for TUI `/help`, gateway routing, and Telegram `setMyCommands`; `slashCatalog.ts` and `gatewaySlash.ts` derive from it
 - **Session ingest → episodic memory** (P3-2, Wave B) — recent sessions upserted as FTS-searchable notes in wing `episodic` (`ep.<sessionId>`); idempotent on `session.updated_at`; `csagent memory ingest-sessions`, cron builtin `session-ingest`
 - **Auto-RAG** (Wave B) — optional `memory.autoRag` in `agent.config.json`: silent top-k `memory_search` before each turn (FTS or semantic); injected under "Relevant memory (retrieved for this message)"
 - **Introspection weekly cron** (Wave B1) — skill `introspection-ops` + example job reading `runs.jsonl` and episodic notes → proposal note only (no auto-merge)

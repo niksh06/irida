@@ -24,44 +24,25 @@ import {
 import { runDelegate } from "./delegateRun.js";
 import type { ChatSession } from "./chatEngine.js";
 
-export interface GatewaySlashCommand {
-  cmd: string;
-  desc: string;
-  args?: string;
-  /** Shown in /help for Telegram. */
-  telegram?: boolean;
-}
+import {
+  gatewaySlashCommands,
+  gatewaySlashHelpLines,
+  slashRegistryHasCommand,
+  telegramBotCommandsFromRegistry,
+} from "./slashRegistry.js";
 
-/** csagent commands available in messaging gateways. */
-export const GATEWAY_SLASH_COMMANDS: GatewaySlashCommand[] = [
-  { cmd: "help", desc: "Список команд csagent", telegram: true },
-  { cmd: "new", desc: "Новая сессия (сброс контекста)", telegram: true },
-  { cmd: "status", desc: "Статус gateway и launchd", telegram: true },
-  { cmd: "doctor", desc: "Краткая проверка окружения", telegram: true },
-  { cmd: "memory", desc: "Поиск в памяти", args: "<запрос>", telegram: true },
-  { cmd: "sessions", desc: "Последние сессии (этот чат)", telegram: true },
-  { cmd: "skills", desc: "Skills из gateway.json", telegram: true },
-  { cmd: "approve", desc: "Подтвердить pairing-код", args: "<код>", telegram: true },
-  { cmd: "delegate", desc: "Изолированный subagent (summary → сессия)", args: "<prompt>", telegram: true },
-  { cmd: "schedule", desc: "Cron: list/add/approve", args: "[subcommand]", telegram: true },
-];
+export type GatewaySlashCommand = ReturnType<typeof gatewaySlashCommands>[number];
+
+/** csagent commands available in messaging gateways (from unified registry). */
+export const GATEWAY_SLASH_COMMANDS = gatewaySlashCommands();
 
 /** Telegram Bot API menu entries (setMyCommands) — same catalog as /help. */
 export function gatewayTelegramBotCommands(): Array<{ command: string; description: string }> {
-  return GATEWAY_SLASH_COMMANDS.filter((c) => c.telegram !== false).map((c) => {
-    const desc = c.args ? `${c.desc} ${c.args}` : c.desc;
-    return {
-      command: c.cmd.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32),
-      description: desc.slice(0, 256),
-    };
-  });
+  return telegramBotCommandsFromRegistry();
 }
 
 export function gatewaySlashHelpText(): string {
-  const lines = GATEWAY_SLASH_COMMANDS.filter((c) => c.telegram !== false).map((c) => {
-    const usage = c.args ? `/${c.cmd} ${c.args}` : `/${c.cmd}`;
-    return `${usage} — ${c.desc}`;
-  });
+  const lines = gatewaySlashHelpLines();
   return [
     "**csagent** — команды бота:",
     "",
@@ -86,7 +67,7 @@ export function parseGatewaySlash(text: string): { cmd: string; arg: string } | 
 export function isGatewaySlashCommand(text: string): boolean {
   const p = parseGatewaySlash(text);
   if (!p) return false;
-  return GATEWAY_SLASH_COMMANDS.some((c) => c.cmd === p.cmd) || p.cmd === "mem";
+  return slashRegistryHasCommand(p.cmd, "gateway");
 }
 
 export interface GatewaySlashContext {
