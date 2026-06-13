@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
+import { acquireSharedSqliteDb, releaseSharedSqliteDb } from "./sqliteShared.js";
 import { redact } from "./redact.js";
 import { appendRunLog } from "./runLog.js";
 import { nowIso } from "./util.js";
@@ -141,14 +142,12 @@ function buildListSessionsSqlite(opts: ListSessionsOptions | undefined, limit: n
 /** SQLite under <stateDir>/state.sqlite (Node >= 22.5). */
 export class SqliteStore implements IStore {
   private db: DatabaseSync;
+  private readonly stateRoot: string;
 
   constructor(dir: string, stateDir: string) {
-    const target = resolve(dir, stateDir);
-    mkdirSync(target, { recursive: true });
-    this.db = new DatabaseSync(resolve(target, "state.sqlite"));
-    // Session store + memory store open this file with separate handles
-    // (chatEngine + composePrompt) — WAL avoids SQLITE_BUSY on overlap.
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`);
+    this.stateRoot = resolve(dir, stateDir);
+    mkdirSync(this.stateRoot, { recursive: true });
+    this.db = acquireSharedSqliteDb(this.stateRoot);
     this.migrate();
   }
 
@@ -298,7 +297,7 @@ export class SqliteStore implements IStore {
   }
 
   async close(): Promise<void> {
-    this.db.close();
+    releaseSharedSqliteDb(this.stateRoot);
   }
 }
 

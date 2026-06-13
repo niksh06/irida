@@ -28,6 +28,8 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - **Skill threat scan** (I-46) — shared `promptThreatScan` patterns on skill load; doctor row `skills threat scan`
 - **Turn hooks** (I-47) — optional `hooks.preTurn` / `hooks.postTurn` script config; preTurn exit 2 denies turn; stdout appended (4 KiB cap)
 - **Eval battery** (I-49) — `eval/manifest.json` + `csagent eval run`; verify scripts without live SDK in CI
+- **Shared SQLite handle** (R2-6) — session + memory stores ref-count one `DatabaseSync` per `state.sqlite` (replaces dual-handle WAL workaround)
+- **Cursor IDE transcript mining** (P3-3 / R4-4) — `csagent memory mine-cursor` ingests `~/.cursor/projects/*/agent-transcripts/*.jsonl` into wing `cursor-ide`
 - **Cron:** double-fire race (slot claimed before run), atomic state/jobs writes, vixie `*/N` anchor for dom/month, DOM-or-DOW semantics, oldest-missed-slot catch-up, per-job `graceMinutes` (daily digest after sleep), cross-process tick lock, webhook notify HTTP status check
 - **Chat engine:** dead agent handle after failed rotation (+ next-turn recovery), idle refresh no longer consumes error-retry budget or re-fires, failed attempts recorded, partial output surfaced on exception, replay prefix no longer duplicated
 - **Telegram gateway:** per-chat queues (one slow turn no longer blocks other chats), reply delivery retry, drain on stop before closing sessions, generic error text to chat (details in log), `uncaughtException` exits for launchd restart

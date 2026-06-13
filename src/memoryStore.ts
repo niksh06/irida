@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
+import { acquireSharedSqliteDb, releaseSharedSqliteDb } from "./sqliteShared.js";
 import { redact } from "./redact.js";
 import { newId, nowIso } from "./util.js";
 import { loadConfig, resolveMemoryRoot } from "./config.js";
@@ -169,13 +170,12 @@ function syncSqliteNoteFts(
 
 export class SqliteMemoryStore implements IMemoryStore {
   private db: DatabaseSync;
+  private readonly stateRoot: string;
 
   constructor(stateRoot: string) {
-    const target = resolve(stateRoot);
-    mkdirSync(target, { recursive: true });
-    this.db = new DatabaseSync(resolve(target, "state.sqlite"));
-    // Shares state.sqlite with SqliteStore (separate handle) — see store.ts.
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`);
+    this.stateRoot = resolve(stateRoot);
+    mkdirSync(this.stateRoot, { recursive: true });
+    this.db = acquireSharedSqliteDb(this.stateRoot);
     this.db.exec(SQLITE_MEMORY_DDL);
     const existing = this.db.prepare(`SELECT name, title, body FROM memory_notes`).all() as Array<{
       name: string;
@@ -364,7 +364,7 @@ export class SqliteMemoryStore implements IMemoryStore {
   }
 
   async close(): Promise<void> {
-    this.db.close();
+    releaseSharedSqliteDb(this.stateRoot);
   }
 }
 

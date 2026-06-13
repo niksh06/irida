@@ -8,6 +8,7 @@ import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from 
 import { alignMemorySilos } from "./memorySiloOps.js";
 import { createMemoryStore, SECURE_WING } from "./memoryStore.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
+import { mineCursorTranscripts } from "./cursorTranscriptMine.js";
 import {
   evaluateMemoryAudit,
   formatMemoryAuditReport,
@@ -440,6 +441,53 @@ export async function cmdMemoryIngestSessions(
   }
 }
 
+export async function cmdMemoryMineCursor(
+  argv: string[],
+  opts: MemoryCmdOptions = {}
+): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  let windowHours = 168;
+  let limit = 30;
+  let force = false;
+  let includeSubagents = false;
+  let projectsRoot: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--force") force = true;
+    else if (a === "--include-subagents") includeSubagents = true;
+    else if (a === "--window-hours" && argv[i + 1]) windowHours = Number(argv[++i]);
+    else if (a === "--limit" && argv[i + 1]) limit = Number(argv[++i]);
+    else if (a === "--projects-root" && argv[i + 1]) projectsRoot = argv[++i];
+  }
+  if (!Number.isFinite(windowHours) || windowHours < 1) {
+    console.error("memory mine-cursor: --window-hours must be a positive number");
+    return EXIT.usage;
+  }
+  if (!Number.isFinite(limit) || limit < 1) {
+    console.error("memory mine-cursor: --limit must be a positive number");
+    return EXIT.usage;
+  }
+  try {
+    loadConfig(dir);
+    const out = await mineCursorTranscripts(dir, {
+      windowHours,
+      limit,
+      force,
+      includeSubagents,
+      projectsRoot,
+    });
+    const total = out.ingested + out.updated;
+    console.log(
+      `cursor-mine: ${total} note(s) (${out.ingested} new, ${out.updated} updated, ${out.skipped} skipped)`
+    );
+    for (const name of out.names) console.log(`  ${name}`);
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory mine-cursor: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
 export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
   const [sub, name, ...rest] = argv;
   switch (sub) {
@@ -459,6 +507,8 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemoryReindexEmbeddings(opts);
     case "ingest-sessions":
       return cmdMemoryIngestSessions([name ?? "", ...rest].filter(Boolean), opts);
+    case "mine-cursor":
+      return cmdMemoryMineCursor([name ?? "", ...rest].filter(Boolean), opts);
     case "fact":
       return cmdMemoryFact([name ?? "", ...rest], opts);
     case "audit":
