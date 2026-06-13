@@ -2,6 +2,7 @@
  * Cron run outcomes for post-mortem Telegram + /status (personal ops).
  */
 import type { ExitCode } from "./exit.js";
+import { saveCronContextArtifact } from "./cronContextArtifact.js";
 import { loadCronState, saveCronState, type CronJobLastResult } from "./cronJobs.js";
 
 export interface CronTopicSummary {
@@ -86,6 +87,7 @@ export function saveCronJobResult(
   const state = loadCronState(dir);
   state.lastResult = { ...state.lastResult, [jobId]: buildCronJobLastResult(exec, at) };
   saveCronState(dir, state);
+  saveCronContextArtifact(dir, jobId, exec, at);
 }
 
 export function formatCronLastResultSummary(jobId: string, r: CronJobLastResult): string {

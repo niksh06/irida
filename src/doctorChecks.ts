@@ -25,6 +25,7 @@ import {
   cronJobsPath,
 } from "./cronJobs.js";
 import { gatherCronPromptDrift } from "./cronPromptDrift.js";
+import { gatherCronContextDirIssue } from "./cronContextArtifact.js";
 import { loadGatewayConfig, validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
 import { gatherCronPromptGuardIssues } from "./cronPromptGuard.js";
@@ -94,6 +95,11 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
     writeDetail = `${probeTarget} not writable`;
   }
   checks.push({ name: "state writable", ok: writeOk, detail: writeDetail });
+
+  const ctxIssue = gatherCronContextDirIssue(dir);
+  if (ctxIssue) {
+    checks.push({ name: "cron context dir", ok: false, detail: ctxIssue });
+  }
 
   checks.push(...gatherMemoryEnvChecks(dir));
   checks.push(...gatherBrowserEnvChecks(dir));

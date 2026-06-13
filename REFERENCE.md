@@ -144,6 +144,22 @@ When enabled, each turn silently runs memory search on the user message and prep
 
 `.agent/cron.jobs.json` (five-field cron, **local time**, Vixie semantics: dom OR dow when both restricted). Examples: `deploy/cron.jobs.example.json`.
 
+**Context artifacts** (I-40, Wave C1a) — after each successful run with output, the job writes `.agent/cron.context/{jobId}.json`:
+
+```json
+{
+  "jobId": "tparser-daily-digest",
+  "at": "2026-06-13T20:59:00.000Z",
+  "ok": true,
+  "exitCode": 0,
+  "output": "… redacted, max 256 KiB …",
+  "truncated": false,
+  "format": "text"
+}
+```
+
+Fail-soft write; downstream prompt injection is [I-41](issues/I-41-cron-context-from-field.md). Script jobs persist stdout; builtins without output skip artifacts.
+
 **TParser daily digest** (`topicDelegates: true`) — five isolated `runDelegate` passes (AI/ML, AISec, InfoSec, Programming, DevOps) over a 24h window, then a synthesizer `runPrompt` → Telegram digest + **post-mortem** (`status`, duration, topics). Default schedule: **`59 23 * * *`**. Prompts: `deploy/prompts/tparser-daily-topic.prompt.txt`, `tparser-daily-synthesize.prompt.txt`.
 
 ```json

@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
 import { assessGatewayServiceHealth, tailLogLines } from "./gatewayLogHealth.js";
+import { gatherCronContextDirIssue } from "./cronContextArtifact.js";
 import { cronJobsPath, loadCronJobs, loadCronState, validateCronJobsFile } from "./cronJobs.js";
 import { formatCronLastResultSummary } from "./cronRunRecord.js";
 import { formatRunMetrics, loadRunMetrics } from "./runMetrics.js";
@@ -127,6 +128,11 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
         detail: count ? `${count} job(s) · valid` : "empty · valid",
       });
     }
+  }
+
+  const ctxIssue = gatherCronContextDirIssue(dir);
+  if (ctxIssue) {
+    rows.push({ name: "cron context dir", ok: false, detail: ctxIssue });
   }
 
   const cfg = loadConfig(dir);
