@@ -7,6 +7,8 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 ### Fixed (audit 2026-06-10)
 
 - **Telegram long replies** — rich `sendRichMessage` failure now cascades to 4096 multipart HTML/plain; outbox auto-downgrades to plain after `message is too long` (post-mortem 2026-06-13)
+- **Outbox observability** (I-50) — `gateway status` / `/status` row `outbox`: pending count, oldest age, next retry; FAIL when oldest > 5 min
+- **Outbox user ack** (I-51) — plain «Ответ готов, доставляю частями…» when reply parks to outbox (gateway + cron notify)
 - **Doctor morning-alert** — await async handler in CLI so launchd receives real exit code (not a Promise)
 - **Gateway live resume** — skip skills/`onStart` reinjection when SDK agent resumes live (gateway restart no longer sends ~10 KB preamble on first turn; transcript replay unchanged)
 - **Digest QA length** — max body check raised to 12k chars (real digests ~8–9k were false morning FAIL)
@@ -15,6 +17,9 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Turn context preTurn** (I-52) — `memory.preTurn`: `ADVICE:`/`DO:`/`DEBUG:`/`SYNC:` prefix parsing, optional profile excerpt from a named note; profile skipped on live SDK resume; ordering profile+mode → autoRag → task
+- **`memory_fact_invalidate` MCP** (I-53) — invalidate by `fact_id` or subject/predicate/object scope; `queryFacts` object filter
+- **Introspection profile patches** (I-54) — skill + cron prompt require User/Agent profile patch proposal sections when communication friction; template `deploy/prompts/introspection-weekly.template.md`
 - **Cron context artifacts** (I-40, Wave C1a) — successful runs with output write `.agent/cron.context/{jobId}.json` (redacted, 256 KiB cap); foundation for `contextFrom` (I-41)
 - **Cron:** double-fire race (slot claimed before run), atomic state/jobs writes, vixie `*/N` anchor for dom/month, DOM-or-DOW semantics, oldest-missed-slot catch-up, per-job `graceMinutes` (daily digest after sleep), cross-process tick lock, webhook notify HTTP status check
 - **Chat engine:** dead agent handle after failed rotation (+ next-turn recovery), idle refresh no longer consumes error-retry budget or re-fires, failed attempts recorded, partial output surfaced on exception, replay prefix no longer duplicated

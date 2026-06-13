@@ -37,7 +37,7 @@ csagent memory align-silo [--dry-run]   # merge repo/cron silos → CSAGENT_HOME
 csagent memory audit [--links] [--stale-days 90]  # notes/facts/silo QA
 csagent memory fact add|query|invalidate …
 csagent cron list|run <id>|tick|qa
-csagent gateway status         # launchd + log probe + 24h run metrics
+csagent gateway status         # launchd + log probe + outbox + 24h run metrics
 csagent gateway run [--adapter webhook|telegram] [--port 18789]
 ```
 
@@ -93,7 +93,7 @@ In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
 **Secure notes (Postgres only):** `csagent memory add vault --wing secure --stdin` — body is pgcrypto-encrypted at rest (`CSAGENT_SECRETS_KEY`), never mirrored to `.md`, masked in `memory list`/`search`; only `memory show` (and MCP `memory_get`) decrypts. SQLite store refuses the `secure` wing explicitly.
 
-**Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, `memory_list`, `memory_save`, `memory_fact_query`, `memory_fact_add`. Enable skill `memory-ops` in `gateway.json` for Telegram so the model queries memory before guessing. With `browser.mcp: true`, add skill `browser-ops` so gateway/cron use `browser_navigate` / `browser_snapshot` instead of guessing page content. For Obsidian vault read/write, add `obsidian-ops` and set `OBSIDIAN_VAULT_PATH` in `csagent.env`.
+**Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, `memory_list`, `memory_save`, `memory_fact_query`, `memory_fact_add`, `memory_fact_invalidate`. Enable skill `memory-ops` in `gateway.json` for Telegram so the model queries memory before guessing. With `browser.mcp: true`, add skill `browser-ops` so gateway/cron use `browser_navigate` / `browser_snapshot` instead of guessing page content. For Obsidian vault read/write, add `obsidian-ops` and set `OBSIDIAN_VAULT_PATH` in `csagent.env`.
 
 ```json
 "memory": { "mcp": true }
@@ -139,6 +139,33 @@ When enabled, each turn silently runs memory search on the user message and prep
   "autoRag": { "enabled": true, "limit": 3, "semantic": true, "wings": ["default", "episodic"] }
 }
 ```
+
+### Turn context — mode prefix + profile excerpt (I-52)
+
+Optional built-in preTurn injection (gateway/TUI/chat). **Mode** applies on every turn; **profile** only on the first turn of a session (skipped on live SDK resume, same as skills/onStart).
+
+**Message prefixes** (case-insensitive, stripped from task text):
+
+| Prefix | Meaning |
+|--------|---------|
+| `ADVICE:` | Discuss options; do not implement unless asked |
+| `DO:` | Implement or execute; minimal preamble |
+| `DEBUG:` | Investigate root cause before fixing |
+| `SYNC:` | Status update only |
+
+Example: `ADVICE: проверь cron` → composed prompt contains `Mode: ADVICE` and task `проверь cron`.
+
+```json
+"memory": {
+  "preTurn": {
+    "profileNote": "user-profile.niksh",
+    "profileMaxChars": 1500,
+    "modeEnv": "CSAGENT_MODE"
+  }
+}
+```
+
+When `preTurn` is configured, `CSAGENT_MODE=ADVICE|DO|DEBUG|SYNC` applies when the message has no prefix. Profile excerpt is fail-soft (missing note → no block). Does **not** inject `agent-profile.composer` — use MCP `memory_get` for that.
 
 ## Cron (scheduled jobs)
 
@@ -267,7 +294,7 @@ Delivery: agent replies and digests use Bot API **Rich Messages** (`sendRichMess
 |---------|--------|
 | `/help` | List commands (same as Bot menu) |
 | `/new` | Fresh session for this chat |
-| `/status` | Gateway + launchd status + 24h run metrics |
+| `/status` | Gateway + launchd status + outbox + 24h run metrics |
 | `/doctor` | Short environment check |
 | `/memory [q]` | List or search durable notes |
 | `/sessions [q]` | Recent sessions for this chat |
