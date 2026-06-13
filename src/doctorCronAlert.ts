@@ -62,7 +62,7 @@ export function resolveMorningAlertTarget(
   return null;
 }
 
-/** Exit 0 when cron health OK; 1 on FAIL (alert sent or alert could not be sent). */
+/** Exit 0 when cron health OK or alert delivered; 1 when alert could not be sent. */
 export async function cmdDoctorMorningAlert(dir: string = process.cwd()): Promise<number> {
   const check = gatherCronHealthCheck(dir);
   if (check.ok) {
@@ -90,5 +90,5 @@ export async function cmdDoctorMorningAlert(dir: string = process.cwd()): Promis
     );
     return 1;
   }
-  return 1;
+  return 0;
 }

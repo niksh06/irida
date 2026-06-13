@@ -74,3 +74,30 @@ test("cmdDoctorMorningAlert returns 1 when invalid and no telegram target", asyn
   );
   assert.equal(await cmdDoctorMorningAlert(dir), 1);
 });
+
+test("cmdDoctorMorningAlert returns 0 when alert sent successfully", async () => {
+  const dir = tmp();
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  writeFileSync(
+    join(dir, ".agent", "cron.jobs.json"),
+    JSON.stringify({ version: 1, jobs: [{ id: "x", cron: "not valid cron", prompt: "p" }] }, null, 2) +
+      "\n",
+    "utf8"
+  );
+  writeFileSync(
+    join(dir, ".agent", "gateway.json"),
+    JSON.stringify({ version: 1, adapter: "telegram", allowedChatIds: ["123"] }, null, 2) + "\n",
+    "utf8"
+  );
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = "123456789:ABCDEFghijklmnopqrstuvwxyz123456";
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }));
+  try {
+    assert.equal(await cmdDoctorMorningAlert(dir), 0);
+  } finally {
+    globalThis.fetch = origFetch;
+    if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+  }
+});
