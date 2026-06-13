@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { saveMemory } from "../src/memory.js";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openChatSession } from "../src/chatEngine.js";
@@ -132,6 +133,60 @@ test("transcript replay still injects skills on first turn", async () => {
     await opened2.session.sendTurn("after replay");
     assert.match(sent[0] ?? "", /UNIQUE_SKILL_BODY_12345/);
     assert.match(sent[0] ?? "", /Earlier in this session/);
+    await opened2.session.close();
+  });
+});
+
+test("live resume skips profile excerpt but keeps mode prefix", async () => {
+  await withKey(async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), "chat-preturn-"));
+    saveMemory(dir, "user-profile.niksh", "UNIQUE_PROFILE_PRETURN_999");
+    writeFileSync(
+      join(dir, "agent.config.json"),
+      JSON.stringify({
+        skillsPath: "skills",
+        memory: { preTurn: { profileNote: "user-profile.niksh" } },
+      })
+    );
+
+    const sent: string[] = [];
+    const agentId = "agent-preturn";
+    const makeAgent = (): AgentLike => ({
+      agentId,
+      send: async (msg: string) => {
+        sent.push(msg);
+        return okRun();
+      },
+      close: async () => {},
+    });
+
+    const sdk: SdkCreateLike & SdkResumeLike = {
+      create: async () => makeAgent(),
+      resume: async () => makeAgent(),
+    };
+
+    const opened1 = await openChatSession({ sdk, dir, interactive: false });
+    assert.equal(opened1.ok, true);
+    if (!opened1.ok) return;
+    await opened1.session.sendTurn("hello");
+    const sessionId = opened1.session.sessionId;
+    await opened1.session.close();
+
+    sent.length = 0;
+    const opened2 = await openChatSession({
+      sdk,
+      dir,
+      resumeSessionId: sessionId,
+      interactive: false,
+    });
+    assert.equal(opened2.ok, true);
+    if (!opened2.ok) return;
+    assert.equal(opened2.session.connectMode, "resumed");
+    await opened2.session.sendTurn("ADVICE: проверь cron");
+    assert.doesNotMatch(sent[0] ?? "", /UNIQUE_PROFILE_PRETURN_999/);
+    assert.match(sent[0] ?? "", /Mode: ADVICE/);
+    assert.match(sent[0] ?? "", /проверь cron/);
+    assert.doesNotMatch(sent[0] ?? "", /ADVICE:/);
     await opened2.session.close();
   });
 });

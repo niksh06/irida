@@ -30,6 +30,7 @@ import { loadSkills, SkillError, type Skill } from "./skills.js";
 import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js";
 import { sessionStartMemoryBlocks } from "./memory.js";
 import { autoRagMemoryBlocks } from "./autoRag.js";
+import { buildPreTurnBlocks } from "./preTurn.js";
 import { connectAgentForSession, replayPreamble, type ConnectMode } from "./sessionConnect.js";
 import { resolveMcpServers } from "./mcpServers.js";
 import { redact } from "./redact.js";
@@ -277,15 +278,22 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
       let sendMsg: string;
       try {
+        const { taskText, blocks: preTurnBlocks } = await buildPreTurnBlocks({
+          dir,
+          cfg,
+          rawMessage: msg,
+          includeProfile: firstTurn,
+        });
         const sessionMemoryBlocks =
           firstTurn ? await sessionStartMemoryBlocks(dir, cfg) : [];
-        const autoRagBlocks = await autoRagMemoryBlocks(dir, msg, cfg);
+        const autoRagBlocks = await autoRagMemoryBlocks(dir, taskText, cfg);
         sendMsg = await composePrompt({
-          userPrompt: msg,
+          userPrompt: taskText,
           cwd: sessionCwd,
           dir,
           skills: firstTurn ? skills : [],
           sessionMemoryBlocks,
+          preTurnBlocks,
           autoRagBlocks,
         });
       } catch (e) {

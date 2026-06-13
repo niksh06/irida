@@ -36,6 +36,16 @@ export interface AutoRagConfig {
   wings?: string[];
 }
 
+/** Built-in turn context: profile excerpt + mode env fallback (I-52). */
+export interface PreTurnConfig {
+  /** Memory note name for profile excerpt (e.g. user-profile.niksh). */
+  profileNote?: string;
+  /** Max chars for profile excerpt (default 1500). */
+  profileMaxChars?: number;
+  /** Env var for mode when message has no ADVICE:/DO: prefix (default CSAGENT_MODE). */
+  modeEnv?: string;
+}
+
 /** Durable memory injected before the first turn of each chat session (issue 036). */
 export interface MemoryConfig {
   /** Optional: inject named notes on first turn only (prefer MCP tools). */
@@ -48,6 +58,8 @@ export interface MemoryConfig {
   embeddings?: EmbeddingsConfig;
   /** Silent memory_search before each turn — inject top matching notes. */
   autoRag?: AutoRagConfig;
+  /** Mode prefix + profile excerpt before each turn (I-52). */
+  preTurn?: PreTurnConfig;
 }
 
 /** Stealth browser MCP (puppeteer-extra + persistent Chromium profile). */
@@ -281,6 +293,32 @@ function validate(obj: unknown, dir: string): AgentConfig {
         autoRag.wings = a.wings.map((w) => w.trim()).filter(Boolean);
       }
       cfg.memory.autoRag = autoRag;
+    }
+    if (m.preTurn !== undefined) {
+      if (typeof m.preTurn !== "object" || m.preTurn === null || Array.isArray(m.preTurn)) {
+        throw new ConfigError("memory.preTurn must be an object");
+      }
+      const p = m.preTurn as Record<string, unknown>;
+      const preTurn: PreTurnConfig = {};
+      if (p.profileNote !== undefined) {
+        if (typeof p.profileNote !== "string" || !p.profileNote.trim()) {
+          throw new ConfigError("memory.preTurn.profileNote must be a non-empty string");
+        }
+        preTurn.profileNote = p.profileNote.trim();
+      }
+      if (p.profileMaxChars !== undefined) {
+        if (typeof p.profileMaxChars !== "number" || p.profileMaxChars < 256) {
+          throw new ConfigError("memory.preTurn.profileMaxChars must be a number >= 256");
+        }
+        preTurn.profileMaxChars = p.profileMaxChars;
+      }
+      if (p.modeEnv !== undefined) {
+        if (typeof p.modeEnv !== "string" || !p.modeEnv.trim()) {
+          throw new ConfigError("memory.preTurn.modeEnv must be a non-empty string");
+        }
+        preTurn.modeEnv = p.modeEnv.trim();
+      }
+      cfg.memory.preTurn = preTurn;
     }
   }
   if (o.browser !== undefined) {
