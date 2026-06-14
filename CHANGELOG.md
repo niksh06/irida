@@ -4,11 +4,14 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-13
+
 ### Fixed (audit 2026-06-10)
 
 - **Telegram long replies** — rich `sendRichMessage` failure now cascades to 4096 multipart HTML/plain; outbox auto-downgrades to plain after `message is too long` (post-mortem 2026-06-13)
 - **Outbox observability** (I-50) — `gateway status` / `/status` row `outbox`: pending count, oldest age, next retry; FAIL when oldest > 5 min
 - **Outbox user ack** (I-51) — plain «Ответ готов, доставляю частями…» when reply parks to outbox (gateway + cron notify)
+- **preTurn profile** — excerpt only on first composed turn per session; flag consumed before safety gate (blocked first turns no longer re-inject)
 - **Doctor morning-alert** — await async handler in CLI so launchd receives real exit code (not a Promise)
 - **Gateway live resume** — skip skills/`onStart` reinjection when SDK agent resumes live (gateway restart no longer sends ~10 KB preamble on first turn; transcript replay unchanged)
 - **Digest QA length** — max body check raised to 12k chars (real digests ~8–9k were false morning FAIL)
@@ -110,5 +113,6 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - Requires Node.js ≥ 20 and a Cursor API key
 - Cloud runtime (`runtime: cloud`) is gated but not implemented yet (issue 016)
 
+[0.2.0]: https://github.com/niksh06/csagent/releases/tag/v0.2.0
 [0.1.1]: https://github.com/niksh06/csagent/releases/tag/v0.1.1
 [0.1.0]: https://github.com/niksh06/csagent/releases/tag/v0.1.0

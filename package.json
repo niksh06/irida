@@ -1,6 +1,6 @@
 {
   "name": "cursor-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local-first personal agent powered by Cursor SDK (Hermes-inspired).",
   "type": "module",
   "bin": {
