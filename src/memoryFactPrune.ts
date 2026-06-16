@@ -1,10 +1,10 @@
 /**
- * TTL hygiene for temporal memory facts (seen_post dedup cache).
+ * Hygiene for legacy seen_post facts (deprecated — digest dedup is window-only).
  */
 import { createMemoryStore, type PruneFactsResult } from "./memoryStore.js";
 import { SEEN_POST_SUBJECT } from "./memoryDedup.js";
 
-/** Current facts older than this are invalidated on weekly audit cron. */
+/** @deprecated seen_post no longer written; TTL prune kept for legacy rows only. */
 export const SEEN_POST_TTL_DAYS = 30;
 
 export function parseOlderThanDays(raw: string): number | null {
@@ -25,6 +25,27 @@ export async function pruneSeenPostFacts(
       olderThanDays: opts.olderThanDays ?? SEEN_POST_TTL_DAYS,
       dryRun: opts.dryRun,
     });
+  } finally {
+    await store.close();
+  }
+}
+
+/** Invalidate all current seen_post facts (one-time migration off memory_facts dedup). */
+export async function purgeAllSeenPostFacts(
+  dir: string,
+  opts: { dryRun?: boolean } = {}
+): Promise<PruneFactsResult> {
+  const store = createMemoryStore(dir);
+  try {
+    const facts = await store.queryFacts({ subject: SEEN_POST_SUBJECT, currentOnly: true });
+    if (opts.dryRun) {
+      return { matched: facts.length, pruned: 0 };
+    }
+    let pruned = 0;
+    for (const f of facts) {
+      if (await store.invalidateFact(f.id)) pruned++;
+    }
+    return { matched: facts.length, pruned };
   } finally {
     await store.close();
   }

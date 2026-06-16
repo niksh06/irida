@@ -10,15 +10,14 @@ TParser bi-hourly digest (last 2 hours). **Do not use /api/feed.**
    - Keep items where created_at (or date) >= WINDOW_START.
 4) Hydrate cards: batch GET /api/posts/by-keys?keys=channel_id:post_id,... (max 50 keys per request).
 5) Filter **by topic_tags** (primary) and summary when tags sparse. Match tags/keywords from tparser-workflow spheres: AI, ML, LLM, MLSec, security, InfoSec, AppSec, AISec, DevSecOps, programming, devtools, benchmark, vulnerability, LLM security. Include General News only if tags match.
-6) Dedup: skip posts already in seen_post facts (memory_fact_query subject=seen_post).
-7) Rank **all** tag-matched posts in the window by `priority` (desc). Let MATCHED = count.
+6) Rank **all** tag-matched posts in the window by `priority` (desc). Let MATCHED = count.
    - TOP_N = 15 (Telegram body). If MATCHED < 15, use MATCHED.
-   - memory_fact_add subject=seen_post predicate=channel_id object=post_id for **every** tag-matched post in the window (full dedup), not only top-N.
-8) Links (Hermes-compatible) for each post you mention in top-N:
+   - **Dedup:** only posts with `created_at` inside the 2h window; do **not** write `memory_fact_add` / `seen_post` facts.
+7) Links (Hermes-compatible) for each post you mention in top-N:
    - **tg_link** — `https://t.me/c/{short}/{post_id}` where short = str(channel_id) with leading "-100" stripped.
    - **source_url** — first external http(s) from `urls` or `message`; if none → `(нет URL)`.
    - Never use t.me/@channel as tg_link.
-9) **Output ONLY the Telegram message body** (Russian). **Hard limit ~3500 characters** (prefer one message). Follow this structure exactly:
+8) **Output ONLY the Telegram message body** (Russian). **Hard limit ~3500 characters** (prefer one message). Follow this structure exactly:
 
    Header:
    `📬 TParser · 2ч · {WINDOW_END}`
@@ -47,7 +46,7 @@ TParser bi-hourly digest (last 2 hours). **Do not use /api/feed.**
 
    If MATCHED=0: output exactly `📬 TParser · последние 2ч · новых релевантных постов нет.`
 
-10) Style rules:
+9) Style rules:
     - No wall of one-line-per-post (old Hermes hot-digest list).
     - No raw post_id in titles; use channel name or short gist.
     - Use GET /api/posts/{post_id}/analysis?channel_id= only when summary is thin.

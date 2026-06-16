@@ -51,7 +51,7 @@ function normalizeInput(text: string): string {
 function spherePrompt(sphere: string): DigestFollowup {
   return {
     label: `filter:${sphere}`,
-    prompt: `[digest-followup] TParser expanded digest (last 24 hours). Filter **only** sphere/tag: ${sphere}. Use the same API flow as daily digest (recent-live, by-keys, memory_get tparser-workflow). Per post: structure + agent verdict + tg_link. Show up to 50 posts ranked by priority. Russian Telegram body. Do not re-add seen_post facts already recorded today unless new posts appeared.`,
+    prompt: `[digest-followup] TParser expanded digest (last 24 hours). Filter **only** sphere/tag: ${sphere}. Use the same API flow as daily digest (recent-live, by-keys, memory_get tparser-workflow). Per post: structure + agent verdict + tg_link. Show up to 50 posts ranked by priority. Russian Telegram body. Do not write memory_fact_add / seen_post facts.`,
   };
 }
 

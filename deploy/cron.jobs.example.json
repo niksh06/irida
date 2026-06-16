@@ -7,8 +7,6 @@
       "graceMinutes": 480,
       "cwd": "/path/to/TParser",
       "skills": ["memory-ops", "browser-ops"],
-      "memoryFactsSubject": "seen_post",
-      "memoryFactsLimit": 200,
       "topicDelegates": true,
       "topicWindowHours": 24,
       "topicPromptFile": "deploy/prompts/tparser-daily-topic.prompt.txt",

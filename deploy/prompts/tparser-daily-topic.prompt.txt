@@ -13,9 +13,8 @@ You are an isolated subagent. Return **only** the markdown section for this topi
 3. Hydrate: batch `GET /api/posts/by-keys?keys=channel_id:post_id,...` (max 50 keys).
 4. **Filter this topic only** — primary `topic_tags`, else summary keywords.
    Tag hints for **{TOPIC_TITLE}**: {TAG_HINTS}
-5. Dedup: skip `seen_post` facts (`memory_fact_query` subject=seen_post).
-6. For **every** tag-matched post in window for this topic: `memory_fact_add` subject=seen_post predicate=channel_id object=post_id (full dedup).
-7. Sort by `priority` desc. Analyze **all** matched posts for this topic (not only top-N).
+5. Sort by `priority` desc. Analyze **all** matched posts for this topic (not only top-N).
+   - **Dedup:** window `{WINDOW_START}`–`{WINDOW_END}` only; do **not** write `memory_fact_add` / `seen_post` facts.
 
 ## Per-post format (mandatory for each post)
 

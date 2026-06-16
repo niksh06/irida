@@ -54,12 +54,7 @@ async function resolveCronPrompt(job: CronJob, dir: string): Promise<string> {
   let text = loadCronJobPromptText(job, dir);
   const ctx = resolveContextFromOutput(job, dir);
   text = applyContextFromPlaceholder(text, ctx.output);
-  let body = `[cron:${job.id}] ${text}`;
-  if (job.memoryFactsSubject === "seen_post") {
-    const block = await buildSeenPostsPromptSection(dir, { limit: job.memoryFactsLimit ?? 80 });
-    body = `${block}\n\n${body}`;
-  }
-  return body;
+  return `[cron:${job.id}] ${text}`;
 }
 
 function withDuration<T extends CronExecuteResult>(started: number, result: T): T {
@@ -187,9 +182,8 @@ export async function executeCronJob(
 
   const prompt = await resolveCronPrompt(job, configDir);
 
-  // Runtime scan of the fully assembled prompt (Wave B2): the seen_post facts
-  // preamble comes from memory and could carry injection text the create-time
-  // guard never saw.
+  // Runtime scan of the fully assembled prompt (Wave B2): contextFrom output
+  // is merged here and could carry injection text the create-time guard never saw.
   const assembledHits = scanPromptText(prompt);
   if (assembledHits.length) {
     return withDuration(started, {

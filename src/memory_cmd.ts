@@ -299,6 +299,17 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
       console.log(ok ? `fact: invalidated ${id}` : `fact: not found or already ended: ${id}`);
       return EXIT.ok;
     }
+    case "purge-seen-post": {
+      let dryRun = false;
+      for (const a of rest) {
+        if (a === "--dry-run") dryRun = true;
+      }
+      const result = await purgeAllSeenPostFacts(dir, { dryRun });
+      console.log(
+        `seen_post purge${dryRun ? " (dry-run)" : ""}: matched=${result.matched} invalidated=${result.pruned}`
+      );
+      return EXIT.ok;
+    }
     case "prune": {
       const subject = rest[0];
       if (subject !== "seen_post") {
@@ -328,7 +339,8 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
   csagent memory fact add <subject> <predicate> <object>
   csagent memory fact query <subject> [predicate]
   csagent memory fact invalidate <fact-id>
-  csagent memory fact prune seen_post --older-than 30d [--dry-run]
+  csagent memory fact purge-seen-post [--dry-run]
+  csagent memory fact prune seen_post --older-than 30d [--dry-run]  (legacy TTL)
 `);
       return sub ? EXIT.usage : EXIT.ok;
   }

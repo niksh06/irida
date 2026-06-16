@@ -38,7 +38,7 @@ export interface CronJob {
   yesIUnderstand?: boolean;
   /** Optional gateway webhook notify on completion (issue 038 P2). */
   notify?: CronJobNotify;
-  /** Prepend recent memory_facts for this subject (e.g. seen_post). */
+  /** @deprecated Legacy seen_post preamble removed; field ignored if set. */
   memoryFactsSubject?: string;
   memoryFactsLimit?: number;
   /** Run TParser-style topic delegates (5) + synthesizer instead of single prompt. */

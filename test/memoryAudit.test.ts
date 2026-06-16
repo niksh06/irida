@@ -53,7 +53,7 @@ test("evaluateMemoryAudit passes for minimal ops note store", async () => {
   const report = await evaluateMemoryAudit({ dir, staleDays: DEFAULT_STALE_DAYS, checkLinks: false });
   assert.equal(report.ok, true);
   assert.ok(report.checks.some((c) => c.name === "notes count" && c.ok));
-  assert.ok(report.checks.some((c) => c.name === "seen_post facts" && c.ok));
+  assert.ok(report.checks.some((c) => c.name === "seen_post legacy" && c.severity === "warn"));
   const text = formatMemoryAuditReport(report);
   assert.match(text, /memory audit · PASS/);
 });

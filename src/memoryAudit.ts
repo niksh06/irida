@@ -5,14 +5,14 @@ import { existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig, resolveMemoryRoot } from "./config.js";
 import { listMemories, memoryDir } from "./memory.js";
+import { CURSOR_TRANSCRIPT_WING } from "./memoryWings.js";
 import { createMemoryStore, type MemoryNote } from "./memoryStore.js";
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
 import { EXIT } from "./exit.js";
 import type { CronExecuteResult } from "./cronRunRecord.js";
-import { pruneSeenPostFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
 
 export const DEFAULT_STALE_DAYS = 90;
-export const SEEN_POST_WARN_THRESHOLD = 3000;
+export const SEEN_POST_WARN_THRESHOLD = 3000; // legacy rows only; digest no longer writes seen_post
 export const MAX_LINK_CHECKS = 40;
 export const MEMORY_AUDIT_RESULT_FILE = "memory-audit.last.json";
 
@@ -174,9 +174,10 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
     );
 
     const opsNotes = notes.filter(isOpsNote);
-    const kbNotes = notes.filter((n) => !isOpsNote(n));
+    const archiveWings = new Set<string>([CURSOR_TRANSCRIPT_WING, "secure"]);
+    const curatedNotes = notes.filter((n) => !archiveWings.has(n.wing));
     const staleOps = opsNotes.filter((n) => daysSince(n.updated_at) > staleDays);
-    const staleKb = kbNotes.filter((n) => daysSince(n.updated_at) > staleDays);
+    const staleCurated = curatedNotes.filter((n) => daysSince(n.updated_at) > staleDays);
     checks.push(
       warn(
         "stale ops notes",
@@ -188,9 +189,9 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
     );
     checks.push(
       check(
-        "stale kb notes",
+        "stale curated notes",
         true,
-        `${staleKb.length}/${kbNotes.length} KB note(s) older than ${staleDays}d (informational)`
+        `${staleCurated.length}/${curatedNotes.length} curated note(s) older than ${staleDays}d (informational; excludes cursor-ide archive)`
       )
     );
 
@@ -213,16 +214,16 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
         `${factStats.currentTotal} current · ${factStats.invalidatedTotal} invalidated`
       )
     );
-    if (seen) {
+    if (seen && seen.current > 0) {
       checks.push(
         warn(
-          "seen_post facts",
-          seen.current <= SEEN_POST_WARN_THRESHOLD,
-          `${seen.current} current seen_post (warn > ${SEEN_POST_WARN_THRESHOLD}) · ${seen.invalidated} invalidated`
+          "seen_post legacy",
+          false,
+          `${seen.current} legacy seen_post fact(s) — digest no longer writes these; run: csagent memory fact purge-seen-post`
         )
       );
     } else {
-      checks.push(check("seen_post facts", true, "no seen_post facts"));
+      checks.push(check("seen_post legacy", true, "no current seen_post facts"));
     }
 
     const topSubjects = factStats.subjects
@@ -287,21 +288,15 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
   return { at: new Date().toISOString(), ok, checks };
 }
 
-/** Deterministic cron handler — audit notes/facts + seen_post TTL prune. */
+/** Deterministic cron handler — audit notes/facts (no seen_post writes). */
 export async function executeMemoryAuditBuiltin(dir: string): Promise<CronExecuteResult> {
   const report = await evaluateMemoryAudit({ dir, staleDays: DEFAULT_STALE_DAYS, opsOnly: true });
   saveMemoryAuditResult(dir, report);
-  const pruned = await pruneSeenPostFacts(dir, { olderThanDays: SEEN_POST_TTL_DAYS });
   const body = formatMemoryAuditReport(report);
-  const pruneLine =
-    pruned.pruned > 0
-      ? `\nseen_post TTL: pruned ${pruned.pruned} fact(s) older than ${SEEN_POST_TTL_DAYS}d.`
-      : "";
-  const output = body + pruneLine;
   return {
     ok: report.ok,
     exitCode: report.ok ? EXIT.ok : EXIT.software,
-    message: output.slice(0, 400),
-    output,
+    message: body.slice(0, 400),
+    output: body,
   };
 }
