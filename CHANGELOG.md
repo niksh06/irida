@@ -28,6 +28,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 - **Run log tokens (I-33)** — capture usage from SDK `onDelta` `turn-ended` updates (not emitted on `run.stream()`); `runs.jsonl` input/output tokens populated for gateway/cron chat turns
 - **Cursor-ide archive hash** — `withHashComment` stores hash inside HTML comment; `resolveArchiveContentHash` handles malformed legacy headers
+- **Cursor mine skip logic** — `noteNeedsUpdate` compares embedded header hash (not hash of body including comment); fix `withHashComment` mtime regex so hash is actually written
 - **OKF legacy HTML meta** — `strip-legacy-meta` removes stale `<!-- csagent cursor-lesson … -->` when YAML frontmatter is source of truth
 
 ## [0.2.0] - 2026-06-13

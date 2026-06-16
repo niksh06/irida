@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
@@ -9,6 +10,7 @@ import {
   formatCursorTranscriptMarkdown,
   mineCursorTranscriptFile,
   mineCursorTranscripts,
+  noteNeedsUpdate,
   parseCursorMineMeta,
   resolveArchiveContentHash,
   transcriptFileStale,
@@ -59,6 +61,18 @@ test("formatCursorTranscriptMarkdown renders user and assistant", () => {
   assert.match(md, /Hi there/);
 });
 
+test("noteNeedsUpdate compares embedded hash, not hash of body including comment", () => {
+  const base = formatCursorTranscriptMarkdown(
+    "abc",
+    "/tmp/abc.jsonl",
+    [{ role: "user", text: "hi" }],
+    "2026-06-13T00:00:00.000Z"
+  );
+  const hash = createHash("sha256").update(base).digest("hex").slice(0, 16);
+  const withHash = base.replace("-->", `; hash=${hash} -->`);
+  assert.equal(noteNeedsUpdate(withHash, withHash, false), false);
+});
+
 test("mineCursorTranscriptFile upserts episodic note", async () => {
   const dir = mkdtempSync(resolve(tmpdir(), "cursor-mine-"));
   mkdirSync(join(dir, ".agent"), { recursive: true });
@@ -82,6 +96,7 @@ test("mineCursorTranscriptFile upserts episodic note", async () => {
     const note = await memory.getNote(cursorTranscriptNoteName("chat"));
     assert.match(note?.body ?? "", /test question/);
     assert.equal(note?.wing, "cursor-ide");
+    assert.match(parseCursorMineMeta(note?.body).hash ?? "", /^[a-f0-9]{16}$/);
   } finally {
     await memory.close();
   }

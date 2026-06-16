@@ -192,22 +192,23 @@ export function transcriptFileStale(
   return fileMtimeMs > stored.mtimeMs;
 }
 
-function noteNeedsUpdate(existingBody: string | undefined, newBody: string, force: boolean): boolean {
+export function noteNeedsUpdate(existingBody: string | undefined, newBody: string, force: boolean): boolean {
   if (force || !existingBody) return true;
   const stored = parseCursorMineMeta(existingBody);
-  const newHash = contentHash(newBody);
+  const newHash = parseCursorMineMeta(newBody).hash ?? resolveArchiveContentHash(newBody);
+  if (!stored.hash || !newHash) return true;
   return stored.hash !== newHash;
 }
+
+const CURSOR_MINE_HEADER_BEFORE_CLOSE =
+  /(<!-- csagent cursor-ide mine; id=[^;]+; mtime=[\d\-:.TZ]+)\s*-->/;
 
 function withHashComment(body: string, hash: string): string {
   const normalized = body.replace(/-->\s*;\s*hash=[a-f0-9]+/, `-->; hash=${hash} -->`);
   if (/; hash=[a-f0-9]+/.test(normalized)) {
     return normalized.replace(/; hash=[a-f0-9]+/, `; hash=${hash}`);
   }
-  return normalized.replace(
-    /(<!-- csagent cursor-ide mine; id=[^;]+; mtime=[^\->]+)\s*-->/,
-    `$1; hash=${hash} -->`
-  );
+  return normalized.replace(CURSOR_MINE_HEADER_BEFORE_CLOSE, `$1; hash=${hash} -->`);
 }
 
 export function discoverCursorTranscriptFiles(
