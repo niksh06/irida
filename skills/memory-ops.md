@@ -21,7 +21,7 @@ Not every turn runs memory search. **`memory_search` is on-demand** — call it 
 
 CLI `csagent memory search` is manual lookup only — the gateway does not run it automatically.
 
-**Archive wings** (`cursor-ide`, `secure`, `episodic`) are excluded from default search. Use `includeArchive: true` for forensic IDE transcript lookup; `includeEpisodic: true` for session-ingest notes. **`wings: ["default", "cursor-lesson"]`** restricts ops search without archive noise. Distilled playbooks live in wing **`cursor-lesson`** (default search).
+**Archive wings** (`cursor-ide`, `secure`, `episodic`) are excluded from default search. Use `includeArchive: true` for forensic IDE transcript lookup; `includeEpisodic: true` for session-ingest notes. **`wings: ["default", "tparser", "cursor-lesson", "meta"]`** restricts ops search without archive/style noise. Distilled playbooks live in wing **`cursor-lesson`** (default search). Topic wings: **`tparser`**, **`reddit`**, **`style`** (I-81 split from `default`).
 
 ## Retrieval router
 
@@ -30,7 +30,10 @@ Route before calling tools — wrong store wastes tokens and adds noise.
 | User question type | Action |
 |--------------------|--------|
 | Tech stack (Kafka, Docker, Python, …) | **`kb-ops`** — Grep/Read disk KB; **not** `memory_search` |
-| csagent ops / cron / TParser / gateway | `memory_search` — e.g. `wings: ["default", "cursor-lesson", "meta"]` |
+| csagent ops / cron / TParser / gateway | `memory_search` — e.g. `wings: ["default", "tparser", "cursor-lesson", "meta"]` |
+| TParser workflow / channels | `memory_search` with `wings: ["tparser"]` or `memory_get tparser-workflow` |
+| Reddit feeds / digests | `memory_search` with `wings: ["reddit"]` |
+| Post style / editorial tone | `memory_search` with `wings: ["style"]` |
 | Past IDE session / forensic transcript | `memory_search` with `includeArchive: true` |
 | Past agent **session** summary (episodic) | `memory_search` with `includeEpisodic: true`, or `memory_get ep.sess_*` if known |
 | Personal journal / PKM | **`obsidian-ops`** (if enabled) |

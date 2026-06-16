@@ -25,9 +25,11 @@ csagent memory add csagent-index --stdin --dir "$CSAGENT_HOME" < deploy/prompts/
 
 | Name | Wing | Purpose |
 |------|------|---------|
-| tparser-workflow | default | TParser API, channels |
-| reddit-feeds | default | RSS sub list |
+| tparser-workflow | tparser | TParser API, channels |
+| reddit-feeds | reddit | RSS sub list |
 | ops-gateway | default | Gateway/cron ops |
+| csagent-index | default | Corpus map (this note) |
+| *-post-style | style | Telegram post formatting |
 | agent-profile.composer | meta | Agent partnership |
 | user-profile.niksh | meta | User prefs |
 

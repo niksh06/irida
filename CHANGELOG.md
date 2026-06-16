@@ -25,6 +25,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - **Gateway skills** — `deploy/gateway.json.example` adds `kb-ops` + `tool-economy` alongside `memory-ops`
 - **tool-economy skill** — token/tool routing playbook in `skills/tool-economy.md`
 
+### Added
+
+- **Default corpus re-wing (I-81)** — `csagent memory re-wing [--apply]`; wings `tparser`, `reddit`, `style`
+
 ### Changed
 
 - **Episodic search exclude (I-73)** — wing `episodic` omitted from default FTS/semantic; CLI `--include-episodic`; MCP `includeEpisodic`

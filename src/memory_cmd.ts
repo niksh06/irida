@@ -40,6 +40,7 @@ import {
 import { parseOlderThanDays, pruneSeenPostFacts, purgeAllSeenPostFacts, purgeMalformedSubjectFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
 import { MemoryFactValidationError } from "./memoryFactValidate.js";
 import { buildMemorySearchOptions } from "./memorySearchPolicy.js";
+import { runDefaultCorpusReWing } from "./memoryReWing.js";
 
 const SEARCH_FLAG_RE = /^--(?:include-archive|include-episodic|semantic|hybrid)$/;
 
@@ -919,6 +920,29 @@ export async function cmdMemoryOkf(argv: string[], opts: MemoryCmdOptions = {}):
   }
 }
 
+export async function cmdMemoryReWing(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  const apply = argv.includes("--apply");
+  try {
+    const result = await withStore(dir, (store) => runDefaultCorpusReWing(store, { apply }));
+    const label = result.dryRun ? "dry-run" : "apply";
+    if (!result.moves.length) {
+      console.log(`memory re-wing (${label}): no default-wing notes to move`);
+      return EXIT.ok;
+    }
+    for (const move of result.moves) {
+      console.log(`${move.name}: ${move.from} → ${move.to}`);
+    }
+    console.log(
+      `memory re-wing (${label}): planned=${result.planned}${apply ? ` applied=${result.applied}` : ""}`
+    );
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory re-wing: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
 export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
   argv = consumeDirFlag(argv, opts);
   const [sub, name, ...rest] = argv;
@@ -960,6 +984,8 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemoryFact([name ?? "", ...rest], opts);
     case "audit":
       return cmdMemoryAudit([name ?? "", ...rest], opts);
+    case "re-wing":
+      return cmdMemoryReWing([name ?? "", ...rest], opts);
     case "import-md":
       return cmdMemoryImportMd([name ?? "", ...rest], opts);
     case "add": {
@@ -994,6 +1020,7 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory import-md --kb-root PATH …   (deprecated — use file KB + skill kb-ops)
   csagent memory align-silo [--dry-run]   merge repo/cron silos → canonical ~/.csagent/.agent/memory
   csagent memory audit [--links] [--stale-days N] [--all-notes] [--json]
+  csagent memory re-wing [--apply]            move default corpus → tparser/reddit/style (I-81)
   csagent memory fact add|query|invalidate …
 
 In chat/TUI, inject with @memory:<name> or @memory: for all.
