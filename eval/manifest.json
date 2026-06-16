@@ -4,6 +4,10 @@
     {
       "id": "memory-audit-smoke",
       "verify": "verify.sh"
+    },
+    {
+      "id": "memory-search-smoke",
+      "verify": "verify.sh"
     }
   ]
 }
