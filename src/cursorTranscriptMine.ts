@@ -8,17 +8,53 @@ import { basename, join, resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { createMemoryStore, type IMemoryStore } from "./memoryStore.js";
 import { redact } from "./redact.js";
+import { CURSOR_TRANSCRIPT_WING } from "./memoryWings.js";
 
-export const CURSOR_TRANSCRIPT_WING = "cursor-ide";
+export { CURSOR_TRANSCRIPT_WING };
+
+/** Cap PG archive size; full jsonl remains on disk (MEMORY-GOVERNANCE D2). */
+export const CURSOR_ARCHIVE_MAX_BODY_BYTES = 200 * 1024;
+
+export function truncateCursorArchiveBody(
+  body: string,
+  maxBytes: number = CURSOR_ARCHIVE_MAX_BODY_BYTES
+): string {
+  if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
+  const footer = `\n\n<!-- truncated: archive body capped at ${maxBytes} bytes; full transcript on disk -->\n`;
+  let budget = maxBytes - Buffer.byteLength(footer, "utf8");
+  if (budget < 256) budget = 256;
+  const buf = Buffer.from(body, "utf8");
+  let cut = Math.min(budget, buf.length);
+  while (cut > 0 && (buf[cut]! & 0xc0) === 0x80) cut--;
+  return `${buf.subarray(0, cut).toString("utf8")}${footer}`;
+}
+
+function finalizeArchiveBody(
+  transcriptId: string,
+  filePath: string,
+  lines: ParsedLine[],
+  mtimeIso: string
+): string {
+  let body = redact(formatCursorTranscriptMarkdown(transcriptId, filePath, lines, mtimeIso));
+  body = truncateCursorArchiveBody(body);
+  return withHashComment(body, contentHash(body));
+}
+
+/** Postgres text rejects NUL; Cursor jsonl occasionally contains them. */
+export function sanitizeTranscriptText(text: string): string {
+  return text.includes("\0") ? text.replace(/\0/g, "") : text;
+}
 
 export interface CursorTranscriptMineOptions {
   /** Override ~/.cursor/projects */
   projectsRoot?: string;
-  /** Only transcripts modified within this window (default 168h). */
+  /** Scan every transcript under projectsRoot (ignores windowHours/limit). */
+  all?: boolean;
+  /** Only transcripts modified within this window (default 168h; ignored when all). */
   windowHours?: number;
-  /** Max parent transcripts per pass (default 30). */
+  /** Max parent transcripts per pass (default 30; ignored when all). */
   limit?: number;
-  /** Re-ingest when file mtime unchanged but --force. */
+  /** Re-ingest even when file mtime and content hash are unchanged. */
   force?: boolean;
   /** Include subagent transcript folders (default false). */
   includeSubagents?: boolean;
@@ -62,7 +98,7 @@ function parseTranscriptLines(raw: string): ParsedLine[] {
       const textParts: string[] = [];
       for (const part of parts) {
         if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) {
-          textParts.push(part.text.trim());
+          textParts.push(sanitizeTranscriptText(part.text.trim()));
         }
       }
       if (textParts.length) out.push({ role, text: textParts.join("\n") });
@@ -102,20 +138,75 @@ function contentHash(body: string): string {
   return createHash("sha256").update(body).digest("hex").slice(0, 16);
 }
 
+const CURSOR_MINE_META_RE =
+  /<!-- csagent cursor-ide mine; id=[^;]+; mtime=([\d\-:.TZ]+)\s*(?:; hash=([a-f0-9]+))?\s*-->/;
+
+const CURSOR_MINE_MALFORM_HASH_RE =
+  /<!-- csagent cursor-ide mine; id=[^;]+; mtime=[\d\-:.TZ]+\s*-->\s*;\s*hash=([a-f0-9]+)/;
+
+/** Parse mtime (and optional hash) stored in a mined note header. */
+export function parseCursorMineMeta(body: string | undefined): { mtimeMs?: number; hash?: string } {
+  if (!body) return {};
+  const m = body.match(CURSOR_MINE_META_RE);
+  let mtimeMs: number | undefined;
+  let hash: string | undefined;
+  if (m) {
+    const parsed = Date.parse(m[1]!);
+    mtimeMs = Number.isFinite(parsed) ? parsed : undefined;
+    hash = m[2];
+  }
+  if (!hash) {
+    hash = body.match(CURSOR_MINE_MALFORM_HASH_RE)?.[1];
+  }
+  if (mtimeMs === undefined && hash === undefined) return {};
+  return { mtimeMs, hash };
+}
+
+function stripCursorMineHeader(body: string): string {
+  return body
+    .replace(/<!-- csagent cursor-ide mine[\s\S]*?(?:-->\s*;?\s*hash=[a-f0-9]*)?/i, "")
+    .trim();
+}
+
+/** Hash from archive meta, malformed suffix, or content (for lineage backfill). */
+export function resolveArchiveContentHash(body: string | undefined): string | undefined {
+  if (!body) return undefined;
+  const meta = parseCursorMineMeta(body);
+  if (meta.hash) return meta.hash;
+  const stripped = stripCursorMineHeader(body);
+  return stripped ? contentHash(stripped) : undefined;
+}
+
+/**
+ * Fast path: skip reading/parsing jsonl when the on-disk file is not newer than the note.
+ * When the transcript grows across sessions, file mtime advances → re-ingest on next pass.
+ */
+export function transcriptFileStale(
+  fileMtimeMs: number,
+  existingBody: string | undefined,
+  force: boolean
+): boolean {
+  if (force || !existingBody) return true;
+  const stored = parseCursorMineMeta(existingBody);
+  if (stored.mtimeMs === undefined) return true;
+  return fileMtimeMs > stored.mtimeMs;
+}
+
 function noteNeedsUpdate(existingBody: string | undefined, newBody: string, force: boolean): boolean {
   if (force || !existingBody) return true;
-  const oldHash = existingBody.match(/<!-- csagent cursor-ide mine; id=[^;]+; mtime=[^>]+; hash=([a-f0-9]+)/)?.[1];
+  const stored = parseCursorMineMeta(existingBody);
   const newHash = contentHash(newBody);
-  return oldHash !== newHash;
+  return stored.hash !== newHash;
 }
 
 function withHashComment(body: string, hash: string): string {
-  if (body.includes("hash=")) {
-    return body.replace(/hash=[a-f0-9]+/, `hash=${hash}`);
+  const normalized = body.replace(/-->\s*;\s*hash=[a-f0-9]+/, `-->; hash=${hash} -->`);
+  if (/; hash=[a-f0-9]+/.test(normalized)) {
+    return normalized.replace(/; hash=[a-f0-9]+/, `; hash=${hash}`);
   }
-  return body.replace(
-    /(<!-- csagent cursor-ide mine; id=[^;]+; mtime=[^>]+ -->)/,
-    `$1; hash=${hash}`
+  return normalized.replace(
+    /(<!-- csagent cursor-ide mine; id=[^;]+; mtime=[^\->]+)\s*-->/,
+    `$1; hash=${hash} -->`
   );
 }
 
@@ -156,9 +247,10 @@ export async function mineCursorTranscripts(
 ): Promise<CursorTranscriptMineResult> {
   loadConfig(dir);
   const projectsRoot = opts.projectsRoot ?? defaultCursorProjectsRoot();
+  const scanAll = opts.all === true;
   const windowMs = Math.max(1, opts.windowHours ?? 168) * 3600_000;
   const cutoff = Date.now() - windowMs;
-  const limit = Math.max(1, opts.limit ?? 30);
+  const limit = scanAll ? Number.POSITIVE_INFINITY : Math.max(1, opts.limit ?? 30);
   const force = opts.force === true;
 
   const memory = createMemoryStore(dir);
@@ -168,13 +260,23 @@ export async function mineCursorTranscripts(
   let skipped = 0;
 
   try {
-    const files = discoverCursorTranscriptFiles(projectsRoot, {
+    let files = discoverCursorTranscriptFiles(projectsRoot, {
       includeSubagents: opts.includeSubagents,
-    }).filter((f) => statSync(f).mtimeMs >= cutoff);
+    });
+    if (!scanAll) {
+      files = files.filter((f) => statSync(f).mtimeMs >= cutoff).slice(0, limit);
+    }
 
-    for (const filePath of files.slice(0, limit)) {
+    for (const filePath of files) {
       const stat = statSync(filePath);
       const transcriptId = transcriptIdFromPath(filePath);
+      const name = cursorTranscriptNoteName(transcriptId);
+      const existing = await memory.getNote(name);
+      if (!transcriptFileStale(stat.mtimeMs, existing?.body, force)) {
+        skipped++;
+        continue;
+      }
+
       const raw = readFileSync(filePath, "utf8");
       const lines = parseTranscriptLines(raw);
       if (!lines.length) {
@@ -182,12 +284,8 @@ export async function mineCursorTranscripts(
         continue;
       }
       const mtimeIso = stat.mtime.toISOString();
-      let body = redact(formatCursorTranscriptMarkdown(transcriptId, filePath, lines, mtimeIso));
-      const hash = contentHash(body);
-      body = withHashComment(body, hash);
+      const body = finalizeArchiveBody(transcriptId, filePath, lines, mtimeIso);
 
-      const name = cursorTranscriptNoteName(transcriptId);
-      const existing = await memory.getNote(name);
       if (!noteNeedsUpdate(existing?.body, body, force)) {
         skipped++;
         continue;
@@ -221,10 +319,10 @@ export async function mineCursorTranscriptFile(
   const lines = parseTranscriptLines(readFileSync(filePath, "utf8"));
   if (!lines.length) return "skipped";
   const mtimeIso = stat.mtime.toISOString();
-  let body = redact(formatCursorTranscriptMarkdown(transcriptId, filePath, lines, mtimeIso));
-  body = withHashComment(body, contentHash(body));
+  const body = finalizeArchiveBody(transcriptId, filePath, lines, mtimeIso);
   const name = cursorTranscriptNoteName(transcriptId);
   const existing = await memory.getNote(name);
+  if (!transcriptFileStale(stat.mtimeMs, existing?.body, opts.force === true)) return "skipped";
   if (!noteNeedsUpdate(existing?.body, body, opts.force === true)) return "skipped";
   await memory.upsertNote({
     name,

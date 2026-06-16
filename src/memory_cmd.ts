@@ -523,6 +523,10 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemoryIngestSessions([name ?? "", ...rest].filter(Boolean), opts);
     case "mine-cursor":
       return cmdMemoryMineCursor([name ?? "", ...rest].filter(Boolean), opts);
+    case "distill-cursor":
+      return cmdMemoryDistillCursor([name ?? "", ...rest].filter(Boolean), opts);
+    case "okf":
+      return cmdMemoryOkf([name ?? "", ...rest].filter(Boolean), opts);
     case "fact":
       return cmdMemoryFact([name ?? "", ...rest], opts);
     case "audit":
