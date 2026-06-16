@@ -120,7 +120,7 @@ Four independent layers; only the ones you enable run. Order in `composePrompt`:
 
 **CLI** `csagent memory search` is manual — cron/gateway never call it unless a job prompt or agent tool does.
 
-**Default search scope:** wings `cursor-ide` and `secure` are excluded from FTS/semantic unless `includeArchive: true` (MCP) or `--include-archive` (CLI). Episodic (`ep.*`) and meta notes are included. Secure notes match by name/title only; body stays encrypted.
+**Default search scope:** wings `cursor-ide`, `secure`, and `episodic` are excluded from FTS/semantic unless opted in (`includeArchive`, `includeEpisodic`, or CLI flags). Meta notes are included. Secure notes match by name/title only; body stays encrypted.
 
 See also: [Auto-RAG pilot](#auto-rag-optional-conservative-pilot--i-55), [Cursor IDE transcripts](#cursor-ide-transcripts-p3-3--r4-4), [Memory governance](docs/MEMORY-GOVERNANCE.md) (files vs Postgres, OKF, LLM wiki, review checklist).
 

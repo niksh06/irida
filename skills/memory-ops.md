@@ -35,7 +35,7 @@ Route before calling tools — wrong store wastes tokens and adds noise.
 | Past agent **session** summary (episodic) | `memory_search` with `includeEpisodic: true`, or `memory_get ep.sess_*` if known |
 | Personal journal / PKM | **`obsidian-ops`** (if enabled) |
 | Greeting / small talk | **No** memory search |
-| Paraphrase / Russian query | `memory_search` with `semantic: true` when embeddings enabled (MCP defaults semantic on) |
+| Paraphrase / Russian query | `memory_search` with `hybrid: true` (default when embeddings on) or `semantic: true` for vector-only |
 | Exact note name / error string | `memory_get` or keyword `memory_search` |
 
 **RLM-lite pattern:** `memory_search` → pick 1–3 note names → `memory_get` for full body; do not paste entire search snippets into the reply.

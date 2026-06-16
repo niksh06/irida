@@ -111,11 +111,18 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
     "memory_search",
     {
       description:
-        "Search csagent memory notes. semantic=true uses local vector embeddings (paraphrase recall); default is keyword/FTS.",
+        "Search csagent memory notes. hybrid=true merges FTS + vector (default when embeddings on); semantic=true is vector-only.",
       inputSchema: {
         query: z.string().describe("Search text"),
         limit: z.number().int().min(1).max(50).optional().describe("Max hits (default 10)"),
-        semantic: z.boolean().optional().describe("Vector search via local embeddings (PG only)"),
+        hybrid: z
+          .boolean()
+          .optional()
+          .describe("RRF merge of FTS + vector (default true when embeddings enabled)"),
+        semantic: z
+          .boolean()
+          .optional()
+          .describe("Vector-only search (skip hybrid merge; PG + embeddings)"),
         includeArchive: z
           .boolean()
           .optional()
@@ -126,22 +133,33 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
           .describe("Include episodic session-ingest wing (default false)"),
       },
     },
-    async ({ query, limit, semantic, includeArchive, includeEpisodic }) => {
+    async ({ query, limit, hybrid, semantic, includeArchive, includeEpisodic }) => {
+      let useHybrid = hybrid;
       let useSemantic = semantic;
-      if (useSemantic === undefined) {
-        try {
-          useSemantic = loadConfig(ctx.dir).memory?.embeddings?.enabled === true;
-        } catch {
-          useSemantic = false;
-        }
+      let embeddingsOn = false;
+      try {
+        embeddingsOn = loadConfig(ctx.dir).memory?.embeddings?.enabled === true;
+      } catch {
+        embeddingsOn = false;
+      }
+      if (useHybrid === undefined && useSemantic === undefined && embeddingsOn) {
+        useHybrid = true;
+      }
+      if (useHybrid === undefined && useSemantic === true) {
+        useHybrid = true;
       }
       const searchOpts = buildMemorySearchOptions({ includeArchive, includeEpisodic });
+      const lim = limit ?? 10;
       const hits = await withStore(ctx, async (s) => {
-        if (useSemantic && s.searchNotesSemantic) {
-          const out = await s.searchNotesSemantic(query, limit ?? 10, searchOpts);
+        if (useHybrid && s.searchNotesHybrid) {
+          const out = await s.searchNotesHybrid(query, lim, searchOpts);
           if (out.length > 0) return out;
         }
-        return s.searchNotes(query, limit ?? 10, searchOpts);
+        if (useSemantic && s.searchNotesSemantic) {
+          const out = await s.searchNotesSemantic(query, lim, searchOpts);
+          if (out.length > 0) return out;
+        }
+        return s.searchNotes(query, lim, searchOpts);
       });
       if (hits.length === 0) return textResult("No matches.");
       const lines = hits.map(

@@ -210,6 +210,7 @@ export async function cmdMemorySearch(
   query: string,
   opts: MemoryCmdOptions & {
     semantic?: boolean;
+    hybrid?: boolean;
     includeArchive?: boolean;
     includeEpisodic?: boolean;
   } = {}
@@ -222,6 +223,16 @@ export async function cmdMemorySearch(
   const searchOpts = buildMemorySearchOptions(opts);
   try {
     const hits = await withStore(dir, async (s) => {
+      if (opts.hybrid) {
+        if (!s.searchNotesHybrid) {
+          throw new MemoryError(
+            "--hybrid requires Postgres + memory.embeddings.enabled (see REFERENCE.md)"
+          );
+        }
+        const hybrid = await s.searchNotesHybrid(query, undefined, searchOpts);
+        if (hybrid.length > 0) return hybrid;
+        return s.searchNotes(query, undefined, searchOpts);
+      }
       if (opts.semantic) {
         if (!s.searchNotesSemantic) {
           throw new MemoryError(
@@ -898,12 +909,19 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
     case "search": {
       const args = [name, ...rest].filter((a): a is string => Boolean(a));
       const semantic = args.includes("--semantic");
+      const hybrid = args.includes("--hybrid");
       const includeArchive = args.includes("--include-archive");
       const includeEpisodic = args.includes("--include-episodic");
       const q = args
-        .filter((a) => a !== "--semantic" && a !== "--include-archive" && a !== "--include-episodic")
+        .filter(
+          (a) =>
+            a !== "--semantic" &&
+            a !== "--hybrid" &&
+            a !== "--include-archive" &&
+            a !== "--include-episodic"
+        )
         .join(" ");
-      return cmdMemorySearch(q, { ...opts, semantic, includeArchive, includeEpisodic });
+      return cmdMemorySearch(q, { ...opts, semantic, hybrid, includeArchive, includeEpisodic });
     }
     case "reindex-embeddings":
       return cmdMemoryReindexEmbeddings(opts);

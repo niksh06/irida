@@ -25,6 +25,7 @@ import { titleFromOkfOrBody } from "./okf.js";
 import { secretsKey, SECRETS_KEY_ENV } from "./credentialsPg.js";
 import { makeEmbedder, toVectorLiteral, type EmbedFn } from "./embeddings.js";
 import { MALFORMED_FACT_WHERE, validateFactTriple } from "./memoryFactValidate.js";
+import { reciprocalRankFusion, resolveHybridWeights, type HybridSearchWeights } from "./memorySearchHybrid.js";
 
 /**
  * Notes in this wing are pgcrypto-encrypted at rest (Postgres only, I-20).
@@ -107,6 +108,8 @@ export interface IMemoryStore {
   searchNotes(query: string, limit?: number, opts?: MemorySearchOptions): Promise<MemoryNote[]>;
   /** Cosine search over pgvector embeddings (Postgres + embeddings enabled). */
   searchNotesSemantic?(query: string, limit?: number, opts?: MemorySearchOptions): Promise<MemoryNote[]>;
+  /** RRF merge of FTS + vector (Postgres + embeddings enabled, I-72). */
+  searchNotesHybrid?(query: string, limit?: number, opts?: MemorySearchOptions): Promise<MemoryNote[]>;
   /** Compute and store embeddings for notes missing one; returns updated count. */
   reindexEmbeddings?(): Promise<number>;
   addFact(input: AddFactInput): Promise<MemoryFact>;
@@ -408,15 +411,22 @@ export class PostgresMemoryStore implements IMemoryStore {
   private embedder?: EmbedFn;
   private readonly searchExcludeWings: readonly string[];
   private readonly embedExcludeWings: readonly string[];
+  private readonly hybridWeights: HybridSearchWeights;
 
   constructor(
     connectionString: string,
-    opts: { embedder?: EmbedFn; searchExcludeWings?: readonly string[]; embedExcludeWings?: readonly string[] } = {}
+    opts: {
+      embedder?: EmbedFn;
+      searchExcludeWings?: readonly string[];
+      embedExcludeWings?: readonly string[];
+      hybridWeights?: HybridSearchWeights;
+    } = {}
   ) {
     this.pool = new pg.Pool({ connectionString, max: 5 });
     this.embedder = opts.embedder;
     this.searchExcludeWings = opts.searchExcludeWings ?? resolveSearchExcludeWings();
     this.embedExcludeWings = opts.embedExcludeWings ?? resolveEmbedExcludeWings();
+    this.hybridWeights = opts.hybridWeights ?? resolveHybridWeights();
   }
 
   private async ensureMigrated(): Promise<void> {
@@ -521,6 +531,27 @@ export class PostgresMemoryStore implements IMemoryStore {
       [...sel.params, ...wingFilter.params, toVectorLiteral(emb), limit]
     );
     return res.rows as MemoryNote[];
+  }
+
+  async searchNotesHybrid(query: string, limit = 10, opts?: MemorySearchOptions): Promise<MemoryNote[]> {
+    await this.ensureMigrated();
+    if (!this.embedder) return this.searchNotes(query, limit, opts);
+    const emb = await this.embedder(query);
+    if (!emb) return this.searchNotes(query, limit, opts);
+    const candidateLimit = Math.min(Math.max(limit * 3, limit), 50);
+    const [ftsHits, vecHits] = await Promise.all([
+      this.searchNotes(query, candidateLimit, opts),
+      this.searchNotesSemantic(query, candidateLimit, opts),
+    ]);
+    if (vecHits.length === 0) return ftsHits.slice(0, limit);
+    if (ftsHits.length === 0) return vecHits.slice(0, limit);
+    return reciprocalRankFusion(
+      [
+        { items: ftsHits, weight: this.hybridWeights.fts },
+        { items: vecHits, weight: this.hybridWeights.vector },
+      ],
+      limit
+    );
   }
 
   async reindexEmbeddings(): Promise<number> {
@@ -759,7 +790,12 @@ export function createMemoryStore(projectDir: string, _stateDir?: string): IMemo
     } catch {
       /* config errors surface elsewhere; embeddings stay off */
     }
-    return new PostgresMemoryStore(url, { embedder, searchExcludeWings, embedExcludeWings });
+    return new PostgresMemoryStore(url, {
+      embedder,
+      searchExcludeWings,
+      embedExcludeWings,
+      hybridWeights: resolveHybridWeights(memoryCfg?.search?.hybridWeights),
+    });
   }
   return new SqliteMemoryStore(resolveMemoryRoot(projectDir), { searchExcludeWings });
 }
