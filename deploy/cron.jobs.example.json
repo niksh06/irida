@@ -21,20 +21,11 @@
       "cron": "0 */2 * * *",
       "cwd": "/path/to/TParser",
       "skills": ["memory-ops"],
-      "memoryFactsSubject": "seen_post",
-      "memoryFactsLimit": 120,
       "promptFile": "deploy/prompts/tparser-bi-hourly.prompt.txt",
       "notify": {
         "chatId": "YOUR_CHAT_ID",
         "telegram": true
       }
-    },
-    {
-      "id": "happyin-kb-weekly",
-      "cron": "0 3 * * 0",
-      "enabled": false,
-      "yesIUnderstand": true,
-      "promptFile": "deploy/prompts/kb-import-weekly.prompt.txt"
     },
     {
       "id": "memory-curator-weekly",
@@ -66,6 +57,40 @@
       "cron": "30 23 * * *",
       "enabled": false,
       "builtin": "session-ingest"
+    },
+    {
+      "id": "cursor-mine-daily",
+      "cron": "15 0 * * *",
+      "enabled": false,
+      "builtin": "cursor-mine"
+    },
+    {
+      "id": "cursor-distill-backfill-queue",
+      "cron": "0 8 * * *",
+      "enabled": false,
+      "builtin": "cursor-distill-backfill-queue"
+    },
+    {
+      "id": "cursor-lesson-backfill",
+      "cron": "5 8 * * *",
+      "enabled": false,
+      "contextFrom": "cursor-distill-backfill-queue",
+      "skills": ["memory-ops", "cursor-lesson-ops"],
+      "promptFile": "deploy/prompts/cursor-lesson-backfill.prompt.txt"
+    },
+    {
+      "id": "cursor-distill-queue-weekly",
+      "cron": "0 7 * * 1",
+      "enabled": false,
+      "builtin": "cursor-distill-queue"
+    },
+    {
+      "id": "cursor-lesson-weekly",
+      "cron": "0 7 * * 1",
+      "enabled": false,
+      "contextFrom": "cursor-distill-queue-weekly",
+      "skills": ["memory-ops", "cursor-lesson-ops"],
+      "promptFile": "deploy/prompts/cursor-lesson-weekly.prompt.txt"
     },
     {
       "id": "introspection-weekly",

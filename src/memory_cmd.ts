@@ -1,6 +1,7 @@
 /**
  * `csagent memory` — notes + temporal facts (csagent-memory, issue 036+).
  */
+import { isAbsolute, resolve } from "node:path";
 import { stdin as input } from "node:process";
 import { loadConfig, ConfigError } from "./config.js";
 import { importHappyinKb } from "./importHappyinKb.js";
@@ -10,17 +11,52 @@ import { createMemoryStore, SECURE_WING } from "./memoryStore.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
 import { mineCursorTranscripts } from "./cursorTranscriptMine.js";
 import {
+  buildCursorDistillQueue,
+  formatDistillQueueJson,
+  formatDistillQueueMarkdown,
+  loadCursorDistillBaseline,
+  saveCursorDistillBaseline,
+} from "./cursorTranscriptDistill.js";
+import { runCursorDistillBatch } from "./cursorTranscriptDistillOrchestrator.js";
+import {
+  auditCursorLessonCorpus,
+  backfillLessonLineage,
+  exportLessonReviewBundle,
+  exportOkfLessonBundle,
+  migrateCursorLessonsToOkf,
+  promoteCursorLessons,
+  purgeLessonHygiene,
+  purgeLessonShard,
+  purgeMetaDistill,
+  repairLessonTitles,
+  stripLegacyLessonMeta,
+} from "./memoryOkf.js";
+import {
   evaluateMemoryAudit,
   formatMemoryAuditReport,
   saveMemoryAuditResult,
   DEFAULT_STALE_DAYS,
 } from "./memoryAudit.js";
-import { parseOlderThanDays, pruneSeenPostFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
+import { parseOlderThanDays, pruneSeenPostFacts, purgeAllSeenPostFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { recordMemoryDelete } from "./actionTranscript.js";
 
 export interface MemoryCmdOptions {
   dir?: string;
+}
+
+/** Pull `--dir PATH` from argv so all memory subcommands honor prod config roots. */
+function consumeDirFlag(argv: string[], opts: MemoryCmdOptions): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--dir" && argv[i + 1]) {
+      opts.dir = argv[++i];
+    } else {
+      out.push(a!);
+    }
+  }
+  return out;
 }
 
 async function readStdinAll(): Promise<string> {
@@ -462,27 +498,30 @@ export async function cmdMemoryMineCursor(
   let windowHours = 168;
   let limit = 30;
   let force = false;
+  let scanAll = false;
   let includeSubagents = false;
   let projectsRoot: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--force") force = true;
+    else if (a === "--all") scanAll = true;
     else if (a === "--include-subagents") includeSubagents = true;
     else if (a === "--window-hours" && argv[i + 1]) windowHours = Number(argv[++i]);
     else if (a === "--limit" && argv[i + 1]) limit = Number(argv[++i]);
     else if (a === "--projects-root" && argv[i + 1]) projectsRoot = argv[++i];
   }
-  if (!Number.isFinite(windowHours) || windowHours < 1) {
+  if (!scanAll && (!Number.isFinite(windowHours) || windowHours < 1)) {
     console.error("memory mine-cursor: --window-hours must be a positive number");
     return EXIT.usage;
   }
-  if (!Number.isFinite(limit) || limit < 1) {
+  if (!scanAll && (!Number.isFinite(limit) || limit < 1)) {
     console.error("memory mine-cursor: --limit must be a positive number");
     return EXIT.usage;
   }
   try {
     loadConfig(dir);
     const out = await mineCursorTranscripts(dir, {
+      all: scanAll,
       windowHours,
       limit,
       force,
@@ -501,7 +540,327 @@ export async function cmdMemoryMineCursor(
   }
 }
 
+export async function cmdMemoryDistillCursor(
+  argv: string[],
+  opts: MemoryCmdOptions = {}
+): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  let limit = 10;
+  let force = false;
+  let json = false;
+  let minBodyBytes = 0;
+  let backfill = false;
+  let setBaseline = false;
+  let baselineNote: string | undefined;
+  let runBatch = false;
+  let dryRun = false;
+  let parallel = 3;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--force") force = true;
+    else if (a === "--json") json = true;
+    else if (a === "--backfill") backfill = true;
+    else if (a === "--run") runBatch = true;
+    else if (a === "--dry-run") dryRun = true;
+    else if (a === "--set-baseline") setBaseline = true;
+    else if (a === "--baseline-note" && argv[i + 1]) baselineNote = argv[++i];
+    else if (a === "--limit" && argv[i + 1]) limit = Number(argv[++i]);
+    else if (a === "--min-bytes" && argv[i + 1]) minBodyBytes = Number(argv[++i]);
+    else if (a === "--parallel" && argv[i + 1]) parallel = Number(argv[++i]);
+  }
+  if (setBaseline) {
+    try {
+      loadConfig(dir);
+      const pending = await buildCursorDistillQueue(dir, {
+        limit: 100_000,
+        backfill: true,
+      });
+      if (pending.candidates.length > 0) {
+        console.error(
+          "memory distill-cursor: backfill queue not empty — finish backfill before --set-baseline"
+        );
+        return EXIT.usage;
+      }
+      const record = saveCursorDistillBaseline(dir, new Date().toISOString(), baselineNote);
+      console.log(`cursor-distill baseline: ${record.baselineAt}`);
+      if (record.note) console.log(`note: ${record.note}`);
+      return EXIT.ok;
+    } catch (e) {
+      console.error("memory distill-cursor: " + (e instanceof ConfigError ? e.message : String(e)));
+      return EXIT.config;
+    }
+  }
+  const existingBaseline = loadCursorDistillBaseline(dir);
+  if (argv.includes("--show-baseline")) {
+    if (!existingBaseline) {
+      console.log("cursor-distill baseline: not set (delta mode queues all stale/missing)");
+      return EXIT.ok;
+    }
+    console.log(`cursor-distill baseline: ${existingBaseline.baselineAt}`);
+    if (existingBaseline.note) console.log(`note: ${existingBaseline.note}`);
+    return EXIT.ok;
+  }
+  if (!Number.isFinite(limit) || limit < 1) {
+    console.error("memory distill-cursor: --limit must be a positive number");
+    return EXIT.usage;
+  }
+  if (!Number.isFinite(minBodyBytes) || minBodyBytes < 0) {
+    console.error("memory distill-cursor: --min-bytes must be a non-negative number");
+    return EXIT.usage;
+  }
+  if (!Number.isFinite(parallel) || parallel < 1) {
+    console.error("memory distill-cursor: --parallel must be a positive number");
+    return EXIT.usage;
+  }
+  try {
+    if (runBatch) {
+      const batch = await runCursorDistillBatch({
+        dir,
+        limit,
+        parallel,
+        force,
+        minBodyBytes,
+        backfill,
+        dryRun,
+      });
+      for (const r of batch.results) {
+        const status = r.ok ? "ok" : "fail";
+        console.log(`${status}\t${r.sourceName}\t${r.chunks} chunk(s)\t${r.message}`);
+      }
+      console.log(
+        `cursor-distill --run: ${batch.saved} saved, ${batch.failed} failed, ${batch.processed} processed` +
+          (dryRun ? " (dry-run)" : "")
+      );
+      return batch.failed > 0 ? EXIT.software : EXIT.ok;
+    }
+    const out = await buildCursorDistillQueue(dir, { limit, force, minBodyBytes, backfill });
+    console.log(json ? formatDistillQueueJson(out) : formatDistillQueueMarkdown(out));
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory distill-cursor: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
+export async function cmdMemoryOkf(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  const [action, ...rest] = argv;
+  let apply = false;
+  let json = false;
+  let limit = 0;
+  let outDir = "Reports/cursor-lesson-review";
+  let bundleOut = ".agent/memory/okf/cursor-lesson";
+  let excludeFixtures = false;
+  let purgeFixtures = true;
+  let purgeStubs = true;
+  let keepFile: string | undefined;
+  let shard = "";
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === "--apply") apply = true;
+    else if (a === "--json") json = true;
+    else if (a === "--limit" && rest[i + 1]) limit = Number(rest[++i]);
+    else if (a === "--out" && rest[i + 1]) outDir = rest[++i]!;
+    else if (a === "--bundle-out" && rest[i + 1]) bundleOut = rest[++i]!;
+    else if (a === "--exclude-fixtures") excludeFixtures = true;
+    else if (a === "--fixtures-only") {
+      purgeFixtures = true;
+      purgeStubs = false;
+    }     else if (a === "--stubs-only") {
+      purgeFixtures = false;
+      purgeStubs = true;
+    } else if (a === "--keep-file" && rest[i + 1]) keepFile = rest[++i]!;
+    else if (a === "--shard" && rest[i + 1]) shard = rest[++i]!;
+  }
+  outDir = isAbsolute(outDir) ? outDir : resolve(dir, outDir);
+  bundleOut = isAbsolute(bundleOut) ? bundleOut : resolve(dir, bundleOut);
+  try {
+    loadConfig(dir);
+    switch (action) {
+      case "audit": {
+        const audit = await auditCursorLessonCorpus(dir);
+        if (json) {
+          console.log(JSON.stringify(audit, null, 2));
+        } else {
+          console.log(
+            `# cursor-lesson OKF audit\n\nNotes: ${audit.count} · OKF: ${audit.okfCount} · ${audit.totalKB} KB\nFixtures: ${audit.fixtureCount} · stubs: ${audit.stubCount} · meta-distill: ${audit.metaDistillCount}\nIssues: ${audit.errorIssueCount} error · ${audit.warnIssueCount} warn`
+          );
+          const shards = new Map<string, number>();
+          for (const row of audit.rows) shards.set(row.shard, (shards.get(row.shard) ?? 0) + 1);
+          for (const [id, n] of [...shards.entries()].sort()) {
+            console.log(`  ${id}: ${n}`);
+          }
+        }
+        return EXIT.ok;
+      }
+      case "migrate-lessons": {
+        const result = await migrateCursorLessonsToOkf(dir, {
+          apply,
+          limit: limit > 0 ? limit : undefined,
+        });
+        console.log(
+          `okf migrate-lessons: scanned=${result.scanned} migrated=${result.migrated} skipped=${result.skipped}${apply ? " (applied)" : " (dry-run)"}`
+        );
+        for (const err of result.errors) console.error(`  error: ${err}`);
+        return result.errors.length ? EXIT.software : EXIT.ok;
+      }
+      case "backfill-lineage": {
+        const result = await backfillLessonLineage(dir, { apply });
+        console.log(
+          `okf backfill-lineage${result.dryRun ? " (dry-run)" : " (applied)"}: scanned=${result.scanned} candidates=${result.candidates.length} updated=${result.updated} skipped=${result.skipped}`
+        );
+        for (const c of result.candidates.slice(0, 20)) {
+          console.log(`  ${c.name}: ${c.reason}${c.archiveHash ? ` → ${c.archiveHash}` : ""}`);
+        }
+        if (result.candidates.length > 20) {
+          console.log(`  … +${result.candidates.length - 20} more`);
+        }
+        for (const err of result.errors) console.error(`  error: ${err}`);
+        return result.errors.length ? EXIT.software : EXIT.ok;
+      }
+      case "repair-titles": {
+        const result = await repairLessonTitles(dir, { apply });
+        console.log(
+          `okf repair-titles${result.dryRun ? " (dry-run)" : " (applied)"}: scanned=${result.scanned} candidates=${result.candidates.length} updated=${result.updated} skipped=${result.skipped}`
+        );
+        for (const c of result.candidates.slice(0, 15)) {
+          console.log(`  ${c.name}: "${c.oldTitle.slice(0, 40)}" → "${c.newTitle.slice(0, 60)}"`);
+        }
+        if (result.candidates.length > 15) {
+          console.log(`  … +${result.candidates.length - 15} more`);
+        }
+        for (const err of result.errors) console.error(`  error: ${err}`);
+        return result.errors.length ? EXIT.software : EXIT.ok;
+      }
+      case "strip-legacy-meta": {
+        const result = await stripLegacyLessonMeta(dir, { apply });
+        console.log(
+          `okf strip-legacy-meta${result.dryRun ? " (dry-run)" : " (applied)"}: scanned=${result.scanned} candidates=${result.candidates.length} updated=${result.updated} skipped=${result.skipped}`
+        );
+        for (const name of result.candidates.slice(0, 20)) console.log(`  ${name}`);
+        if (result.candidates.length > 20) console.log(`  … +${result.candidates.length - 20} more`);
+        for (const err of result.errors) console.error(`  error: ${err}`);
+        return result.errors.length ? EXIT.software : EXIT.ok;
+      }
+      case "promote": {
+        const result = await promoteCursorLessons(dir, { apply, promoteFile: keepFile || undefined });
+        console.log(
+          `okf promote${result.dryRun ? " (dry-run)" : " (applied)"}: scanned=${result.scanned} candidates=${result.candidates.length} updated=${result.updated} skipped=${result.skipped}`
+        );
+        for (const c of result.candidates) {
+          console.log(`  ${c.name}: ${c.oldStatus ?? "(none)"} → approved`);
+        }
+        for (const err of result.errors) console.error(`  error: ${err}`);
+        return result.errors.length ? EXIT.software : EXIT.ok;
+      }
+      case "export-review": {
+        const audit = await auditCursorLessonCorpus(dir);
+        const exported = exportLessonReviewBundle(audit, outDir);
+        console.log(`okf export-review: ${exported.indexPath}`);
+        for (const p of exported.shardPaths) console.log(`  ${p}`);
+        return EXIT.ok;
+      }
+      case "export-bundle": {
+        const exported = await exportOkfLessonBundle(dir, bundleOut, { excludeFixtures });
+        const orphanNote =
+          exported.orphansRemoved > 0 ? ` · removed ${exported.orphansRemoved} orphan(s)` : "";
+        console.log(
+          `okf export-bundle: ${exported.indexPath} (${exported.conceptCount} concept(s)${orphanNote})`
+        );
+        for (const p of exported.shardIndexPaths) console.log(`  ${p}`);
+        return EXIT.ok;
+      }
+      case "purge-stubs": {
+        const result = await purgeLessonHygiene(dir, {
+          apply,
+          fixtures: purgeFixtures,
+          stubs: purgeStubs,
+        });
+        const mode = result.dryRun ? "dry-run" : "applied";
+        console.log(
+          `okf purge-stubs (${mode}): ${result.candidates.length} candidate(s)${result.deleted ? ` · deleted=${result.deleted}` : ""}`
+        );
+        for (const c of result.candidates) {
+          console.log(`  ${c.name} [${c.reason}] ${c.shard}`);
+        }
+        return EXIT.ok;
+      }
+      case "purge-meta-distill": {
+        const result = await purgeMetaDistill(dir, { apply, keepFile });
+        const mode = result.dryRun ? "dry-run" : "applied";
+        console.log(
+          `okf purge-meta-distill (${mode}): keep=${result.keep.length} · purge=${result.candidates.length}${result.deleted ? ` · deleted=${result.deleted}` : ""}`
+        );
+        for (const name of result.keep) console.log(`  keep ${name}`);
+        for (const c of result.candidates) {
+          console.log(`  purge ${c.name}`);
+        }
+        return EXIT.ok;
+      }
+      case "purge-tparser": {
+        const result = await purgeLessonShard(dir, {
+          shard: "A-tparser",
+          apply,
+          keepFile,
+        });
+        const mode = result.dryRun ? "dry-run" : "applied";
+        console.log(
+          `okf purge-tparser (${mode}): keep=${result.keep.length} · purge=${result.candidates.length}${result.deleted ? ` · deleted=${result.deleted}` : ""}`
+        );
+        return EXIT.ok;
+      }
+      case "purge-gateway": {
+        const result = await purgeLessonShard(dir, {
+          shard: "B-csagent-gateway",
+          apply,
+          keepFile,
+        });
+        const mode = result.dryRun ? "dry-run" : "applied";
+        console.log(
+          `okf purge-gateway (${mode}): keep=${result.keep.length} · purge=${result.candidates.length}${result.deleted ? ` · deleted=${result.deleted}` : ""}`
+        );
+        return EXIT.ok;
+      }
+      case "purge-shard": {
+        if (!shard) {
+          console.error("memory okf purge-shard: --shard required (e.g. A-tparser)");
+          return EXIT.usage;
+        }
+        const result = await purgeLessonShard(dir, { shard, apply, keepFile });
+        const mode = result.dryRun ? "dry-run" : "applied";
+        console.log(
+          `okf purge-shard (${mode}) ${result.shard}: keep=${result.keep.length} · purge=${result.candidates.length}${result.deleted ? ` · deleted=${result.deleted}` : ""}`
+        );
+        for (const name of result.keep) console.log(`  keep ${name}`);
+        for (const c of result.candidates) console.log(`  purge ${c.name}`);
+        return EXIT.ok;
+      }
+      default:
+        console.error(`memory okf: unknown action '${action ?? ""}'`);
+        console.error(`Usage:
+  csagent memory okf audit [--json]
+  csagent memory okf migrate-lessons [--apply] [--limit N]
+  csagent memory okf backfill-lineage [--apply]   # sourceHash from cursor-ide archive
+  csagent memory okf repair-titles [--apply]      # human title from description/Summary
+  csagent memory okf strip-legacy-meta [--apply] # drop HTML lineage when YAML present
+  csagent memory okf promote [--apply] [--keep-file deploy/promote-lessons.json]
+  csagent memory okf export-review [--out Reports/cursor-lesson-review]
+  csagent memory okf export-bundle [--bundle-out .agent/memory/okf/cursor-lesson] [--exclude-fixtures]
+  csagent memory okf purge-stubs [--apply] [--fixtures-only | --stubs-only]
+  csagent memory okf purge-meta-distill [--apply] [--keep-file deploy/meta-distill-keep.json]
+  csagent memory okf purge-tparser [--apply] [--keep-file deploy/tparser-keep.json]
+  csagent memory okf purge-gateway [--apply] [--keep-file deploy/gateway-keep.json]
+  csagent memory okf purge-shard --shard A-tparser [--apply] [--keep-file …]`);
+        return EXIT.usage;
+    }
+  } catch (e) {
+    console.error("memory okf: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
 export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
+  argv = consumeDirFlag(argv, opts);
   const [sub, name, ...rest] = argv;
   switch (sub) {
     case "align-silo":
@@ -562,7 +921,7 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory ingest-sessions [--window-hours N] [--force]
                                            ingest recent sessions → episodic notes
   csagent memory rm <name>
-  csagent memory import-md --kb-root PATH [--dir CSAGENT_ROOT] [--domains kafka,python] [--dry-run]
+  csagent memory import-md --kb-root PATH …   (deprecated — use file KB + skill kb-ops)
   csagent memory align-silo [--dry-run]   merge repo/cron silos → canonical ~/.csagent/.agent/memory
   csagent memory audit [--links] [--stale-days N] [--all-notes] [--json]
   csagent memory fact add|query|invalidate …

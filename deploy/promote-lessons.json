@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "note": "HITL-approved cursor-lesson promote list (reality review 2026-06-15)",
+  "promote": [
+    "lesson.gateway-idle-rotation",
+    "lesson.2fc93ef1-5727-498e-9e21-0bbe604da92e",
+    "lesson.04fa554b-1425-4e85-9fa2-90b10ddc382c",
+    "lesson.44ea7b45-8cbe-4ed8-931f-72e50ac17c3a",
+    "lesson.4372ec7a-8635-4d66-b4d7-861568afe4d4",
+    "lesson.e53d0c50-60bb-4ffe-886a-f40e6725f08d",
+    "lesson.338fce9a-60a6-42b6-9d6f-eb0ca180b28e",
+    "lesson.9bdab982-06b9-47fd-ab2c-6e185fd50239"
+  ]
+}

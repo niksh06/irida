@@ -20,13 +20,17 @@ import {
   loadCronState,
   saveCronState,
 } from "./cronJobs.js";
-import { buildSeenPostsPromptSection } from "./memoryDedup.js";
 import { loadCronJobPromptText } from "./cronPrompt.js";
 import { scanPromptText, validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
 import { exportRecentSessions } from "./sessionExport.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
+import { mineCursorTranscripts } from "./cursorTranscriptMine.js";
+import {
+  buildCursorDistillQueue,
+  formatDistillQueueMarkdown,
+} from "./cursorTranscriptDistill.js";
 import { resolveCronScriptPath, runCronGate, runCronScript } from "./cronScript.js";
 import {
   applyContextFromPlaceholder,
@@ -144,6 +148,61 @@ export async function executeCronJob(
         ok: false,
         exitCode: EXIT.software,
         message: `session-ingest failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "cursor-mine") {
+    try {
+      const out = await mineCursorTranscripts(configDir, { all: true });
+      const total = out.ingested + out.updated;
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `cursor-mine: ${total} note(s) (${out.ingested} new, ${out.updated} updated, ${out.skipped} skipped)`,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `cursor-mine failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "cursor-distill-queue") {
+    try {
+      const out = await buildCursorDistillQueue(configDir, { limit: 10 });
+      const markdown = formatDistillQueueMarkdown(out);
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `cursor-distill-queue: ${out.candidates.length} candidate(s) (${out.skipped} skipped, mode=${out.mode})`,
+        output: markdown,
+        silent: out.candidates.length === 0,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `cursor-distill-queue failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "cursor-distill-backfill-queue") {
+    try {
+      const out = await buildCursorDistillQueue(configDir, { limit: 10, backfill: true });
+      const markdown = formatDistillQueueMarkdown(out);
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `cursor-distill-backfill-queue: ${out.candidates.length} candidate(s) (${out.skipped} skipped)`,
+        output: markdown,
+        silent: out.candidates.length === 0,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `cursor-distill-backfill-queue failed: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }

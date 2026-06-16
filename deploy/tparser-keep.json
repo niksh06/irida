@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "shard": "A-tparser",
+  "note": "TParser shard review — 10 canonical + 8 secondary (3 canonical removed in phase-1 stub purge)",
+  "keep": [
+    "lesson.338fce9a-60a6-42b6-9d6f-eb0ca180b28e",
+    "lesson.4b00dc0a-d726-4381-af13-1faeb4d4b97c",
+    "lesson.dccd6d6e-5dfb-4e59-a768-65aea6dd9943",
+    "lesson.8f9ea027-d7e1-4a06-bc75-928b3f2aab8f",
+    "lesson.9bdab982-06b9-47fd-ab2c-6e185fd50239",
+    "lesson.680340f0-22e4-4b5d-a513-6d221bdfa6d4",
+    "lesson.e53d0c50-60bb-4ffe-886a-f40e6725f08d",
+    "lesson.950ab468-e28a-44d0-afb9-3bfda6907e86",
+    "lesson.44ea7b45-8cbe-4ed8-931f-72e50ac17c3a",
+    "lesson.9d5d733e-404a-4570-b8c9-a595aa9e1539",
+    "lesson.f9f2fbd7-8a28-4972-939a-ce870c19b2ab",
+    "lesson.2e4bc617-8d60-4f94-b90d-884833062f3c",
+    "lesson.b4336522-76c7-4e78-9cb8-db15d78d0c55",
+    "lesson.6029ce3f-5a25-4b73-86f7-96fb61741e9a",
+    "lesson.4372ec7a-8635-4d66-b4d7-861568afe4d4"
+  ]
+}
