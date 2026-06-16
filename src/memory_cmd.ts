@@ -170,13 +170,14 @@ export async function cmdMemoryRm(name: string, opts: MemoryCmdOptions = {}): Pr
 
 export async function cmdMemorySearch(
   query: string,
-  opts: MemoryCmdOptions & { semantic?: boolean } = {}
+  opts: MemoryCmdOptions & { semantic?: boolean; includeArchive?: boolean } = {}
 ): Promise<ExitCode> {
   const dir = opts.dir ?? process.cwd();
   if (!query.trim()) {
     console.error("memory search: query required");
     return EXIT.usage;
   }
+  const searchOpts = opts.includeArchive ? { includeArchive: true as const } : undefined;
   try {
     const hits = await withStore(dir, async (s) => {
       if (opts.semantic) {
@@ -185,12 +186,12 @@ export async function cmdMemorySearch(
             "--semantic requires Postgres + memory.embeddings.enabled (see REFERENCE.md)"
           );
         }
-        const semantic = await s.searchNotesSemantic(query);
+        const semantic = await s.searchNotesSemantic(query, undefined, searchOpts);
         if (semantic.length > 0) return semantic;
         // Embedding daemon down or nothing indexed → keyword fallback.
-        return s.searchNotes(query);
+        return s.searchNotes(query, undefined, searchOpts);
       }
-      return s.searchNotes(query);
+      return s.searchNotes(query, undefined, searchOpts);
     });
     if (hits.length === 0) {
       console.log("No matches.");
@@ -500,8 +501,9 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
     case "search": {
       const args = [name, ...rest].filter((a): a is string => Boolean(a));
       const semantic = args.includes("--semantic");
-      const q = args.filter((a) => a !== "--semantic").join(" ");
-      return cmdMemorySearch(q, { ...opts, semantic });
+      const includeArchive = args.includes("--include-archive");
+      const q = args.filter((a) => a !== "--semantic" && a !== "--include-archive").join(" ");
+      return cmdMemorySearch(q, { ...opts, semantic, includeArchive });
     }
     case "reindex-embeddings":
       return cmdMemoryReindexEmbeddings(opts);

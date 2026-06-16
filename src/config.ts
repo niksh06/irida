@@ -75,6 +75,10 @@ export interface MemoryConfig {
   autoRag?: AutoRagConfig;
   /** Mode prefix + profile excerpt before each turn (I-52). */
   preTurn?: PreTurnConfig;
+  /** Wings omitted from FTS/semantic search unless includeArchive (default: cursor-ide, secure). */
+  searchExcludeWings?: string[];
+  /** Wings skipped by embed-on-save and reindex-embeddings (default: cursor-ide, secure). */
+  embedExcludeWings?: string[];
 }
 
 /** Stealth browser MCP (puppeteer-extra + persistent Chromium profile). */
@@ -336,6 +340,14 @@ function validate(obj: unknown, dir: string): AgentConfig {
         preTurn.modeEnv = p.modeEnv.trim();
       }
       cfg.memory.preTurn = preTurn;
+    }
+    for (const key of ["searchExcludeWings", "embedExcludeWings"] as const) {
+      const raw = m[key];
+      if (raw === undefined) continue;
+      if (!Array.isArray(raw) || !raw.every((x) => typeof x === "string")) {
+        throw new ConfigError(`memory.${key} must be an array of strings`);
+      }
+      cfg.memory[key] = raw.map((x) => x.trim()).filter(Boolean);
     }
   }
   if (o.browser !== undefined) {

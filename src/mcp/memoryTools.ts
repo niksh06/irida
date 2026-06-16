@@ -114,15 +114,20 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
         query: z.string().describe("Search text"),
         limit: z.number().int().min(1).max(50).optional().describe("Max hits (default 10)"),
         semantic: z.boolean().optional().describe("Vector search via local embeddings (PG only)"),
+        includeArchive: z
+          .boolean()
+          .optional()
+          .describe("Include cursor-ide transcript archive wing (default false)"),
       },
     },
-    async ({ query, limit, semantic }) => {
+    async ({ query, limit, semantic, includeArchive }) => {
+      const searchOpts = includeArchive ? { includeArchive: true } : undefined;
       const hits = await withStore(ctx, async (s) => {
         if (semantic && s.searchNotesSemantic) {
-          const out = await s.searchNotesSemantic(query, limit ?? 10);
+          const out = await s.searchNotesSemantic(query, limit ?? 10, searchOpts);
           if (out.length > 0) return out;
         }
-        return s.searchNotes(query, limit ?? 10);
+        return s.searchNotes(query, limit ?? 10, searchOpts);
       });
       if (hits.length === 0) return textResult("No matches.");
       const lines = hits.map(

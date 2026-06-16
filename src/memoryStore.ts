@@ -12,6 +12,16 @@ import { redact } from "./redact.js";
 import { newId, nowIso } from "./util.js";
 import { loadConfig, resolveMemoryRoot } from "./config.js";
 import { postgresFtsQuery, sqliteFtsMatchQuery } from "./memorySearch.js";
+import {
+  effectiveSearchExcludeWings,
+  resolveEmbedExcludeWings,
+  resolveSearchExcludeWings,
+  shouldEmbedNote,
+  sqliteWingNotIn,
+  type MemorySearchOptions,
+  wingNotInSql,
+} from "./memorySearchPolicy.js";
+import { titleFromOkfOrBody } from "./okf.js";
 import { secretsKey, SECRETS_KEY_ENV } from "./credentialsPg.js";
 import { makeEmbedder, toVectorLiteral, type EmbedFn } from "./embeddings.js";
 
@@ -93,9 +103,9 @@ export interface IMemoryStore {
   getNote(name: string): Promise<MemoryNote | undefined>;
   listNotes(wing?: string): Promise<MemoryNote[]>;
   deleteNote(name: string): Promise<boolean>;
-  searchNotes(query: string, limit?: number): Promise<MemoryNote[]>;
+  searchNotes(query: string, limit?: number, opts?: MemorySearchOptions): Promise<MemoryNote[]>;
   /** Cosine search over pgvector embeddings (Postgres + embeddings enabled). */
-  searchNotesSemantic?(query: string, limit?: number): Promise<MemoryNote[]>;
+  searchNotesSemantic?(query: string, limit?: number, opts?: MemorySearchOptions): Promise<MemoryNote[]>;
   /** Compute and store embeddings for notes missing one; returns updated count. */
   reindexEmbeddings?(): Promise<number>;
   addFact(input: AddFactInput): Promise<MemoryFact>;
@@ -124,8 +134,7 @@ const MEMORY_VECTOR_MIGRATION = readFileSync(
 );
 
 function titleFromBody(name: string, body: string): string {
-  const m = body.match(/^#\s+(.+)$/m);
-  return m?.[1]?.trim() || name;
+  return titleFromOkfOrBody(name, body);
 }
 
 const SQLITE_MEMORY_DDL = `
@@ -171,9 +180,11 @@ function syncSqliteNoteFts(
 export class SqliteMemoryStore implements IMemoryStore {
   private db: DatabaseSync;
   private readonly stateRoot: string;
+  private readonly searchExcludeWings: readonly string[];
 
-  constructor(stateRoot: string) {
+  constructor(stateRoot: string, opts: { searchExcludeWings?: readonly string[] } = {}) {
     this.stateRoot = resolve(stateRoot);
+    this.searchExcludeWings = opts.searchExcludeWings ?? resolveSearchExcludeWings();
     mkdirSync(this.stateRoot, { recursive: true });
     this.db = acquireSharedSqliteDb(this.stateRoot);
     this.db.exec(SQLITE_MEMORY_DDL);
@@ -232,7 +243,9 @@ export class SqliteMemoryStore implements IMemoryStore {
     return r.changes > 0;
   }
 
-  async searchNotes(query: string, limit = 20): Promise<MemoryNote[]> {
+  async searchNotes(query: string, limit = 20, opts?: MemorySearchOptions): Promise<MemoryNote[]> {
+    const exclude = effectiveSearchExcludeWings(this.searchExcludeWings, opts);
+    const wingFilter = sqliteWingNotIn(exclude);
     const ftsQ = sqliteFtsMatchQuery(query);
     if (ftsQ) {
       try {
@@ -240,10 +253,10 @@ export class SqliteMemoryStore implements IMemoryStore {
           .prepare(
             `SELECT n.* FROM memory_notes_fts f
              JOIN memory_notes n ON n.name = f.name
-             WHERE memory_notes_fts MATCH ?
+             WHERE memory_notes_fts MATCH ?${wingFilter.clause}
              ORDER BY n.updated_at DESC LIMIT ?`
           )
-          .all(ftsQ, limit) as unknown as MemoryNote[];
+          .all(ftsQ, ...wingFilter.params, limit) as unknown as MemoryNote[];
       } catch {
         /* fall through to LIKE */
       }
@@ -252,10 +265,10 @@ export class SqliteMemoryStore implements IMemoryStore {
     return this.db
       .prepare(
         `SELECT * FROM memory_notes
-         WHERE name LIKE ? OR title LIKE ? OR body LIKE ?
+         WHERE (name LIKE ? OR title LIKE ? OR body LIKE ?)${wingFilter.clause}
          ORDER BY updated_at DESC LIMIT ?`
       )
-      .all(q, q, q, limit) as unknown as MemoryNote[];
+      .all(q, q, q, ...wingFilter.params, limit) as unknown as MemoryNote[];
   }
 
   async addFact(input: AddFactInput): Promise<MemoryFact> {
@@ -372,10 +385,17 @@ export class PostgresMemoryStore implements IMemoryStore {
   private pool: pg.Pool;
   private migrated = false;
   private embedder?: EmbedFn;
+  private readonly searchExcludeWings: readonly string[];
+  private readonly embedExcludeWings: readonly string[];
 
-  constructor(connectionString: string, opts: { embedder?: EmbedFn } = {}) {
+  constructor(
+    connectionString: string,
+    opts: { embedder?: EmbedFn; searchExcludeWings?: readonly string[]; embedExcludeWings?: readonly string[] } = {}
+  ) {
     this.pool = new pg.Pool({ connectionString, max: 5 });
     this.embedder = opts.embedder;
+    this.searchExcludeWings = opts.searchExcludeWings ?? resolveSearchExcludeWings();
+    this.embedExcludeWings = opts.embedExcludeWings ?? resolveEmbedExcludeWings();
   }
 
   private async ensureMigrated(): Promise<void> {
@@ -391,8 +411,8 @@ export class PostgresMemoryStore implements IMemoryStore {
   }
 
   /** Best-effort embedding update; never fails the save. */
-  private async updateEmbedding(name: string, title: string, body: string): Promise<void> {
-    if (!this.embedder) return;
+  private async updateEmbedding(name: string, wing: string, title: string, body: string): Promise<void> {
+    if (!this.embedder || !shouldEmbedNote(wing, this.embedExcludeWings)) return;
     const emb = await this.embedder(`${title}\n\n${body}`);
     if (!emb) return;
     try {
@@ -459,23 +479,25 @@ export class PostgresMemoryStore implements IMemoryStore {
          wing=EXCLUDED.wing, title=EXCLUDED.title, body=EXCLUDED.body, body_enc=NULL, updated_at=EXCLUDED.updated_at`,
       [name, wing, title, body, existing?.created_at ?? now, now]
     );
-    await this.updateEmbedding(name, title, body);
+    await this.updateEmbedding(name, wing, title, body);
     return (await this.getNote(name))!;
   }
 
-  async searchNotesSemantic(query: string, limit = 10): Promise<MemoryNote[]> {
+  async searchNotesSemantic(query: string, limit = 10, opts?: MemorySearchOptions): Promise<MemoryNote[]> {
     await this.ensureMigrated();
     if (!this.embedder) return [];
     const emb = await this.embedder(query);
     if (!emb) return [];
+    const exclude = effectiveSearchExcludeWings(this.searchExcludeWings, opts);
     const sel = this.noteSelect(false);
+    const wingFilter = wingNotInSql(exclude, sel.params.length + 1);
     const n = sel.params.length;
     const res = await this.pool.query(
       `SELECT ${sel.expr} FROM memory_notes
-       WHERE embedding IS NOT NULL
-       ORDER BY embedding <=> $${n + 1}::vector
-       LIMIT $${n + 2}`,
-      [...sel.params, toVectorLiteral(emb), limit]
+       WHERE embedding IS NOT NULL${wingFilter.clause}
+       ORDER BY embedding <=> $${n + wingFilter.params.length + 1}::vector
+       LIMIT $${n + wingFilter.params.length + 2}`,
+      [...sel.params, ...wingFilter.params, toVectorLiteral(emb), limit]
     );
     return res.rows as MemoryNote[];
   }
@@ -483,13 +505,15 @@ export class PostgresMemoryStore implements IMemoryStore {
   async reindexEmbeddings(): Promise<number> {
     await this.ensureMigrated();
     if (!this.embedder) return 0;
-    // Secure notes are never embedded — embeddings leak content.
+    const wingFilter = wingNotInSql(this.embedExcludeWings, 1);
     const res = await this.pool.query(
-      `SELECT name, title, body FROM memory_notes
-       WHERE embedding IS NULL AND body_enc IS NULL AND body != ''`
+      `SELECT name, title, body, wing FROM memory_notes
+       WHERE embedding IS NULL AND body_enc IS NULL AND body != ''${wingFilter.clause}`,
+      wingFilter.params
     );
     let updated = 0;
-    for (const row of res.rows as Array<{ name: string; title: string; body: string }>) {
+    for (const row of res.rows as Array<{ name: string; title: string; body: string; wing: string }>) {
+      if (!shouldEmbedNote(row.wing, this.embedExcludeWings)) continue;
       const emb = await this.embedder(`${row.title}\n\n${row.body}`);
       if (!emb) continue;
       await this.pool.query(`UPDATE memory_notes SET embedding=$1::vector WHERE name=$2`, [
@@ -531,31 +555,34 @@ export class PostgresMemoryStore implements IMemoryStore {
     return (res.rowCount ?? 0) > 0;
   }
 
-  async searchNotes(query: string, limit = 20): Promise<MemoryNote[]> {
+  async searchNotes(query: string, limit = 20, opts?: MemorySearchOptions): Promise<MemoryNote[]> {
     await this.ensureMigrated();
-    // Search never decrypts: secure notes can match by name/title only and
-    // come back with the placeholder body.
+    const exclude = effectiveSearchExcludeWings(this.searchExcludeWings, opts);
     const sel = this.noteSelect(false);
     const ftsQ = postgresFtsQuery(query);
     if (ftsQ.length >= 2) {
       try {
+        const wingFilter = wingNotInSql(exclude, sel.params.length + 2);
+        const limitIdx = 1 + sel.params.length + wingFilter.params.length + 1;
         const res = await this.pool.query(
           `SELECT ${sel.expr} FROM memory_notes
-           WHERE search_vector @@ plainto_tsquery('simple', $1)
+           WHERE search_vector @@ plainto_tsquery('simple', $1)${wingFilter.clause}
            ORDER BY ts_rank(search_vector, plainto_tsquery('simple', $1)) DESC, updated_at DESC
-           LIMIT $2`,
-          [ftsQ, limit]
+           LIMIT $${limitIdx}`,
+          [ftsQ, ...sel.params, ...wingFilter.params, limit]
         );
         if (res.rows.length > 0) return res.rows as MemoryNote[];
       } catch {
         /* fall through to ILIKE */
       }
     }
+    const wingFilter = wingNotInSql(exclude, sel.params.length + 2);
+    const limitIdx = 1 + sel.params.length + wingFilter.params.length + 1;
     const res = await this.pool.query(
       `SELECT ${sel.expr} FROM memory_notes
-       WHERE name ILIKE $1 OR title ILIKE $1 OR body ILIKE $1
-       ORDER BY updated_at DESC LIMIT $2`,
-      [`%${query.trim()}%`, limit]
+       WHERE (name ILIKE $1 OR title ILIKE $1 OR body ILIKE $1)${wingFilter.clause}
+       ORDER BY updated_at DESC LIMIT $${limitIdx}`,
+      [`%${query.trim()}%`, ...sel.params, ...wingFilter.params, limit]
     );
     return res.rows as MemoryNote[];
   }
@@ -675,14 +702,22 @@ export class PostgresMemoryStore implements IMemoryStore {
 
 export function createMemoryStore(projectDir: string, _stateDir?: string): IMemoryStore {
   const url = process.env.CSAGENT_DATABASE_URL?.trim();
+  let memoryCfg;
+  try {
+    memoryCfg = loadConfig(projectDir).memory;
+  } catch {
+    memoryCfg = undefined;
+  }
+  const searchExcludeWings = resolveSearchExcludeWings(memoryCfg);
+  const embedExcludeWings = resolveEmbedExcludeWings(memoryCfg);
   if (url) {
     let embedder: EmbedFn | undefined;
     try {
-      embedder = makeEmbedder(loadConfig(projectDir).memory.embeddings);
+      embedder = makeEmbedder(memoryCfg?.embeddings);
     } catch {
       /* config errors surface elsewhere; embeddings stay off */
     }
-    return new PostgresMemoryStore(url, { embedder });
+    return new PostgresMemoryStore(url, { embedder, searchExcludeWings, embedExcludeWings });
   }
-  return new SqliteMemoryStore(resolveMemoryRoot(projectDir));
+  return new SqliteMemoryStore(resolveMemoryRoot(projectDir), { searchExcludeWings });
 }
