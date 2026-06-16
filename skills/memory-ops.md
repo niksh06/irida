@@ -21,7 +21,24 @@ Not every turn runs memory search. **`memory_search` is on-demand** — call it 
 
 CLI `csagent memory search` is manual lookup only — the gateway does not run it automatically.
 
-**Archive wings** (`cursor-ide`, `secure`) are excluded from default search. Use `includeArchive: true` for forensic IDE transcript lookup. Distilled playbooks live in wing **`cursor-lesson`** (default search).
+**Archive wings** (`cursor-ide`, `secure`, `episodic`) are excluded from default search. Use `includeArchive: true` for forensic IDE transcript lookup; `includeEpisodic: true` for session-ingest notes. Distilled playbooks live in wing **`cursor-lesson`** (default search).
+
+## Retrieval router
+
+Route before calling tools — wrong store wastes tokens and adds noise.
+
+| User question type | Action |
+|--------------------|--------|
+| Tech stack (Kafka, Docker, Python, …) | **`kb-ops`** — Grep/Read disk KB; **not** `memory_search` |
+| csagent ops / cron / TParser / gateway | `memory_search` — wings: `default`, `cursor-lesson`, `meta`, `ops` |
+| Past IDE session / forensic transcript | `memory_search` with `includeArchive: true` |
+| Past agent **session** summary (episodic) | `memory_search` with `includeEpisodic: true`, or `memory_get ep.sess_*` if known |
+| Personal journal / PKM | **`obsidian-ops`** (if enabled) |
+| Greeting / small talk | **No** memory search |
+| Paraphrase / Russian query | `memory_search` with `semantic: true` when embeddings enabled (MCP defaults semantic on) |
+| Exact note name / error string | `memory_get` or keyword `memory_search` |
+
+**RLM-lite pattern:** `memory_search` → pick 1–3 note names → `memory_get` for full body; do not paste entire search snippets into the reply.
 
 ## Read (before answering)
 

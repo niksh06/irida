@@ -3,7 +3,7 @@
  */
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { resolveMemoryRoot } from "../config.js";
+import { resolveMemoryRoot, loadConfig } from "../config.js";
 import { saveMemory } from "../memory.js";
 import { createMemoryStore, SECURE_WING } from "../memoryStore.js";
 import { MemoryFactValidationError } from "../memoryFactValidate.js";
@@ -127,9 +127,17 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
       },
     },
     async ({ query, limit, semantic, includeArchive, includeEpisodic }) => {
+      let useSemantic = semantic;
+      if (useSemantic === undefined) {
+        try {
+          useSemantic = loadConfig(ctx.dir).memory?.embeddings?.enabled === true;
+        } catch {
+          useSemantic = false;
+        }
+      }
       const searchOpts = buildMemorySearchOptions({ includeArchive, includeEpisodic });
       const hits = await withStore(ctx, async (s) => {
-        if (semantic && s.searchNotesSemantic) {
+        if (useSemantic && s.searchNotesSemantic) {
           const out = await s.searchNotesSemantic(query, limit ?? 10, searchOpts);
           if (out.length > 0) return out;
         }
