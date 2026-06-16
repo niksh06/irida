@@ -46,6 +46,8 @@ export interface RunLike {
 
 export interface AgentSendOptions {
   model?: { id: string };
+  /** SDK InteractionUpdate callback — turn-ended carries token usage (not in run.stream()). */
+  onDelta?: (args: { update: unknown }) => void | Promise<void>;
 }
 
 export interface AgentLike {
@@ -127,11 +129,18 @@ export interface StreamUsage {
   totalTokens?: number;
 }
 
-/** Extract token usage from SDK stream events (best-effort). */
+/** Extract token usage from SDK stream events or InteractionUpdate (best-effort). */
 export function parseStreamUsage(ev: unknown): StreamUsage | null {
   if (ev == null || typeof ev !== "object") return null;
   const e = ev as Record<string, unknown>;
+  if (e.type === "sdk_message" && isRecord(e.message)) {
+    const inner = parseStreamUsage(e.message);
+    if (inner) return inner;
+  }
   const t = String(e.type ?? "");
+  if (t === "turn-ended" && isRecord(e.usage)) {
+    return extractUsage(e.usage as Record<string, unknown>);
+  }
   if (t === "usage" || t === "token_usage" || t === "tokens") {
     return extractUsage(e);
   }
@@ -204,13 +213,20 @@ export async function resumeSession(
   }
 }
 
+export interface SendAgentTurnOptions {
+  onDelta?: AgentSendOptions["onDelta"];
+}
+
 /** Local SDK agents need model on each send after live resume. */
 export async function sendAgentTurn(
   agent: AgentLike,
   message: string,
-  model: string
+  model: string,
+  opts?: SendAgentTurnOptions
 ): Promise<RunLike> {
-  const run = agent.send(message, { model: { id: model.trim() } });
+  const sendOpts: AgentSendOptions = { model: { id: model.trim() } };
+  if (opts?.onDelta) sendOpts.onDelta = opts.onDelta;
+  const run = agent.send(message, sendOpts);
   return run instanceof Promise ? run : Promise.resolve(run);
 }
 

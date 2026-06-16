@@ -222,6 +222,7 @@ export async function executeCronJob(
       yesIUnderstand: job.yesIUnderstand,
       interactive: false,
       channel: SESSION_CHANNEL.cron,
+      cronJob: job.id,
       confirm: async () => false,
       onLog: (line) => console.error(line),
     });
@@ -258,6 +259,8 @@ export async function executeCronJob(
     sdk: opts.sdk,
     skills: job.skills,
     yesIUnderstand: job.yesIUnderstand,
+    channel: SESSION_CHANNEL.cron,
+    cronJob: job.id,
   });
   return withDuration(started, {
     ok: run.exitCode === EXIT.ok,

@@ -25,6 +25,27 @@ test("sendAgentTurn passes model on agent.send", async () => {
   assert.deepEqual(captured, { model: { id: "composer-2.5" } });
 });
 
+test("sendAgentTurn forwards onDelta for token usage", async () => {
+  let capturedDelta: unknown;
+  const agent: AgentLike = {
+    send: (_msg, opts) => {
+      void opts?.onDelta?.({
+        update: {
+          type: "turn-ended",
+          usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        },
+      });
+      return okRun();
+    },
+  };
+  await sendAgentTurn(agent, "hello", "composer-2.5", {
+    onDelta: ({ update }) => {
+      capturedDelta = update;
+    },
+  });
+  assert.equal((capturedDelta as { type?: string }).type, "turn-ended");
+});
+
 test("installGatewayProcessGuards registers handlers once", () => {
   resetGatewayProcessGuardsForTests();
   const rejectBefore = process.listenerCount("unhandledRejection");

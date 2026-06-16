@@ -30,6 +30,7 @@ import { loadGatewayConfig, validateGatewayConfig, gatewayConfigPath } from "./g
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
 import { gatherCronPromptGuardIssues } from "./cronPromptGuard.js";
 import { listSkills, loadSkill, scanSkillThreat, skillExists } from "./skills.js";
+import { loadRunMetrics } from "./runMetrics.js";
 
 export interface DoctorCheck {
   name: string;
@@ -106,6 +107,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   checks.push(...gatherGatewaySkillsChecks(dir));
   checks.push(...gatherCredentialsEnvChecks(dir));
   checks.push(...gatherDoctorSecretFormatChecks(dir));
+  checks.push(...gatherRunLogChecks(dir));
 
   const cronPath = cronJobsPath(dir);
   if (existsSync(cronPath)) {
@@ -146,6 +148,29 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   }
 
   return checks;
+}
+
+function gatherRunLogChecks(dir: string): DoctorCheck[] {
+  let stateDir = ".agent";
+  try {
+    stateDir = loadConfig(dir).stateDir;
+  } catch {
+    return [];
+  }
+  const metrics = loadRunMetrics(dir, stateDir, 24);
+  if (metrics.runs === 0) {
+    return [{ name: "run log tokens", ok: true, detail: "no runs in last 24h" }];
+  }
+  const hasTokens = metrics.inputTokens > 0 || metrics.outputTokens > 0;
+  return [
+    {
+      name: "run log tokens",
+      ok: hasTokens,
+      detail: hasTokens
+        ? `tokens in/out ${metrics.inputTokens}/${metrics.outputTokens} (${metrics.runs} runs 24h)`
+        : `${metrics.runs} run(s) in 24h with null token fields — SDK usage may not be captured (I-33)`,
+    },
+  ];
 }
 
 function gatherDoctorSecretFormatChecks(dir: string): DoctorCheck[] {

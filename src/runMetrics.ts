@@ -15,6 +15,11 @@ export interface RunMetrics {
   outputTokens: number;
 }
 
+export interface RunMetricsFilter {
+  /** Exclude entries with is_test=true (I-68). */
+  prodOnly?: boolean;
+}
+
 function percentile(sorted: number[], p: number): number | null {
   if (sorted.length === 0) return null;
   const idx = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
@@ -35,11 +40,18 @@ export function parseRunLogLines(body: string): RunLogEntry[] {
   return out;
 }
 
-export function computeRunMetrics(entries: RunLogEntry[], sinceMs: number): RunMetrics {
-  const recent = entries.filter((e) => {
+export function computeRunMetrics(
+  entries: RunLogEntry[],
+  sinceMs: number,
+  filter?: RunMetricsFilter
+): RunMetrics {
+  let recent = entries.filter((e) => {
     const t = Date.parse(e.ts);
     return Number.isFinite(t) && t >= sinceMs && e.status !== "injected";
   });
+  if (filter?.prodOnly) {
+    recent = recent.filter((e) => e.is_test !== true);
+  }
   const durations = recent
     .map((e) => e.duration_ms)
     .filter((d): d is number => typeof d === "number" && d >= 0)
@@ -57,18 +69,31 @@ export function computeRunMetrics(entries: RunLogEntry[], sinceMs: number): RunM
 }
 
 /** Read current log + one rotation back. */
-export function loadRunMetrics(dir: string, stateDir: string, windowHours = 24): RunMetrics {
+export function loadRunMetrics(
+  dir: string,
+  stateDir: string,
+  windowHours = 24,
+  filter?: RunMetricsFilter
+): RunMetrics {
   const path = runLogPath(dir, stateDir);
   let body = "";
   if (existsSync(`${path}.1`)) body += readFileSync(`${path}.1`, "utf8");
   if (existsSync(path)) body += readFileSync(path, "utf8");
-  return computeRunMetrics(parseRunLogLines(body), Date.now() - windowHours * 3600_000);
+  return computeRunMetrics(parseRunLogLines(body), Date.now() - windowHours * 3600_000, filter);
 }
 
-export function formatRunMetrics(m: RunMetrics, windowHours = 24): string {
-  if (m.runs === 0) return `no runs in last ${windowHours}h`;
+export function formatRunMetrics(
+  m: RunMetrics,
+  windowHours = 24,
+  filter?: RunMetricsFilter
+): string {
+  if (m.runs === 0) {
+    const scope = filter?.prodOnly ? "prod " : "";
+    return `no ${scope}runs in last ${windowHours}h`;
+  }
   const fmtMs = (v: number | null) => (v == null ? "—" : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${v}ms`);
   const tokens =
     m.inputTokens || m.outputTokens ? ` · tokens in/out ${m.inputTokens}/${m.outputTokens}` : "";
-  return `${m.runs} run(s) · err ${(m.errorRate * 100).toFixed(0)}% · p50 ${fmtMs(m.p50Ms)} · p95 ${fmtMs(m.p95Ms)}${tokens}`;
+  const scope = filter?.prodOnly ? " · prod only" : "";
+  return `${m.runs} run(s) · err ${(m.errorRate * 100).toFixed(0)}% · p50 ${fmtMs(m.p50Ms)} · p95 ${fmtMs(m.p95Ms)}${tokens}${scope}`;
 }

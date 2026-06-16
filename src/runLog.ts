@@ -23,6 +23,10 @@ export interface RunLogEntry {
   cwd: string;
   input_tokens: number | null;
   output_tokens: number | null;
+  /** Entry channel (I-68). */
+  channel?: string | null;
+  cron_job?: string | null;
+  is_test?: boolean;
 }
 
 export function runLogPath(dir: string, stateDir: string): string {
@@ -51,6 +55,9 @@ export function runRecordToLogEntry(r: RunRecord): RunLogEntry {
     cwd: r.cwd,
     input_tokens: r.input_tokens ?? null,
     output_tokens: r.output_tokens ?? null,
+    channel: r.channel ?? null,
+    cron_job: r.cron_job ?? null,
+    is_test: r.is_test === true,
   };
 }
 

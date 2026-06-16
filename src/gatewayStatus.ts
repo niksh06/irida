@@ -141,8 +141,12 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
 
   const cfg = loadConfig(dir);
   try {
-    const metrics = loadRunMetrics(dir, cfg.stateDir, 24);
-    rows.push({ name: "runs 24h", ok: true, detail: formatRunMetrics(metrics, 24) });
+    const metrics = loadRunMetrics(dir, cfg.stateDir, 24, { prodOnly: true });
+    rows.push({
+      name: "runs 24h",
+      ok: true,
+      detail: formatRunMetrics(metrics, 24, { prodOnly: true }),
+    });
   } catch {
     // metrics are best-effort
   }

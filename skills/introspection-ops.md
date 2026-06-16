@@ -8,7 +8,7 @@ You are the **introspection curator** for csagent. Read evidence, propose improv
 
 ## Inputs (read in this order)
 
-1. **`logs/runs.jsonl`** (last 7 days) — status, error_kind, duration_ms, tokens. Count errors and slow runs (p95 outliers).
+1. **`logs/runs.jsonl`** (last 7 days) — status, error_kind, duration_ms, tokens, **channel**, **cron_job**, **is_test**. Prefer prod-only rows (`is_test` false) for error rates.
 2. **`memory_search`** wing `episodic` — recent session summaries (P3-2 ingest). Skim themes and repeated user asks.
 3. **`memory_search`** default wing — existing decisions, ops notes, postmortems.
 4. Optional: `memory_get user-profile.niksh` and `memory_get agent-profile.composer` (wing `meta`) — read only; compare against friction.

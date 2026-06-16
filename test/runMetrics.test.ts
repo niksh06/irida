@@ -48,6 +48,20 @@ test("computeRunMetrics aggregates p50/p95, errors, tokens", () => {
   assert.match(formatRunMetrics(m), /4 run\(s\) · err 25% · p50 200ms · p95 10\.0s/);
 });
 
+test("computeRunMetrics prodOnly excludes is_test runs", () => {
+  const now = Date.now();
+  const entries = [
+    entry({ duration_ms: 100 }),
+    entry({ duration_ms: 200, is_test: true, status: "error", error_kind: "run_error" }),
+  ];
+  const all = computeRunMetrics(entries, now - 24 * 3600_000);
+  assert.equal(all.runs, 2);
+  assert.equal(all.errors, 1);
+  const prod = computeRunMetrics(entries, now - 24 * 3600_000, { prodOnly: true });
+  assert.equal(prod.runs, 1);
+  assert.equal(prod.errors, 0);
+});
+
 test("parseRunLogLines skips torn lines", () => {
   const body = `${JSON.stringify(entry({}))}\n{"broken\n${JSON.stringify(entry({}))}\n`;
   assert.equal(parseRunLogLines(body).length, 2);

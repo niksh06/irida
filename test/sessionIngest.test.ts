@@ -1,9 +1,8 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { writeFileSync, mkdirSync } from "node:fs";
 import { createStore } from "../src/store.js";
 import { createMemoryStore } from "../src/memoryStore.js";
 import {
@@ -126,6 +125,43 @@ test("ingestRecentSessions skips up-to-date sessions", async () => {
   const second = await ingestRecentSessions(dir);
   assert.equal(second.ingested, 0);
   assert.equal(second.skipped, 1);
+});
+
+test("ingestRecentSessions skips rotate-fail temp cwd sessions", async () => {
+  const dir = tmp();
+  const store = createStore(dir, ".agent");
+  const tmpSess = mkdtempSync(join(tmpdir(), "rotate-fail-"));
+  const now = new Date().toISOString();
+  await store.upsertSession({
+    id: "sess_testtmp",
+    title: "rotation test noise",
+    cwd: tmpSess,
+    runtime: "local",
+    sdk_agent_id: null,
+    last_status: "finished",
+    channel: "cli",
+  });
+  await store.recordRun({
+    id: "run_testtmp",
+    session_id: "sess_testtmp",
+    sdk_agent_id: null,
+    sdk_run_id: null,
+    prompt_preview: "hello",
+    result_preview: "hi",
+    status: "finished",
+    error_kind: null,
+    started_at: now,
+    finished_at: now,
+    cwd: tmpSess,
+    runtime: "local",
+    model: "m",
+    is_test: true,
+  });
+  await store.close();
+
+  const out = await ingestRecentSessions(dir, { windowHours: 24 });
+  assert.equal(out.ingested, 0);
+  assert.equal(out.skipped, 1);
 });
 
 test("builtin session-ingest cron handler", async () => {
