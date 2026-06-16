@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
   processTelegramUpdate,
+  resolveTelegramGetUpdatesTimeoutSec,
   telegramGetUpdates,
   telegramSendMessage,
   telegramSendMessageHtml,
@@ -350,6 +351,11 @@ test("telegramSendLongMessage posts multiple sendMessage calls", async () => {
   assert.match(posts[0]!, /^\[1\/\d+\]\n/);
 });
 
+test("resolveTelegramGetUpdatesTimeoutSec uses short poll for VPN reliability", () => {
+  assert.equal(resolveTelegramGetUpdatesTimeoutSec(500), 0);
+  assert.equal(resolveTelegramGetUpdatesTimeoutSec(1500), 0);
+});
+
 test("telegramGetUpdates and sendMessage use fetch mock", async () => {
   const calls: string[] = [];
   const fetchFn = async (url: string, init?: RequestInit) => {
@@ -365,6 +371,8 @@ test("telegramGetUpdates and sendMessage use fetch mock", async () => {
   };
   const updates = await telegramGetUpdates("tok", 0, 1, fetchFn);
   assert.deepEqual(updates, []);
+  const getUrl = calls.find((u) => u.includes("getUpdates")) ?? "";
+  assert.match(decodeURIComponent(getUrl), /allowed_updates=.*message/);
   await telegramSendMessage("tok", "42", "hi", fetchFn);
   await telegramSendChatAction("tok", "42", "typing", fetchFn);
   assert.ok(calls.some((u) => u.includes("getUpdates")));

@@ -62,7 +62,9 @@ export function parseGatewaySlash(text: string): { cmd: string; arg: string } | 
   if (!t.startsWith("/")) return null;
   const [raw, ...rest] = t.slice(1).split(/\s+/);
   if (!raw) return { cmd: "help", arg: "" };
-  return { cmd: raw.toLowerCase(), arg: rest.join(" ").trim() };
+  // Telegram groups append @BotUsername to slash commands.
+  const cmd = (raw.split("@")[0] ?? raw).toLowerCase();
+  return { cmd, arg: rest.join(" ").trim() };
 }
 
 export function isGatewaySlashCommand(text: string): boolean {

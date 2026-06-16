@@ -20,7 +20,12 @@ test("gatewaySlashHelpText is csagent branded", () => {
 test("parseGatewaySlash splits cmd and arg", () => {
   assert.deepEqual(parseGatewaySlash("/memory kafka"), { cmd: "memory", arg: "kafka" });
   assert.deepEqual(parseGatewaySlash("/approve ABC123"), { cmd: "approve", arg: "ABC123" });
+  assert.deepEqual(parseGatewaySlash("/status@HelperSummaryBot"), { cmd: "status", arg: "" });
   assert.equal(parseGatewaySlash("hello"), null);
+});
+
+test("isGatewaySlashCommand recognizes Telegram @BotUsername suffix", () => {
+  assert.equal(isGatewaySlashCommand("/status@HelperSummaryBot"), true);
 });
 
 test("gatewayTelegramBotCommands matches slash catalog size", () => {

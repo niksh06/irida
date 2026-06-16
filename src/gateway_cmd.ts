@@ -43,7 +43,7 @@ function applyCliOverrides(cfg: GatewayConfig, opts: GatewayRunOptions): Gateway
 }
 
 export async function startGateway(opts: GatewayRunOptions = {}): Promise<GatewayRunHandle> {
-  const dir = opts.dir ?? process.cwd();
+  const dir = opts.dir ?? process.env.CSAGENT_HOME?.trim() ?? process.cwd();
   const { key: apiKey } = resolveApiKey(dir);
   if (!apiKey) throw new GatewayConfigError(API_KEY_HELP);
 

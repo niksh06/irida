@@ -14,6 +14,7 @@ import { tryRegisterPairing } from "./gatewayPairing.js";
 import { gatewayTelegramBotCommands, isGatewaySlashCommand } from "./gatewaySlash.js";
 import type { ActivityDetail } from "./host.js";
 import { emitServiceLog, type ServiceLogSink } from "./serviceLog.js";
+import { loadTelegramPollOffset, saveTelegramPollOffset } from "./gatewayTelegramOffset.js";
 
 export interface TelegramMessage {
   message_id: number;
@@ -40,12 +41,17 @@ export async function telegramApiGet<T>(
   token: string,
   method: string,
   params: Record<string, string | number>,
-  fetchFn: TelegramFetch = fetch
+  fetchFn: TelegramFetch = fetch,
+  fetchTimeoutMs?: number
 ): Promise<T> {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
   const url = `https://api.telegram.org/bot${token}/${method}?${qs}`;
-  const res = await fetchFn(url, { method: "GET" });
+  const init: RequestInit = { method: "GET" };
+  if (fetchTimeoutMs != null && fetchTimeoutMs > 0) {
+    init.signal = AbortSignal.timeout(fetchTimeoutMs);
+  }
+  const res = await fetchFn(url, init);
   const body = (await res.json()) as { ok: boolean; result?: T; description?: string };
   if (!body.ok) throw new Error(body.description ?? `telegram ${method} failed`);
   return body.result as T;
@@ -68,13 +74,40 @@ export async function telegramApiPost<T>(
   return body.result as T;
 }
 
+/** Telegram getUpdates `timeout` param (seconds). Short poll (0) avoids VPN/proxy long-hold hangs. */
+export function resolveTelegramGetUpdatesTimeoutSec(_pollIntervalMs: number): number {
+  return 0;
+}
+
+/** Global Bot API filter — must include message/group traffic (not channel_post only). */
+export const TELEGRAM_GATEWAY_ALLOWED_UPDATES = [
+  "message",
+  "edited_message",
+  "channel_post",
+  "edited_channel_post",
+  "callback_query",
+] as const;
+
 export async function telegramGetUpdates(
   token: string,
   offset: number,
   timeoutSec: number,
-  fetchFn: TelegramFetch = fetch
+  fetchFn: TelegramFetch = fetch,
+  allowedUpdates: readonly string[] = TELEGRAM_GATEWAY_ALLOWED_UPDATES
 ): Promise<TelegramUpdate[]> {
-  return telegramApiGet(token, "getUpdates", { offset, timeout: timeoutSec }, fetchFn);
+  // Short poll should return quickly; generous slack for slow proxies.
+  const fetchTimeoutMs = timeoutSec <= 0 ? 15_000 : (timeoutSec + 15) * 1000;
+  return telegramApiGet(
+    token,
+    "getUpdates",
+    {
+      offset,
+      timeout: timeoutSec,
+      allowed_updates: JSON.stringify([...allowedUpdates]),
+    },
+    fetchFn,
+    fetchTimeoutMs
+  );
 }
 
 /** Telegram Bot API `sendMessage` text limit. */
@@ -546,7 +579,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   const logInfo = (s: string) => emitServiceLog(s, "info", opts.onLog);
   const logError = (s: string) => emitServiceLog(s, "error", opts.onLog);
   const pollMs = opts.pollIntervalMs ?? opts.cfg.telegramPollIntervalMs;
-  let offset = 0;
+  let offset = loadTelegramPollOffset(opts.dir ?? process.cwd());
   let running = true;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let consecutiveErrors = 0;
@@ -555,6 +588,8 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   const heartbeatMs = 15 * 60 * 1000;
   /** Per-chat serial queues: one slow turn must not block other chats or the poll loop. */
   const chatQueues = new Map<string, Promise<void>>();
+  let pollTicks = 0;
+  const pollAliveEvery = Math.max(20, Math.floor(60_000 / Math.max(pollMs, 500)));
   let inflightTick: Promise<void> = Promise.resolve();
 
   const SEND_RETRY_DELAY_MS = 1500;
@@ -650,35 +685,40 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
     }
   };
 
-  const enqueueUpdate = (u: TelegramUpdate): void => {
-    const chatKey = String(u.message?.chat.id ?? "-");
-    // Stored promises never reject (.catch below), so chaining is safe.
-    const prev = chatQueues.get(chatKey) ?? Promise.resolve();
-    const settled = prev
-      .then(() => handleUpdate(u))
-      .catch((e) => {
-        logError(
-          `[gateway] telegram update failed chat=${chatKey}: ${e instanceof Error ? e.message : String(e)}`
-        );
-      });
-    chatQueues.set(chatKey, settled);
-  };
-
   const tick = async () => {
     if (!running) return;
     let nextDelayMs = pollMs;
     await drainParked();
     try {
-      const updates = await telegramGetUpdates(token, offset, Math.min(50, Math.max(1, Math.floor(pollMs / 1000))), fetchFn);
+      const pollTimeoutSec = resolveTelegramGetUpdatesTimeoutSec(pollMs);
+      const updates = await telegramGetUpdates(token, offset, pollTimeoutSec, fetchFn);
       consecutiveErrors = 0;
+      pollTicks++;
+      if (updates.length > 0) {
+        logInfo(`[gateway] telegram updates=${updates.length} offset=${offset}`);
+      } else if (pollTicks % pollAliveEvery === 0) {
+        logInfo(`[gateway] telegram poll alive offset=${offset}`);
+      }
       if (Date.now() - lastHeartbeatLog >= heartbeatMs) {
         logInfo(`[gateway] telegram poll ok (heartbeat offset=${offset})`);
         lastHeartbeatLog = Date.now();
       }
       for (const u of updates) {
         if (!running) break;
+        const chatKey = String(u.message?.chat.id ?? "-");
+        const prev = chatQueues.get(chatKey) ?? Promise.resolve();
+        const settled = prev
+          .then(() => handleUpdate(u))
+          .catch((e) => {
+            logError(
+              `[gateway] telegram update failed chat=${chatKey}: ${e instanceof Error ? e.message : String(e)}`
+            );
+          });
+        chatQueues.set(chatKey, settled);
+        // Ack only after this update is handled — avoid losing user messages on crash/hang.
+        await settled;
         offset = Math.max(offset, u.update_id + 1);
-        enqueueUpdate(u);
+        saveTelegramPollOffset(opts.dir ?? process.cwd(), offset);
       }
     } catch (e) {
       consecutiveErrors++;
@@ -693,7 +733,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
     }
   };
 
-  logInfo(`[gateway] telegram long-poll started (interval=${pollMs}ms)`);
+  logInfo(`[gateway] telegram long-poll started (interval=${pollMs}ms, offset=${offset})`);
   void syncTelegramBotCommands(token, fetchFn)
     .then((n) => logInfo(`[gateway] telegram setMyCommands OK (${n} cmds, ${TELEGRAM_COMMAND_SCOPES.length} scopes)`))
     .catch((e) =>
