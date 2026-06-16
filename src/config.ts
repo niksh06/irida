@@ -75,7 +75,7 @@ export interface MemoryConfig {
   autoRag?: AutoRagConfig;
   /** Mode prefix + profile excerpt before each turn (I-52). */
   preTurn?: PreTurnConfig;
-  /** Wings omitted from FTS/semantic search unless includeArchive (default: cursor-ide, secure). */
+  /** Wings omitted from FTS/semantic search unless includeArchive/includeEpisodic (default: cursor-ide, secure, episodic). */
   searchExcludeWings?: string[];
   /** Wings skipped by embed-on-save and reindex-embeddings (default: cursor-ide, secure). */
   embedExcludeWings?: string[];

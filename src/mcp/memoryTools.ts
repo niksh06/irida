@@ -7,6 +7,7 @@ import { resolveMemoryRoot } from "../config.js";
 import { saveMemory } from "../memory.js";
 import { createMemoryStore, SECURE_WING } from "../memoryStore.js";
 import { MemoryFactValidationError } from "../memoryFactValidate.js";
+import { buildMemorySearchOptions } from "../memorySearchPolicy.js";
 
 export interface MemoryMcpContext {
   dir: string;
@@ -119,10 +120,14 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
           .boolean()
           .optional()
           .describe("Include cursor-ide transcript archive wing (default false)"),
+        includeEpisodic: z
+          .boolean()
+          .optional()
+          .describe("Include episodic session-ingest wing (default false)"),
       },
     },
-    async ({ query, limit, semantic, includeArchive }) => {
-      const searchOpts = includeArchive ? { includeArchive: true } : undefined;
+    async ({ query, limit, semantic, includeArchive, includeEpisodic }) => {
+      const searchOpts = buildMemorySearchOptions({ includeArchive, includeEpisodic });
       const hits = await withStore(ctx, async (s) => {
         if (semantic && s.searchNotesSemantic) {
           const out = await s.searchNotesSemantic(query, limit ?? 10, searchOpts);

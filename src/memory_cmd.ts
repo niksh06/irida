@@ -39,6 +39,7 @@ import {
 } from "./memoryAudit.js";
 import { parseOlderThanDays, pruneSeenPostFacts, purgeAllSeenPostFacts, purgeMalformedSubjectFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
 import { MemoryFactValidationError } from "./memoryFactValidate.js";
+import { buildMemorySearchOptions } from "./memorySearchPolicy.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { recordMemoryDelete } from "./actionTranscript.js";
 
@@ -207,14 +208,18 @@ export async function cmdMemoryRm(name: string, opts: MemoryCmdOptions = {}): Pr
 
 export async function cmdMemorySearch(
   query: string,
-  opts: MemoryCmdOptions & { semantic?: boolean; includeArchive?: boolean } = {}
+  opts: MemoryCmdOptions & {
+    semantic?: boolean;
+    includeArchive?: boolean;
+    includeEpisodic?: boolean;
+  } = {}
 ): Promise<ExitCode> {
   const dir = opts.dir ?? process.cwd();
   if (!query.trim()) {
     console.error("memory search: query required");
     return EXIT.usage;
   }
-  const searchOpts = opts.includeArchive ? { includeArchive: true as const } : undefined;
+  const searchOpts = buildMemorySearchOptions(opts);
   try {
     const hits = await withStore(dir, async (s) => {
       if (opts.semantic) {
@@ -894,8 +899,11 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       const args = [name, ...rest].filter((a): a is string => Boolean(a));
       const semantic = args.includes("--semantic");
       const includeArchive = args.includes("--include-archive");
-      const q = args.filter((a) => a !== "--semantic" && a !== "--include-archive").join(" ");
-      return cmdMemorySearch(q, { ...opts, semantic, includeArchive });
+      const includeEpisodic = args.includes("--include-episodic");
+      const q = args
+        .filter((a) => a !== "--semantic" && a !== "--include-archive" && a !== "--include-episodic")
+        .join(" ");
+      return cmdMemorySearch(q, { ...opts, semantic, includeArchive, includeEpisodic });
     }
     case "reindex-embeddings":
       return cmdMemoryReindexEmbeddings(opts);

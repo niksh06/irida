@@ -17,8 +17,8 @@ csagent memory add csagent-index --stdin --dir "$CSAGENT_HOME" < deploy/prompts/
 ## Search defaults
 
 - **MCP-first:** autoRag OFF in prod — call `memory_search` when needed
-- **Excluded wings:** `cursor-ide`, `secure` (use `includeArchive: true` for archive forensic lookup)
-- **Episodic:** included in default search today; exclude from ops queries is planned (I-73)
+- **Excluded wings:** `cursor-ide`, `secure`, `episodic` (use `includeArchive` / `includeEpisodic` for opt-in)
+- **Episodic:** excluded from default ops search (I-73); `includeEpisodic: true` or CLI `--include-episodic`
 - **Semantic:** prefer `semantic: true` for paraphrase; keyword for exact note names
 
 ## Key notes

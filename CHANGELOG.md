@@ -23,6 +23,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Changed
 
+- **Episodic search exclude (I-73)** — wing `episodic` omitted from default FTS/semantic; CLI `--include-episodic`; MCP `includeEpisodic`
 - **TParser digest dedup** — stop writing `seen_post` memory facts (~15–20k/week); window-only dedup in prompts; removed cron `memoryFactsSubject` preamble; `csagent memory fact purge-seen-post` to drop legacy rows
 - **cursor-ide ingest cap (D2)** — truncate archive body at 200 KB; full jsonl on disk; `memory audit` labels curated vs archive
 - **Embeddings backfill** — enable `memory.embeddings` + `memory reindex-embeddings` for episodic/lesson wings (not archive); `setup-home.sh` no longer overwrites prod `agent.config.json`

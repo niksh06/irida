@@ -2,7 +2,7 @@
  * Default wings excluded from agent-facing memory search (FTS, semantic, autoRag).
  * Archive wings remain in PG for forensic / explicit lookup.
  */
-import { CURSOR_TRANSCRIPT_WING } from "./memoryWings.js";
+import { CURSOR_TRANSCRIPT_WING, EPISODIC_WING } from "./memoryWings.js";
 import type { MemoryConfig } from "./config.js";
 
 /** Raw transcript archive — searchable only with includeArchive. */
@@ -13,6 +13,7 @@ export const SECURE_WING_NAME = "secure";
 export const DEFAULT_SEARCH_EXCLUDE_WINGS: readonly string[] = [
   ...MEMORY_ARCHIVE_WINGS,
   SECURE_WING_NAME,
+  EPISODIC_WING,
 ];
 
 /** Wings never embedded (size + archive semantics). */
@@ -21,6 +22,8 @@ export const DEFAULT_EMBED_EXCLUDE_WINGS: readonly string[] = [...MEMORY_ARCHIVE
 export interface MemorySearchOptions {
   /** Include archive wings (e.g. cursor-ide) in this query. */
   includeArchive?: boolean;
+  /** Include episodic wing (session ingest) in this query. */
+  includeEpisodic?: boolean;
   /** Extra wings to exclude for this query only. */
   excludeWings?: string[];
 }
@@ -49,12 +52,26 @@ export function effectiveSearchExcludeWings(
     const extra = opts.excludeWings?.map((w) => w.trim()).filter(Boolean) ?? [];
     return extra.length ? extra : [];
   }
-  const base = [...defaultExclude];
+  let base = [...defaultExclude];
+  if (opts?.includeEpisodic) {
+    base = base.filter((w) => w !== EPISODIC_WING);
+  }
   for (const w of opts?.excludeWings ?? []) {
     const t = w.trim();
     if (t && !base.includes(t)) base.push(t);
   }
   return base;
+}
+
+export function buildMemorySearchOptions(opts: {
+  includeArchive?: boolean;
+  includeEpisodic?: boolean;
+}): MemorySearchOptions | undefined {
+  if (!opts.includeArchive && !opts.includeEpisodic) return undefined;
+  return {
+    ...(opts.includeArchive ? { includeArchive: true } : {}),
+    ...(opts.includeEpisodic ? { includeEpisodic: true } : {}),
+  };
 }
 
 export function filterNotesByWings<T extends { wing: string }>(

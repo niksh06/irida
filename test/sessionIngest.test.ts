@@ -84,8 +84,10 @@ test("ingestRecentSessions writes episodic note searchable via FTS", async () =>
     assert.equal(note!.wing, EPISODIC_WING);
     assert.match(note!.body, /how does cron work/);
     assert.match(note!.body, /five-field schedule/);
-    const hits = await memory.searchNotes("cron schedule", 5);
+    const hits = await memory.searchNotes("cron schedule", 5, { includeEpisodic: true });
     assert.ok(hits.some((h) => h.name === "ep.sess_ingest1"));
+    const defaultHits = await memory.searchNotes("cron schedule", 5);
+    assert.ok(!defaultHits.some((h) => h.name === "ep.sess_ingest1"));
   } finally {
     await memory.close();
   }
