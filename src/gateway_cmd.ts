@@ -15,7 +15,7 @@ import {
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { startWebhookServer, type WebhookServer } from "./gatewayWebhook.js";
 import { startTelegramPoller, type TelegramPoller } from "./gatewayTelegram.js";
-import { gatherGatewayStatus } from "./gatewayStatus.js";
+import { gatherGatewayStatus, gatherTelegramGatewayStatusLines } from "./gatewayStatus.js";
 import { installGatewayProcessGuards } from "./gatewayProcessGuards.js";
 import { emitServiceLog } from "./serviceLog.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
@@ -119,9 +119,9 @@ export async function cmdGatewayRun(opts: GatewayRunOptions = {}): Promise<ExitC
   });
 }
 
-export function cmdGatewayStatus(opts: GatewayRunOptions = {}): ExitCode {
-  const dir = opts.dir ?? process.cwd();
-  const rows = gatherGatewayStatus(dir);
+export async function cmdGatewayStatus(opts: GatewayRunOptions = {}): Promise<ExitCode> {
+  const dir = opts.dir ?? process.env.CSAGENT_HOME?.trim() ?? process.cwd();
+  const rows = [...gatherGatewayStatus(dir), ...(await gatherTelegramGatewayStatusLines(dir))];
   let ok = true;
   for (const r of rows) {
     const mark = r.ok ? "ok" : "FAIL";

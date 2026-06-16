@@ -9,6 +9,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 ### Fixed
 
 - **Gateway Telegram inbound silent (I-84)** — `TELEGRAM_GATEWAY_ALLOWED_UPDATES` on every `getUpdates` (Bot API global filter had been narrowed to `channel_post` only); short poll (`timeout=0`); persisted poll offset; ack after handle; parse `/cmd@BotUsername` in groups
+- **Telegram allowed_updates health (I-83)** — `doctor` + `gateway status` probe `getWebhookInfo`; poll batch logs update types (I-87)
 - **Memory retrieval router (I-74)** — routing table in `memory-ops`; MCP `memory_search` defaults `hybrid: true` when `memory.embeddings.enabled`
 - **Hybrid memory search (I-72)** — Postgres `searchNotesHybrid` RRF merge of FTS + vector; CLI `--hybrid`; config `memory.search.hybridWeights`; FTS fallback when embedder down
 - **MCP wing filters (I-75)** — `memory_search` / CLI `--wing` allow-list overrides default exclude for targeted ops retrieval
@@ -28,6 +29,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 ### Added
 
 - **Default corpus re-wing (I-81)** — `csagent memory re-wing [--apply]`; wings `tparser`, `reddit`, `style`
+- **gateway-ops skill (I-85)** — Telegram Bot API guardrails; inbound silent / `allowed_updates` playbook
 
 ### Changed
 

@@ -2,7 +2,7 @@
  * `cursor-agent doctor` — validate the minimum needed for a local SDK run
  * (issue 004). Never prints secret values.
  */
-import { gatherDoctorChecks, gatherDoctorApiChecks, gatherDoctorStoreChecks, doctorAllOk, type ModelsListFn } from "./doctorChecks.js";
+import { gatherDoctorChecks, gatherDoctorApiChecks, gatherDoctorStoreChecks, gatherDoctorTelegramChecks, doctorAllOk, type ModelsListFn } from "./doctorChecks.js";
 
 export { cmdDoctorMorningAlert } from "./doctorCronAlert.js";
 
@@ -13,6 +13,7 @@ export async function cmdDoctor(
   const checks = [
     ...gatherDoctorChecks(dir),
     ...(await gatherDoctorStoreChecks(dir)),
+    ...(await gatherDoctorTelegramChecks(dir)),
     ...(await gatherDoctorApiChecks(dir, opts)),
   ];
   for (const c of checks) {
@@ -26,4 +27,4 @@ export async function cmdDoctor(
   return allOk ? 0 : 1;
 }
 
-export { gatherDoctorChecks, gatherDoctorApiChecks, gatherDoctorStoreChecks, doctorAllOk };
+export { gatherDoctorChecks, gatherDoctorApiChecks, gatherDoctorStoreChecks, gatherDoctorTelegramChecks, doctorAllOk };

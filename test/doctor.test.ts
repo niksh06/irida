@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { cmdDoctor } from "../src/doctor.js";
-import { gatherDoctorApiChecks, gatherDoctorChecks } from "../src/doctorChecks.js";
+import { gatherDoctorApiChecks, gatherDoctorChecks, gatherDoctorTelegramChecks } from "../src/doctorChecks.js";
 import { gatherStaleDistChecks } from "../src/doctorDistStale.js";
 
 const VALID_TEST_KEY = "crsr_" + "k".repeat(24);
@@ -50,6 +50,11 @@ test("doctor fails when models API rejects key", async () => {
       1
     );
   });
+});
+
+test("gatherDoctorTelegramChecks skips without gateway.json", async () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "doc-tg-"));
+  assert.deepEqual(await gatherDoctorTelegramChecks(dir), []);
 });
 
 test("gatherDoctorApiChecks skips when key unset", async () => {

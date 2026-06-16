@@ -6,6 +6,7 @@ import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
+import { assessTelegramAllowedUpdates, telegramBotToken } from "./gatewayTelegram.js";
 import { assessGatewayServiceHealth, tailLogLines } from "./gatewayLogHealth.js";
 import { gatherCronContextDirIssue } from "./cronContextArtifact.js";
 import { cronJobsPath, loadCronJobs, loadCronState, validateCronJobsFile } from "./cronJobs.js";
@@ -171,4 +172,34 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   }
 
   return rows;
+}
+
+/** Live Telegram Bot API probe for gateway status /status (I-83). */
+export async function gatherTelegramGatewayStatusLines(
+  dir: string = process.cwd()
+): Promise<GatewayStatusLine[]> {
+  const gwPath = gatewayConfigPath(dir);
+  if (!existsSync(gwPath)) return [];
+  let cfg;
+  try {
+    cfg = loadGatewayConfig(dir);
+  } catch {
+    return [];
+  }
+  if (cfg.adapter !== "telegram") return [];
+  let token: string;
+  try {
+    token = telegramBotToken(cfg, dir);
+  } catch {
+    return [];
+  }
+  if (!token) return [];
+  const assessment = await assessTelegramAllowedUpdates(token);
+  return [
+    {
+      name: "telegram allowed_updates",
+      ok: assessment.ok,
+      detail: assessment.ok ? `includes message (${assessment.detail})` : assessment.detail,
+    },
+  ];
 }

@@ -4,6 +4,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
+  assessTelegramAllowedUpdates,
+  summarizeTelegramUpdateTypes,
   processTelegramUpdate,
   resolveTelegramGetUpdatesTimeoutSec,
   telegramGetUpdates,
@@ -489,4 +491,41 @@ test("startTelegramPoller splits long model replies", async () => {
     if (prev === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = prev;
   });
+});
+
+test("assessTelegramAllowedUpdates fails when message missing", async () => {
+  const fetchFn: import("../src/gatewayTelegram.js").TelegramFetch = async (url) => {
+    if (url.includes("getWebhookInfo")) {
+      return new Response(
+        JSON.stringify({ ok: true, result: { allowed_updates: ["channel_post"] } })
+      );
+    }
+    return new Response(JSON.stringify({ ok: false }));
+  };
+  const a = await assessTelegramAllowedUpdates("tok", fetchFn);
+  assert.equal(a.ok, false);
+  assert.match(a.detail, /missing message/);
+});
+
+test("assessTelegramAllowedUpdates passes when message present", async () => {
+  const fetchFn: import("../src/gatewayTelegram.js").TelegramFetch = async (url) => {
+    if (url.includes("getWebhookInfo")) {
+      return new Response(
+        JSON.stringify({ ok: true, result: { allowed_updates: ["message", "channel_post"] } })
+      );
+    }
+    return new Response(JSON.stringify({ ok: false }));
+  };
+  const a = await assessTelegramAllowedUpdates("tok", fetchFn);
+  assert.equal(a.ok, true);
+});
+
+test("summarizeTelegramUpdateTypes counts batch types", () => {
+  assert.equal(
+    summarizeTelegramUpdateTypes([
+      { update_id: 1, message: { message_id: 1, chat: { id: 1 }, text: "hi" } },
+      { update_id: 2, channel_post: { message_id: 2, chat: { id: -100 }, text: "." } },
+    ]),
+    "message:1,channel_post:1"
+  );
 });

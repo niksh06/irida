@@ -27,6 +27,7 @@ import {
 import { gatherCronPromptDrift } from "./cronPromptDrift.js";
 import { gatherCronContextDirIssue } from "./cronContextArtifact.js";
 import { loadGatewayConfig, validateGatewayConfig, gatewayConfigPath } from "./gatewayConfig.js";
+import { assessTelegramAllowedUpdates, telegramBotToken } from "./gatewayTelegram.js";
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
 import { gatherCronPromptGuardIssues } from "./cronPromptGuard.js";
 import { listSkills, loadSkill, scanSkillThreat, skillExists } from "./skills.js";
@@ -459,4 +460,36 @@ export async function gatherDoctorApiChecks(
           : msg;
     return [{ name: "Cursor API (models)", ok: false, detail }];
   }
+}
+
+const TELEGRAM_ALLOWED_UPDATES_FIX =
+  "gateway getUpdates must include message — see deploy/PERSONAL-OPS.md (inbound silent / allowed_updates)";
+
+/** Telegram Bot API global filter must include private/group messages (I-83). */
+export async function gatherDoctorTelegramChecks(dir: string = process.cwd()): Promise<DoctorCheck[]> {
+  const gwPath = gatewayConfigPath(dir);
+  if (!existsSync(gwPath)) return [];
+  let cfg;
+  try {
+    cfg = loadGatewayConfig(dir);
+  } catch {
+    return [];
+  }
+  if (cfg.adapter !== "telegram") return [];
+  let token: string;
+  try {
+    token = telegramBotToken(cfg, dir);
+  } catch {
+    return [];
+  }
+  if (!token) return [];
+  const assessment = await assessTelegramAllowedUpdates(token);
+  return [
+    {
+      name: "telegram allowed_updates",
+      ok: assessment.ok,
+      detail: assessment.ok ? `includes message (${assessment.detail})` : assessment.detail,
+      fix: TELEGRAM_ALLOWED_UPDATES_FIX,
+    },
+  ];
 }

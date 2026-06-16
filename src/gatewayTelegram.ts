@@ -25,6 +25,9 @@ export interface TelegramMessage {
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  edited_message?: TelegramMessage;
+  channel_post?: TelegramMessage;
+  edited_channel_post?: TelegramMessage;
 }
 
 export type TelegramFetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -87,6 +90,70 @@ export const TELEGRAM_GATEWAY_ALLOWED_UPDATES = [
   "edited_channel_post",
   "callback_query",
 ] as const;
+
+/** Required for gateway inbound (private + group messages). */
+export const TELEGRAM_INBOUND_MESSAGE_UPDATE = "message";
+
+export interface TelegramAllowedUpdatesAssessment {
+  ok: boolean;
+  detail: string;
+  allowedUpdates: string[];
+}
+
+/** Probe Bot API global allowed_updates (I-83). */
+export async function assessTelegramAllowedUpdates(
+  token: string,
+  fetchFn: TelegramFetch = fetch
+): Promise<TelegramAllowedUpdatesAssessment> {
+  try {
+    const info = await telegramApiGet<{ allowed_updates?: string[] }>(
+      token,
+      "getWebhookInfo",
+      {},
+      fetchFn,
+      15_000
+    );
+    const allowed = info.allowed_updates ?? [];
+    if (allowed.includes(TELEGRAM_INBOUND_MESSAGE_UPDATE)) {
+      return {
+        ok: true,
+        detail: allowed.join(", ") || "(default)",
+        allowedUpdates: allowed,
+      };
+    }
+    return {
+      ok: false,
+      detail: allowed.length
+        ? `missing message (got: ${allowed.join(", ")})`
+        : "missing message (empty allowed_updates)",
+      allowedUpdates: allowed,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      detail: e instanceof Error ? e.message : String(e),
+      allowedUpdates: [],
+    };
+  }
+}
+
+/** Label update type for poll logging (I-87). */
+export function describeTelegramUpdateType(update: TelegramUpdate): string {
+  if (update.message) return "message";
+  if (update.edited_message) return "edited_message";
+  if (update.channel_post) return "channel_post";
+  if (update.edited_channel_post) return "edited_channel_post";
+  return "other";
+}
+
+export function summarizeTelegramUpdateTypes(updates: TelegramUpdate[]): string {
+  const counts = new Map<string, number>();
+  for (const u of updates) {
+    const t = describeTelegramUpdateType(u);
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([k, v]) => `${k}:${v}`).join(",");
+}
 
 export async function telegramGetUpdates(
   token: string,
@@ -695,7 +762,9 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       consecutiveErrors = 0;
       pollTicks++;
       if (updates.length > 0) {
-        logInfo(`[gateway] telegram updates=${updates.length} offset=${offset}`);
+        logInfo(
+          `[gateway] telegram updates=${updates.length} offset=${offset} types=${summarizeTelegramUpdateTypes(updates)}`
+        );
       } else if (pollTicks % pollAliveEvery === 0) {
         logInfo(`[gateway] telegram poll alive offset=${offset}`);
       }
