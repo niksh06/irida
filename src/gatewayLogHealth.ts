@@ -104,6 +104,8 @@ export function assessGatewayServiceHealth(opts: {
   const infoRecent = infoAgeMs <= GATEWAY_LOG_STALE_MS;
   const healthyMarkers = [
     "poll ok",
+    "poll alive",
+    "updates=",
     "long-poll started",
     "setMyCommands OK",
     "sendTurn ok",

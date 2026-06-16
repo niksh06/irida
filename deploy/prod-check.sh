@@ -31,6 +31,9 @@ run() {
 
 run "doctor" "$RUN" doctor
 run "gateway status" "$RUN" gateway status
+if [[ -f "$ROOT/deploy/gateway-smoke.sh" ]]; then
+  run "gateway smoke" bash "$ROOT/deploy/gateway-smoke.sh"
+fi
 run "cron list" "$RUN" cron list
 run "launchd" launchctl list 2>/dev/null | grep -E 'csagent|PID' || true
 

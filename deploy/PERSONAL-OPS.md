@@ -37,8 +37,11 @@ bash ~/.csagent/csagent/deploy/digest-qa.sh
 ## Быстрые команды
 
 ```bash
-# health pass
+# health pass (includes gateway-smoke I-88)
 bash ~/.csagent/csagent/deploy/prod-check.sh
+
+# gateway-only smoke after restart
+bash ~/.csagent/csagent/deploy/gateway-smoke.sh
 
 # ручной digest (smoke)
 ~/.csagent/csagent/scripts/csagent-run.sh cron run tparser-daily-digest
