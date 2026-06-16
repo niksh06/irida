@@ -4,8 +4,11 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ## [Unreleased]
 
+- **Memory audit backlog (Wave F)** — `Reports/analysis/memory-audit-improvements-2026-06-16.md`; issues I-69…I-82 (P0–P2 hygiene/retrieval/eval)
+
 ### Added
 
+- **Wave F P0 hygiene (I-69, I-71)** — `memory fact purge-malformed-subjects`; reject fact fields starting with `--` (CLI/MCP); doctor `fact hygiene` + `dist freshness`; `deploy/prompts/csagent-index.md` corpus map (I-70)
 - **kb-ops skill** — file KB at `$CSAGENT_HOME/knowledge-space` (git pull); tech reference off Postgres; removed `happyin-kb-weekly` cron example
 - **Memory governance doc** — `docs/MEMORY-GOVERNANCE.md`: files vs Postgres vs embeddings, OKF tier policy, LLM wiki + Obsidian CLI, periodic review checklist
 - **Run log metadata (I-68)** — `logs/runs.jsonl` fields `channel`, `cron_job`, `is_test`; cron/chat/run paths populate them; session-ingest skips test temp cwd; doctor warns on null tokens; gateway status prod-only metrics

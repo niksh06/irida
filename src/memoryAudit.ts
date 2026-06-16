@@ -226,6 +226,19 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
       checks.push(check("seen_post legacy", true, "no current seen_post facts"));
     }
 
+    const malformed = factStats.subjects
+      .filter((s) => s.subject.startsWith("--"))
+      .reduce((n, s) => n + s.current, 0);
+    checks.push(
+      warn(
+        "malformed fact subjects",
+        malformed === 0,
+        malformed === 0
+          ? "no current facts with subject starting with --"
+          : `${malformed} fact(s) with subject starting with -- — run: csagent memory fact purge-malformed-subjects`
+      )
+    );
+
     const topSubjects = factStats.subjects
       .slice(0, 6)
       .map((s) => `${s.subject}=${s.current}`)

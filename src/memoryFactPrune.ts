@@ -50,3 +50,16 @@ export async function purgeAllSeenPostFacts(
     await store.close();
   }
 }
+
+/** Invalidate current facts whose subject/predicate look like CLI flags (I-69). */
+export async function purgeMalformedSubjectFacts(
+  dir: string,
+  opts: { dryRun?: boolean } = {}
+): Promise<PruneFactsResult> {
+  const store = createMemoryStore(dir);
+  try {
+    return await store.purgeMalformedSubjectFacts(opts);
+  } finally {
+    await store.close();
+  }
+}

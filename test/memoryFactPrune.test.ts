@@ -6,7 +6,8 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createMemoryStore } from "../src/memoryStore.js";
 import { resolveMemoryRoot } from "../src/config.js";
-import { pruneSeenPostFacts, purgeAllSeenPostFacts } from "../src/memoryFactPrune.js";
+import { pruneSeenPostFacts, purgeAllSeenPostFacts, purgeMalformedSubjectFacts } from "../src/memoryFactPrune.js";
+import { MemoryFactValidationError } from "../src/memoryFactValidate.js";
 
 test("pruneCurrentFacts invalidates old seen_post facts", async () => {
   const dir = mkdtempSync(join(tmpdir(), "memprune-"));
@@ -57,6 +58,36 @@ test("purgeAllSeenPostFacts invalidates every current seen_post", async () => {
     assert.equal(purged.matched, 2);
     assert.equal(purged.pruned, 2);
     assert.equal((await store.queryFacts({ subject: "seen_post", currentOnly: true })).length, 0);
+  } finally {
+    await store.close();
+  }
+});
+
+test("addFact rejects malformed subject and purge clears legacy rows", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "memprune-mal-"));
+  const store = createMemoryStore(dir, ".agent");
+  try {
+    const stateRoot = resolveMemoryRoot(dir);
+    const db = new DatabaseSync(resolve(stateRoot, "state.sqlite"));
+    db.prepare(
+      `INSERT INTO memory_facts (id, subject, predicate, object, valid_from, valid_to, source, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run("fact_bad", "--subject", "x", "y", null, null, "test", new Date().toISOString());
+    db.close();
+
+    await assert.rejects(
+      () => store.addFact({ subject: "--dry-run", predicate: "p", object: "o" }),
+      MemoryFactValidationError
+    );
+
+    const dry = await purgeMalformedSubjectFacts(dir, { dryRun: true });
+    assert.equal(dry.matched, 1);
+    assert.equal(dry.pruned, 0);
+
+    const purged = await purgeMalformedSubjectFacts(dir);
+    assert.equal(purged.matched, 1);
+    assert.equal(purged.pruned, 1);
+    assert.equal(await store.countMalformedSubjectFacts(), 0);
   } finally {
     await store.close();
   }

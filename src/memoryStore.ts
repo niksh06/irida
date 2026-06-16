@@ -24,6 +24,7 @@ import {
 import { titleFromOkfOrBody } from "./okf.js";
 import { secretsKey, SECRETS_KEY_ENV } from "./credentialsPg.js";
 import { makeEmbedder, toVectorLiteral, type EmbedFn } from "./embeddings.js";
+import { MALFORMED_FACT_WHERE, validateFactTriple } from "./memoryFactValidate.js";
 
 /**
  * Notes in this wing are pgcrypto-encrypted at rest (Postgres only, I-20).
@@ -113,6 +114,8 @@ export interface IMemoryStore {
   factAuditSummary(): Promise<MemoryFactAuditSummary>;
   invalidateFact(id: string, ended?: string): Promise<boolean>;
   pruneCurrentFacts(input: PruneFactsInput): Promise<PruneFactsResult>;
+  countMalformedSubjectFacts(): Promise<number>;
+  purgeMalformedSubjectFacts(opts?: { dryRun?: boolean }): Promise<PruneFactsResult>;
   close(): Promise<void>;
 }
 
@@ -272,6 +275,7 @@ export class SqliteMemoryStore implements IMemoryStore {
   }
 
   async addFact(input: AddFactInput): Promise<MemoryFact> {
+    validateFactTriple(input.subject, input.predicate, input.object);
     const now = nowIso();
     const row: MemoryFact = {
       id: newId("fact"),
@@ -373,6 +377,23 @@ export class SqliteMemoryStore implements IMemoryStore {
          WHERE subject=? AND (valid_to IS NULL OR valid_to='') AND created_at < ?`
       )
       .run(when, subject, cutoff);
+    return { matched, pruned: Number(r.changes) };
+  }
+
+  async countMalformedSubjectFacts(): Promise<number> {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM memory_facts WHERE ${MALFORMED_FACT_WHERE}`)
+      .get() as { n: number };
+    return row?.n ?? 0;
+  }
+
+  async purgeMalformedSubjectFacts(opts: { dryRun?: boolean } = {}): Promise<PruneFactsResult> {
+    const matched = await this.countMalformedSubjectFacts();
+    if (opts.dryRun || matched === 0) return { matched, pruned: 0 };
+    const when = nowIso().slice(0, 10);
+    const r = this.db
+      .prepare(`UPDATE memory_facts SET valid_to=? WHERE ${MALFORMED_FACT_WHERE}`)
+      .run(when);
     return { matched, pruned: Number(r.changes) };
   }
 
@@ -589,6 +610,7 @@ export class PostgresMemoryStore implements IMemoryStore {
 
   async addFact(input: AddFactInput): Promise<MemoryFact> {
     await this.ensureMigrated();
+    validateFactTriple(input.subject, input.predicate, input.object);
     const now = nowIso();
     const row: MemoryFact = {
       id: newId("fact"),
@@ -691,6 +713,26 @@ export class PostgresMemoryStore implements IMemoryStore {
       `UPDATE memory_facts SET valid_to=$1
        WHERE subject=$2 AND (valid_to IS NULL OR valid_to='') AND created_at < $3`,
       [when, subject, cutoff]
+    );
+    return { matched, pruned: updateRes.rowCount ?? 0 };
+  }
+
+  async countMalformedSubjectFacts(): Promise<number> {
+    await this.ensureMigrated();
+    const res = await this.pool.query(
+      `SELECT COUNT(*)::int AS n FROM memory_facts WHERE ${MALFORMED_FACT_WHERE}`
+    );
+    return (res.rows[0] as { n: number } | undefined)?.n ?? 0;
+  }
+
+  async purgeMalformedSubjectFacts(opts: { dryRun?: boolean } = {}): Promise<PruneFactsResult> {
+    await this.ensureMigrated();
+    const matched = await this.countMalformedSubjectFacts();
+    if (opts.dryRun || matched === 0) return { matched, pruned: 0 };
+    const when = nowIso().slice(0, 10);
+    const updateRes = await this.pool.query(
+      `UPDATE memory_facts SET valid_to=$1 WHERE ${MALFORMED_FACT_WHERE}`,
+      [when]
     );
     return { matched, pruned: updateRes.rowCount ?? 0 };
   }

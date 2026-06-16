@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveMemoryRoot } from "../config.js";
 import { saveMemory } from "../memory.js";
 import { createMemoryStore, SECURE_WING } from "../memoryStore.js";
+import { MemoryFactValidationError } from "../memoryFactValidate.js";
 
 export interface MemoryMcpContext {
   dir: string;
@@ -212,10 +213,17 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
       },
     },
     async ({ subject, predicate, object }) => {
-      const fact = await withStore(ctx, (s) =>
-        s.addFact({ subject, predicate, object, source: "mcp" })
-      );
-      return textResult(`fact ${fact.id}: ${subject} ${predicate} ${object}`);
+      try {
+        const fact = await withStore(ctx, (s) =>
+          s.addFact({ subject, predicate, object, source: "mcp" })
+        );
+        return textResult(`fact ${fact.id}: ${subject} ${predicate} ${object}`);
+      } catch (e) {
+        if (e instanceof MemoryFactValidationError) {
+          return textResult(`error: ${e.message}`);
+        }
+        throw e;
+      }
     }
   );
 

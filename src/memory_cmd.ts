@@ -37,7 +37,8 @@ import {
   saveMemoryAuditResult,
   DEFAULT_STALE_DAYS,
 } from "./memoryAudit.js";
-import { parseOlderThanDays, pruneSeenPostFacts, purgeAllSeenPostFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
+import { parseOlderThanDays, pruneSeenPostFacts, purgeAllSeenPostFacts, purgeMalformedSubjectFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
+import { MemoryFactValidationError } from "./memoryFactValidate.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { recordMemoryDelete } from "./actionTranscript.js";
 
@@ -304,9 +305,17 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
         console.error("usage: csagent memory fact add <subject> <predicate> <object>");
         return EXIT.usage;
       }
-      const fact = await withStore(dir, (s) => s.addFact({ subject, predicate, object }));
-      console.log(`fact: ${fact.id}  ${fact.subject} ${fact.predicate} ${fact.object}`);
-      return EXIT.ok;
+      try {
+        const fact = await withStore(dir, (s) => s.addFact({ subject, predicate, object }));
+        console.log(`fact: ${fact.id}  ${fact.subject} ${fact.predicate} ${fact.object}`);
+        return EXIT.ok;
+      } catch (e) {
+        if (e instanceof MemoryFactValidationError) {
+          console.error("memory fact add: " + e.message);
+          return EXIT.usage;
+        }
+        throw e;
+      }
     }
     case "query": {
       const subject = rest[0];
@@ -346,6 +355,17 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
       );
       return EXIT.ok;
     }
+    case "purge-malformed-subjects": {
+      let dryRun = false;
+      for (const a of rest) {
+        if (a === "--dry-run") dryRun = true;
+      }
+      const result = await purgeMalformedSubjectFacts(dir, { dryRun });
+      console.log(
+        `malformed-subjects purge${dryRun ? " (dry-run)" : ""}: matched=${result.matched} invalidated=${result.pruned}`
+      );
+      return EXIT.ok;
+    }
     case "prune": {
       const subject = rest[0];
       if (subject !== "seen_post") {
@@ -376,6 +396,7 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
   csagent memory fact query <subject> [predicate]
   csagent memory fact invalidate <fact-id>
   csagent memory fact purge-seen-post [--dry-run]
+  csagent memory fact purge-malformed-subjects [--dry-run]
   csagent memory fact prune seen_post --older-than 30d [--dry-run]  (legacy TTL)
 `);
       return sub ? EXIT.usage : EXIT.ok;

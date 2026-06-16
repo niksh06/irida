@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { cmdDoctor } from "../src/doctor.js";
 import { gatherDoctorApiChecks, gatherDoctorChecks } from "../src/doctorChecks.js";
+import { gatherStaleDistChecks } from "../src/doctorDistStale.js";
 
 const VALID_TEST_KEY = "crsr_" + "k".repeat(24);
 
@@ -109,4 +110,22 @@ test("gatherDoctorChecks fails autoRag when meta wing enabled", () => {
   assert.ok(ar);
   assert.equal(ar!.ok, false);
   assert.match(ar!.detail, /meta/);
+});
+
+test("gatherStaleDistChecks warns when dist is older than src", () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "doc-dist-"));
+  mkdirSync(join(dir, "src"), { recursive: true });
+  mkdirSync(join(dir, "dist"), { recursive: true });
+  const src = join(dir, "src/memoryStore.ts");
+  const dist = join(dir, "dist/memoryStore.js");
+  writeFileSync(src, "// src\n");
+  writeFileSync(dist, "// dist\n");
+  const base = Date.now() / 1000;
+  utimesSync(dist, base - 60, base - 60);
+  utimesSync(src, base, base);
+
+  const stale = gatherStaleDistChecks(dir);
+  assert.equal(stale.length, 1);
+  assert.equal(stale[0]?.ok, false);
+  assert.match(stale[0]?.detail ?? "", /memoryStore/);
 });
