@@ -1,14 +1,35 @@
 ---
 name: memory-ops
-description: Query csagent-memory MCP before answering; save durable notes and facts on request
+description: Query csagent-memory MCP for agent ops, sessions, and lessons; save durable notes on request. For technology reference use kb-ops instead.
 tags: [memory, csagent]
 ---
 
 Memory is **on-demand**, not preloaded. Do not assume context contains project facts.
 
+**Technology best practices** (Kafka, Python, Docker, security, …) live in the **file KB** — skill **`kb-ops`**, not `memory_search`. Postgres holds csagent state only.
+
+## When retrieval happens
+
+Not every turn runs memory search. **`memory_search` is on-demand** — call it when the task needs stored facts (below). Separate optional layers in `agent.config.json` (see REFERENCE.md «When memory is retrieved»):
+
+| Layer | Trigger | Prod default |
+|-------|---------|--------------|
+| **preTurn** | Profile/mode prefix every turn (profile on first turn only) | on if configured |
+| **onStart** | 1–2 notes on first turn only | **off** |
+| **autoRag** | Silent FTS/semantic search every turn | **off** (MCP-first) |
+| **MCP `memory_search`** | You call the tool | **on-demand** (this skill) |
+
+CLI `csagent memory search` is manual lookup only — the gateway does not run it automatically.
+
+**Archive wings** (`cursor-ide`, `secure`) are excluded from default search. Use `includeArchive: true` for forensic IDE transcript lookup. Distilled playbooks live in wing **`cursor-lesson`** (default search).
+
 ## Read (before answering)
 
-When the user asks about setup, TParser, cron, past decisions, or anything that might live in memory:
+When the user asks about **csagent setup**, TParser, cron, past **agent** decisions, episodic sessions, or cursor-lessons:
+
+For **stack / library / infra** questions → **kb-ops** first; only use memory if the user stored an ops note about it.
+
+When the task is agent memory:
 
 1. Call `memory_search` with relevant keywords, or `memory_get` if you know the note name.
 2. If needed, `memory_list` to discover note names.

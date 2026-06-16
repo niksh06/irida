@@ -18,10 +18,23 @@ Resolve once per task; never pass unresolved `$OBSIDIAN_VAULT_PATH` to tools.
 
 | Store | Use for |
 |-------|---------|
-| **csagent memory** (`memory_*` MCP) | Agent durable notes, TParser facts, cron/digest context, "remember for next turn" |
-| **Obsidian vault** (this skill) | User PKM, journals, project notes, wikilinks, handoff markdown the user reads in Obsidian |
+| **kb-ops** | Technology reference KB (`$CSAGENT_HOME/knowledge-space`, git) |
+| **csagent memory** (`memory_*` MCP) | Agent durable notes, TParser context, "remember for next turn" |
+| **Obsidian vault** (this skill) | User PKM, journals, LLM wiki, handoff markdown |
 
 Do not duplicate the same content in both unless the user asks. Prefer **memory** for operational agent state; prefer **vault** for human-facing notes.
+
+**LLM wiki pattern:** compounding interlinked notes under `vault/wiki/` (raw → compile → query). See [docs/MEMORY-GOVERNANCE.md](../docs/MEMORY-GOVERNANCE.md) §4. Operational decisions promoted to PG only when gateway must recall them without opening the vault.
+
+## Obsidian CLI (optional)
+
+When Obsidian 1.12+ CLI is enabled (`obsidian search`, `read`, `backlinks`, `orphans`). App must be running. Example:
+
+```bash
+obsidian vault="$OBSIDIAN_VAULT_PATH" search:context query="topic" limit=5
+```
+
+Prefer filesystem `Grep`/`Read` when CLI is unavailable; use CLI for backlink/orphan lint at scale.
 
 ## Read
 
