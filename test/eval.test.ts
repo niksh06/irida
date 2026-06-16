@@ -4,12 +4,18 @@ import { loadEvalManifest, runEvalBattery, runEvalCase, evalRoot } from "../src/
 
 test("loadEvalManifest reads cases", () => {
   const manifest = loadEvalManifest(evalRoot());
-  assert.ok(manifest.cases.length >= 1);
+  assert.ok(manifest.cases.length >= 2);
   assert.ok(manifest.cases.some((c) => c.id === "memory-audit-smoke"));
+  assert.ok(manifest.cases.some((c) => c.id === "memory-search-smoke"));
 });
 
 test("runEvalCase memory-audit-smoke passes", () => {
   const r = runEvalCase("memory-audit-smoke");
+  assert.equal(r.ok, true, r.detail);
+});
+
+test("runEvalCase memory-search-smoke passes", () => {
+  const r = runEvalCase("memory-search-smoke");
   assert.equal(r.ok, true, r.detail);
 });
 

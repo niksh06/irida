@@ -1,5 +1,7 @@
 /**
- * Dedup helpers via memory_facts (replaces hourly-posts.state.json).
+ * Legacy dedup helpers via memory_facts.
+ * @deprecated Digest jobs no longer write seen_post (window-only dedup in prompts).
+ * Use purgeAllSeenPostFacts() to drop legacy rows; helpers kept for tests.
  */
 import { loadConfig } from "./config.js";
 import { createMemoryStore, type MemoryFact } from "./memoryStore.js";

@@ -33,6 +33,15 @@ describe("parseStreamUsage", () => {
     assert.equal(u?.inputTokens, 100);
     assert.equal(u?.outputTokens, 50);
   });
+
+  it("reads turn-ended InteractionUpdate from onDelta", () => {
+    const u = parseStreamUsage({
+      type: "turn-ended",
+      usage: { inputTokens: 1200, outputTokens: 340, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
+    assert.equal(u?.inputTokens, 1200);
+    assert.equal(u?.outputTokens, 340);
+  });
 });
 
 describe("activityGroups", () => {

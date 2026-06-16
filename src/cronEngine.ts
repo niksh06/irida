@@ -20,13 +20,17 @@ import {
   loadCronState,
   saveCronState,
 } from "./cronJobs.js";
-import { buildSeenPostsPromptSection } from "./memoryDedup.js";
 import { loadCronJobPromptText } from "./cronPrompt.js";
 import { scanPromptText, validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
 import { exportRecentSessions } from "./sessionExport.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
+import { mineCursorTranscripts } from "./cursorTranscriptMine.js";
+import {
+  buildCursorDistillQueue,
+  formatDistillQueueMarkdown,
+} from "./cursorTranscriptDistill.js";
 import { resolveCronScriptPath, runCronGate, runCronScript } from "./cronScript.js";
 import {
   applyContextFromPlaceholder,
@@ -54,12 +58,7 @@ async function resolveCronPrompt(job: CronJob, dir: string): Promise<string> {
   let text = loadCronJobPromptText(job, dir);
   const ctx = resolveContextFromOutput(job, dir);
   text = applyContextFromPlaceholder(text, ctx.output);
-  let body = `[cron:${job.id}] ${text}`;
-  if (job.memoryFactsSubject === "seen_post") {
-    const block = await buildSeenPostsPromptSection(dir, { limit: job.memoryFactsLimit ?? 80 });
-    body = `${block}\n\n${body}`;
-  }
-  return body;
+  return `[cron:${job.id}] ${text}`;
 }
 
 function withDuration<T extends CronExecuteResult>(started: number, result: T): T {
@@ -152,6 +151,61 @@ export async function executeCronJob(
       });
     }
   }
+  if (job.builtin === "cursor-mine") {
+    try {
+      const out = await mineCursorTranscripts(configDir, { all: true });
+      const total = out.ingested + out.updated;
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `cursor-mine: ${total} note(s) (${out.ingested} new, ${out.updated} updated, ${out.skipped} skipped)`,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `cursor-mine failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "cursor-distill-queue") {
+    try {
+      const out = await buildCursorDistillQueue(configDir, { limit: 10 });
+      const markdown = formatDistillQueueMarkdown(out);
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `cursor-distill-queue: ${out.candidates.length} candidate(s) (${out.skipped} skipped, mode=${out.mode})`,
+        output: markdown,
+        silent: out.candidates.length === 0,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `cursor-distill-queue failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "cursor-distill-backfill-queue") {
+    try {
+      const out = await buildCursorDistillQueue(configDir, { limit: 10, backfill: true });
+      const markdown = formatDistillQueueMarkdown(out);
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `cursor-distill-backfill-queue: ${out.candidates.length} candidate(s) (${out.skipped} skipped)`,
+        output: markdown,
+        silent: out.candidates.length === 0,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `cursor-distill-backfill-queue failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
 
   const promptBody = job.topicDelegates
     ? [job.topicPromptFile, job.synthesizePromptFile].filter(Boolean).join(" ")
@@ -187,9 +241,8 @@ export async function executeCronJob(
 
   const prompt = await resolveCronPrompt(job, configDir);
 
-  // Runtime scan of the fully assembled prompt (Wave B2): the seen_post facts
-  // preamble comes from memory and could carry injection text the create-time
-  // guard never saw.
+  // Runtime scan of the fully assembled prompt (Wave B2): contextFrom output
+  // is merged here and could carry injection text the create-time guard never saw.
   const assembledHits = scanPromptText(prompt);
   if (assembledHits.length) {
     return withDuration(started, {
@@ -222,6 +275,7 @@ export async function executeCronJob(
       yesIUnderstand: job.yesIUnderstand,
       interactive: false,
       channel: SESSION_CHANNEL.cron,
+      cronJob: job.id,
       confirm: async () => false,
       onLog: (line) => console.error(line),
     });
@@ -258,6 +312,8 @@ export async function executeCronJob(
     sdk: opts.sdk,
     skills: job.skills,
     yesIUnderstand: job.yesIUnderstand,
+    channel: SESSION_CHANNEL.cron,
+    cronJob: job.id,
   });
   return withDuration(started, {
     ok: run.exitCode === EXIT.ok,

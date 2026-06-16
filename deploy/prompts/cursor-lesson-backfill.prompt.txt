@@ -1,0 +1,20 @@
+[cron:cursor-lesson-backfill]
+
+Cursor IDE transcript distill backfill batch (I-65). Follow skill **cursor-lesson-ops**.
+
+Distill queue (from upstream `cursor-distill-backfill-queue`):
+
+{{context_from}}
+
+If the queue says empty — reply "cursor-lesson backfill: queue empty" and stop (no memory_save).
+
+For each queued source (max 10 per run):
+
+1. `memory_get` the source note (`cursor.*`).
+2. **`memory_save` upsert** — use the queue **Lesson name** exactly (e.g. `lesson.<uuid>`). If Reason=`stale`, overwrite; never invent a new name.
+3. OKF Playbook body per `deploy/prompts/cursor-lesson.template.md` (YAML frontmatter + sections).
+4. Optional: up to **3** `memory_fact_add` triples (`subject=cursor_lesson`, `predicate=<lesson name>`, `object=<decision>`).
+
+Profile patches are proposals only — never save to wing `meta`. Do not write files under `deploy/prompts/`.
+
+No code changes, no cron edits, no git. HITL: user approves profile patches and may delete weak lessons.

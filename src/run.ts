@@ -19,6 +19,8 @@ import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 import { formatErrorDetail } from "./runErrorDetail.js";
+import { buildRunLogMeta } from "./runContext.js";
+import type { SessionChannel } from "./sessionChannel.js";
 
 export interface RunOptions {
   sdk?: SdkLike;
@@ -27,6 +29,18 @@ export interface RunOptions {
   cwd?: string;
   skills?: string[];
   yesIUnderstand?: boolean;
+  /** Override agent.config.json model (e.g. distill subagents). */
+  model?: string;
+  /** Skip preTurn, autoRag, session memory, skills — task text only. */
+  barePrompt?: boolean;
+  /** Write session/run to store (default true). */
+  persistRun?: boolean;
+  /** Suppress stdout/stderr progress logs. */
+  quiet?: boolean;
+  /** Run log channel override (default `run`; cron passes `cron`). */
+  channel?: SessionChannel;
+  /** Cron job id for run log when invoked from cron (I-68). */
+  cronJob?: string;
 }
 
 export interface RunResult {
@@ -44,13 +58,15 @@ async function resolveSdk(injected?: SdkLike): Promise<SdkLike> {
 export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<RunResult> {
   const dir = opts.dir ?? process.cwd();
 
+  const quiet = opts.quiet === true;
+
   if (!prompt || !prompt.trim()) {
-    console.error('run: a prompt is required, e.g. cursor-agent run "summarize this repo"');
+    if (!quiet) console.error('run: a prompt is required, e.g. cursor-agent run "summarize this repo"');
     return { exitCode: EXIT.usage, text: "" };
   }
   const { key: apiKey } = resolveApiKey(dir);
   if (!apiKey) {
-    console.error(`run: ${API_KEY_HELP}`);
+    if (!quiet) console.error(`run: ${API_KEY_HELP}`);
     return { exitCode: EXIT.config, text: "" };
   }
 
@@ -58,40 +74,46 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
   try {
     cfg = loadConfig(dir);
   } catch (e) {
-    console.error("run: " + (e instanceof ConfigError ? e.message : String(e)));
+    if (!quiet) console.error("run: " + (e instanceof ConfigError ? e.message : String(e)));
     return { exitCode: EXIT.config, text: "" };
   }
   const agentCwd = opts.cwd ?? cfg.cwd;
+  const effectiveModel = opts.model?.trim() || cfg.model;
   if (cfg.runtime === "cloud" && !cfg.safety.allowCloud) {
-    console.error("run: cloud runtime requires safety.allowCloud=true (MVP is local-first)");
+    if (!quiet) console.error("run: cloud runtime requires safety.allowCloud=true (MVP is local-first)");
     return { exitCode: EXIT.config, text: "" };
   }
 
   let finalPrompt: string;
   let mcpServers: ReturnType<typeof resolveMcpServers>;
   try {
-    const skills = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
-    const { taskText, blocks: preTurnBlocks } = await buildPreTurnBlocks({
-      dir,
-      cfg,
-      rawMessage: prompt,
-      includeProfile: true,
-    });
-    const sessionMemoryBlocks = await sessionStartMemoryBlocks(dir, cfg);
-    const autoRagBlocks = await autoRagMemoryBlocks(dir, taskText, cfg);
-    mcpServers = resolveMcpServers(cfg, dir);
-    finalPrompt = await composePrompt({
-      userPrompt: taskText,
-      cwd: agentCwd,
-      dir,
-      skills,
-      sessionMemoryBlocks,
-      preTurnBlocks,
-      autoRagBlocks,
-    });
+    if (opts.barePrompt) {
+      finalPrompt = `# Task\n\n${prompt.trim()}`;
+      mcpServers = {};
+    } else {
+      const skills = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
+      const { taskText, blocks: preTurnBlocks } = await buildPreTurnBlocks({
+        dir,
+        cfg,
+        rawMessage: prompt,
+        includeProfile: true,
+      });
+      const sessionMemoryBlocks = await sessionStartMemoryBlocks(dir, cfg);
+      const autoRagBlocks = await autoRagMemoryBlocks(dir, taskText, cfg);
+      mcpServers = resolveMcpServers(cfg, dir);
+      finalPrompt = await composePrompt({
+        userPrompt: taskText,
+        cwd: agentCwd,
+        dir,
+        skills,
+        sessionMemoryBlocks,
+        preTurnBlocks,
+        autoRagBlocks,
+      });
+    }
   } catch (e) {
     if (e instanceof ContextRefError || e instanceof MemoryError || e instanceof SkillError) {
-      console.error("run: " + e.message);
+      if (!quiet) console.error("run: " + e.message);
       return { exitCode: EXIT.usage, text: "" };
     }
     throw e;
@@ -101,14 +123,21 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
   // refs must hit the same denylist as the raw message.
   const gate = await safetyGate({ prompt: finalPrompt, interactive: false, override: opts.yesIUnderstand });
   if (!gate.allowed) {
-    console.error(`run: blocked — ${gate.reason}. Use 'cursor-agent chat' or --yes-i-understand.`);
+    if (!quiet) console.error(`run: blocked — ${gate.reason}. Use 'cursor-agent chat' or --yes-i-understand.`);
     return { exitCode: EXIT.noperm, text: "" };
   }
 
-  const store = createStore(dir, cfg.stateDir);
+  const persistRun = opts.persistRun !== false;
+  const store = persistRun ? createStore(dir, cfg.stateDir) : null;
   const sessionId = newId("sess");
   const runId = newId("run");
   const startedAt = nowIso();
+  const runChannel = opts.channel ?? SESSION_CHANNEL.run;
+  const runLogMeta = buildRunLogMeta({
+    channel: runChannel,
+    cronJob: opts.cronJob,
+    cwd: agentCwd,
+  });
 
   try {
     const sdk = await resolveSdk(opts.sdk).catch((e) => {
@@ -117,12 +146,19 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     const r = await runOneShot(sdk, {
       prompt: finalPrompt,
       apiKey,
-      model: cfg.model,
+      model: effectiveModel,
       cwd: agentCwd,
       mcpServers,
     });
-    console.error(`[run] agentId=${r.agentId ?? "-"} runId=${r.runId ?? "-"} status=${r.status}`);
+    if (!quiet) console.error(`[run] agentId=${r.agentId ?? "-"} runId=${r.runId ?? "-"} status=${r.status}`);
     const failed = r.status === "error";
+    if (!persistRun || !store) {
+      if (failed) {
+        if (!quiet) console.error("run: executed run failed (status=error)");
+        return { exitCode: EXIT.software, text: r.text ?? "" };
+      }
+      return { exitCode: EXIT.ok, text: redact(r.text) };
+    }
     await store.upsertSession({
       id: sessionId,
       title: preview(prompt, 60),
@@ -130,7 +166,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       runtime: cfg.runtime,
       sdk_agent_id: r.agentId,
       last_status: r.status,
-      channel: SESSION_CHANNEL.run,
+      channel: runChannel,
     });
     await store.recordRun({
       id: runId,
@@ -146,18 +182,22 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       finished_at: nowIso(),
       cwd: agentCwd,
       runtime: cfg.runtime,
-      model: cfg.model,
+      model: effectiveModel,
+      ...runLogMeta,
     });
     if (failed) {
-      console.error("run: executed run failed (status=error)");
+      if (!quiet) console.error("run: executed run failed (status=error)");
       return { exitCode: EXIT.software, text: r.text ?? "" };
     }
     const text = redact(r.text);
-    console.log(text);
+    if (!quiet) console.log(text);
     return { exitCode: EXIT.ok, text };
   } catch (e) {
     if (e instanceof StartupError) {
-      console.error("run: startup failed: " + redact(e.message));
+      if (!quiet) console.error("run: startup failed: " + redact(e.message));
+      if (!persistRun || !store) {
+        return { exitCode: EXIT.software, text: "" };
+      }
       await store.upsertSession({
         id: sessionId,
         title: preview(prompt, 60),
@@ -165,7 +205,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
         runtime: cfg.runtime,
         sdk_agent_id: null,
         last_status: "startup_error",
-        channel: SESSION_CHANNEL.run,
+        channel: runChannel,
       });
       await store.recordRun({
         id: runId,
@@ -181,13 +221,14 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
         finished_at: nowIso(),
         cwd: agentCwd,
         runtime: cfg.runtime,
-        model: cfg.model,
+        model: effectiveModel,
+        ...runLogMeta,
       });
       return { exitCode: EXIT.software, text: "" };
     }
     throw e;
   } finally {
-    await store.close();
+    if (store) await store.close();
   }
 }
 

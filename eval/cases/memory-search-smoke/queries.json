@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "topN": 5,
+  "fixtures": [
+    {
+      "name": "ops-gateway",
+      "wing": "default",
+      "title": "Gateway cron ops",
+      "body": "# Gateway\n\ngateway cron tick launchd troubleshooting idle rotation"
+    },
+    {
+      "name": "reddit-feeds",
+      "wing": "default",
+      "title": "Reddit RSS feeds",
+      "body": "# Reddit\n\nreddit feeds sub list tparser digest sources"
+    },
+    {
+      "name": "tparser-workflow",
+      "wing": "default",
+      "title": "TParser workflow",
+      "body": "# TParser\n\ntparser workflow API channels recent-live digest"
+    },
+    {
+      "name": "mlsecai-post-style",
+      "wing": "default",
+      "title": "MLSecAI post style",
+      "body": "# MLSecAI\n\nmlsecai post style telegram formatting verdict"
+    },
+    {
+      "name": "agent-profile.composer",
+      "wing": "meta",
+      "title": "Composer agent profile",
+      "body": "# Profile\n\ncomposer profile agent partnership preferences"
+    },
+    {
+      "name": "cursor.gateway-noise",
+      "wing": "cursor-ide",
+      "title": "Cursor archive noise",
+      "body": "gateway cron reddit feeds tparser workflow long transcript archive noise"
+    }
+  ],
+  "cases": [
+    { "query": "gateway cron", "expectTop1": "ops-gateway", "mustNotWings": ["cursor-ide"] },
+    { "query": "reddit feeds", "expectTop1": "reddit-feeds", "mustNotWings": ["cursor-ide"] },
+    { "query": "tparser workflow", "expectTop1": "tparser-workflow", "mustNotWings": ["cursor-ide"] },
+    { "query": "mlsecai post style", "expectTop1": "mlsecai-post-style", "mustNotWings": ["cursor-ide"] },
+    { "query": "composer profile", "expectTop1": "agent-profile.composer", "mustNotWings": ["cursor-ide"] }
+  ]
+}

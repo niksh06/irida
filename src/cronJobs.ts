@@ -12,7 +12,14 @@ export const CRON_JOBS_FILE = "cron.jobs.json";
 export const CRON_JOBS_BACKUP_PREFIX = "cron.jobs.json.bak-";
 export const CRON_STATE_FILE = "cron.state.json";
 
-export const CRON_BUILTIN_HANDLERS = ["memory-audit", "session-export", "session-ingest"] as const;
+export const CRON_BUILTIN_HANDLERS = [
+  "memory-audit",
+  "session-export",
+  "session-ingest",
+  "cursor-mine",
+  "cursor-distill-queue",
+  "cursor-distill-backfill-queue",
+] as const;
 export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
 
 export interface CronJobNotify {
@@ -38,7 +45,7 @@ export interface CronJob {
   yesIUnderstand?: boolean;
   /** Optional gateway webhook notify on completion (issue 038 P2). */
   notify?: CronJobNotify;
-  /** Prepend recent memory_facts for this subject (e.g. seen_post). */
+  /** @deprecated Legacy seen_post preamble removed; field ignored if set. */
   memoryFactsSubject?: string;
   memoryFactsLimit?: number;
   /** Run TParser-style topic delegates (5) + synthesizer instead of single prompt. */

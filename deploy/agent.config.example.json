@@ -3,6 +3,11 @@
   "runtime": "local",
   "memory": {
     "mcp": true,
+    "embeddings": {
+      "enabled": false,
+      "url": "http://127.0.0.1:11434",
+      "model": "nomic-embed-text"
+    },
     "autoRag": {
       "enabled": false,
       "limit": 2,

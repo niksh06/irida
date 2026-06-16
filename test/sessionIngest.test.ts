@@ -1,9 +1,8 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { writeFileSync, mkdirSync } from "node:fs";
 import { createStore } from "../src/store.js";
 import { createMemoryStore } from "../src/memoryStore.js";
 import {
@@ -85,8 +84,10 @@ test("ingestRecentSessions writes episodic note searchable via FTS", async () =>
     assert.equal(note!.wing, EPISODIC_WING);
     assert.match(note!.body, /how does cron work/);
     assert.match(note!.body, /five-field schedule/);
-    const hits = await memory.searchNotes("cron schedule", 5);
+    const hits = await memory.searchNotes("cron schedule", 5, { includeEpisodic: true });
     assert.ok(hits.some((h) => h.name === "ep.sess_ingest1"));
+    const defaultHits = await memory.searchNotes("cron schedule", 5);
+    assert.ok(!defaultHits.some((h) => h.name === "ep.sess_ingest1"));
   } finally {
     await memory.close();
   }
@@ -126,6 +127,43 @@ test("ingestRecentSessions skips up-to-date sessions", async () => {
   const second = await ingestRecentSessions(dir);
   assert.equal(second.ingested, 0);
   assert.equal(second.skipped, 1);
+});
+
+test("ingestRecentSessions skips rotate-fail temp cwd sessions", async () => {
+  const dir = tmp();
+  const store = createStore(dir, ".agent");
+  const tmpSess = mkdtempSync(join(tmpdir(), "rotate-fail-"));
+  const now = new Date().toISOString();
+  await store.upsertSession({
+    id: "sess_testtmp",
+    title: "rotation test noise",
+    cwd: tmpSess,
+    runtime: "local",
+    sdk_agent_id: null,
+    last_status: "finished",
+    channel: "cli",
+  });
+  await store.recordRun({
+    id: "run_testtmp",
+    session_id: "sess_testtmp",
+    sdk_agent_id: null,
+    sdk_run_id: null,
+    prompt_preview: "hello",
+    result_preview: "hi",
+    status: "finished",
+    error_kind: null,
+    started_at: now,
+    finished_at: now,
+    cwd: tmpSess,
+    runtime: "local",
+    model: "m",
+    is_test: true,
+  });
+  await store.close();
+
+  const out = await ingestRecentSessions(dir, { windowHours: 24 });
+  assert.equal(out.ingested, 0);
+  assert.equal(out.skipped, 1);
 });
 
 test("builtin session-ingest cron handler", async () => {

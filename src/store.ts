@@ -53,6 +53,10 @@ export interface RunRecord {
   /** Stream usage for the ops run log (I-33); not persisted in DB columns. */
   input_tokens?: number | null;
   output_tokens?: number | null;
+  /** Run log metadata (I-68); jsonl only — not persisted in DB columns. */
+  channel?: string | null;
+  cron_job?: string | null;
+  is_test?: boolean;
 }
 
 export interface IStore {

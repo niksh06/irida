@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "shard": "B-csagent-gateway",
+  "note": "Gateway shard review — canonical ops playbooks (chatEngine idle rotation: create separately)",
+  "keep": [
+    "lesson.gateway-idle-rotation",
+    "lesson.2016e727-d782-4984-b2fe-36a790c74891",
+    "lesson.2fc93ef1-5727-498e-9e21-0bbe604da92e",
+    "lesson.30a04af9-b249-4a78-9bcf-9aee3bce4cef",
+    "lesson.2a886321-03e9-45b4-b9b6-c328bb320a02",
+    "lesson.04fa554b-1425-4e85-9fa2-90b10ddc382c",
+    "lesson.057bb3a7-db27-430a-9f6f-2f00da0bb81f",
+    "lesson.c2a0ab41-a451-451f-b4b7-9281d21dfc09"
+  ]
+}

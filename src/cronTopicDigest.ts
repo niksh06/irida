@@ -2,7 +2,6 @@
  * TParser daily digest — five topic delegate runs + synthesizer (parent merge).
  */
 import { loadCronJobPromptText } from "./cronPrompt.js";
-import { buildSeenPostsPromptSection } from "./memoryDedup.js";
 import { runDelegate } from "./delegateRun.js";
 import { runPrompt } from "./run.js";
 import { TPARSE_DAILY_TOPICS, topicTagHintLine, type TparserTopic } from "./tparserTopics.js";
@@ -72,17 +71,11 @@ export async function executeTopicDigestJob(
   const topicTemplate = loadPromptFile(job, dir, "topicPromptFile");
   const synthTemplate = loadPromptFile(job, dir, "synthesizePromptFile");
 
-  let seenBlock = "";
-  if (job.memoryFactsSubject === "seen_post") {
-    seenBlock = await buildSeenPostsPromptSection(dir, { limit: job.memoryFactsLimit ?? 200 });
-  }
-
   const topicSummaries: TopicDigestResult["topicSummaries"] = [];
 
   for (const topic of TPARSE_DAILY_TOPICS) {
     log(`[cron] topic delegate start topic=${topic.id}`);
-    let prompt = fillTopicTemplate(topicTemplate, topic, windowHours);
-    if (seenBlock) prompt = `${seenBlock}\n\n${prompt}`;
+    const prompt = fillTopicTemplate(topicTemplate, topic, windowHours);
     const out = await runDelegate({
       dir,
       cwd: workDir,
@@ -105,8 +98,7 @@ export async function executeTopicDigestJob(
     title: t.title,
     body: t.ok ? t.summary : `(delegate failed: ${t.summary})`,
   }));
-  let synthPrompt = fillSynthesizeTemplate(synthTemplate, sections, windowHours);
-  if (seenBlock) synthPrompt = `${seenBlock}\n\n${synthPrompt}`;
+  const synthPrompt = fillSynthesizeTemplate(synthTemplate, sections, windowHours);
 
   log(`[cron] topic digest synthesize start`);
   const synth = await runPrompt(synthPrompt, {

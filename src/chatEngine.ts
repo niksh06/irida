@@ -44,6 +44,7 @@ import { formatRunErrorMessage, pickRunErrorDetail } from "./runErrors.js";
 import { formatErrorDetail } from "./runErrorDetail.js";
 import { agentLogVerbose, resolveAgentLogger } from "./agentLog.js";
 import { isAgentIdle, resolveAgentIdleMs } from "./agentIdle.js";
+import { buildRunLogMeta } from "./runContext.js";
 
 type ChatSdk = SdkCreateLike & SdkResumeLike;
 
@@ -70,6 +71,8 @@ export interface ChatSessionOptions {
   resumeSessionId?: string;
   /** Owning channel (telegram, tui, cli, …) — isolates gateway from TUI. */
   channel?: SessionChannel;
+  /** Cron job id when channel=cron (I-68 run log). */
+  cronJob?: string;
   /** Gateway peer for cron_propose MCP (Telegram chatId). */
   gatewayPeer?: { adapter: string; chatId: string };
   onLog?: (line: string) => void;
@@ -198,6 +201,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   let replayPrefix = "";
   let sessionCwd = opts.cwd ?? cfg.cwd;
   let sessionChannel = opts.channel ?? "";
+  const sessionCronJob = opts.cronJob?.trim() ?? "";
   let lastAgentTouchAt = Date.now();
   /** True when the previous agent was disposed but its replacement failed to start. */
   let agentBroken = false;
@@ -266,6 +270,13 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   // Live resume keeps SDK context — skip skills/onStart reinjection (gateway restart post-mortem 2026-06-13).
   let firstTurn = connectMode !== "resumed";
   const confirm: Confirmer = opts.confirm ?? (async () => false);
+
+  const runLogMeta = () =>
+    buildRunLogMeta({
+      channel: sessionChannel,
+      cronJob: sessionCronJob || undefined,
+      cwd: sessionCwd,
+    });
 
   const session: ChatSession = {
     sessionId,
@@ -438,7 +449,12 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           `[chat] run send attempt=${attempt} runId=${runId} promptChars=${attemptSendMsg.length} agent=${agent.agentId ?? "-"}`
         );
         try {
-          const run: RunLike = await sendAgentTurn(agent, attemptSendMsg, cfg.model);
+          const run: RunLike = await sendAgentTurn(agent, attemptSendMsg, cfg.model, {
+            onDelta: ({ update }) => {
+              const u = parseStreamUsage(update);
+              if (u) usage = { ...usage, ...u };
+            },
+          });
           await consumeRunStream(run, (ev) => {
             const activity = eventActivityDetail(ev);
             if (activity) {
@@ -497,6 +513,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             model: cfg.model,
             input_tokens: usage.inputTokens ?? null,
             output_tokens: usage.outputTokens ?? null,
+            ...runLogMeta(),
           });
           await store.upsertSession({
             id: sessionId,
@@ -554,6 +571,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             cwd: sessionCwd,
             runtime: cfg.runtime,
             model: cfg.model,
+            ...runLogMeta(),
           });
           if (isAgentRotatableError(e) && (await tryRotateAgent(rotateReason))) continue;
 
@@ -594,6 +612,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         cwd: sessionCwd,
         runtime: cfg.runtime,
         model: cfg.model,
+        ...runLogMeta(),
       });
       lastAgentTouchAt = Date.now();
       log(`[chat] injectContext session=${sessionId} labelChars=${label.length} bodyChars=${body.length}`);

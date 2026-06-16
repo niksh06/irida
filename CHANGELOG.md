@@ -4,6 +4,41 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ## [Unreleased]
 
+- **Memory audit backlog (Wave F)** — `Reports/analysis/memory-audit-improvements-2026-06-16.md`; issues I-69…I-82 (P0–P2 hygiene/retrieval/eval)
+
+### Added
+
+- **Wave F P0 hygiene (I-69, I-71)** — `memory fact purge-malformed-subjects`; reject fact fields starting with `--` (CLI/MCP); doctor `fact hygiene` + `dist freshness`; `deploy/prompts/csagent-index.md` corpus map (I-70)
+- **Memory retrieval router (I-74)** — routing table in `memory-ops`; MCP `memory_search` defaults `hybrid: true` when `memory.embeddings.enabled`
+- **Hybrid memory search (I-72)** — Postgres `searchNotesHybrid` RRF merge of FTS + vector; CLI `--hybrid`; config `memory.search.hybridWeights`; FTS fallback when embedder down
+- **MCP wing filters (I-75)** — `memory_search` / CLI `--wing` allow-list overrides default exclude for targeted ops retrieval
+- **Memory search golden eval (I-78)** — `eval/cases/memory-search-smoke` fixture queries; `npm run eval`
+- **kb-ops skill** — file KB at `$CSAGENT_HOME/knowledge-space` (git pull); tech reference off Postgres; removed `happyin-kb-weekly` cron example
+- **Memory governance doc** — `docs/MEMORY-GOVERNANCE.md`: files vs Postgres vs embeddings, OKF tier policy, LLM wiki + Obsidian CLI, periodic review checklist
+- **Run log metadata (I-68)** — `logs/runs.jsonl` fields `channel`, `cron_job`, `is_test`; cron/chat/run paths populate them; session-ingest skips test temp cwd; doctor warns on null tokens; gateway status prod-only metrics
+- **Memory retrieval model doc (I-67)** — REFERENCE «When memory is retrieved» (preTurn / onStart / autoRag / MCP layers); `memory-ops` skill; prod `csagent-index` wings + archive search
+- **Cursor lesson distill (I-65)** — wing `cursor-lesson`; `memory distill-cursor` queue; backfill + delta baseline; cron jobs; HITL proposals only
+- **Cursor lesson map-reduce orchestrator (I-65b)** — `memory distill-cursor --run [--backfill] [--parallel N]`; chunk split + merge; subagents pinned to `composer-2.5-fast`; `--dry-run`
+- **Cursor mine `--all` + daily cron** — `memory mine-cursor --all` scans every IDE transcript; skips unchanged files by stored mtime/hash; re-imports when jsonl mtime advances; cron builtin `cursor-mine` (example job `cursor-mine-daily` at `15 0 * * *`); strips NUL bytes for Postgres UTF-8
+- **Memory search exclude archive** (I-62) — default FTS/semantic skip wings `cursor-ide` and `secure`; MCP `includeArchive`; CLI `--include-archive`; embed/reindex skip `cursor-ide`
+- **OKF memory format** — YAML frontmatter ([Open Knowledge Format v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)) for cursor-lesson playbooks; `memory okf audit|migrate-lessons|backfill-lineage|repair-titles|strip-legacy-meta|promote|export-review|export-bundle|purge-*`; `export-bundle` prunes stale markdown orphans; canonical gateway playbook `lesson.gateway-idle-rotation`; distill queue upsert + optional facts
+- **Gateway skills** — `deploy/gateway.json.example` adds `kb-ops` + `tool-economy` alongside `memory-ops`
+- **tool-economy skill** — token/tool routing playbook in `skills/tool-economy.md`
+
+### Changed
+
+- **Episodic search exclude (I-73)** — wing `episodic` omitted from default FTS/semantic; CLI `--include-episodic`; MCP `includeEpisodic`
+- **TParser digest dedup** — stop writing `seen_post` memory facts (~15–20k/week); window-only dedup in prompts; removed cron `memoryFactsSubject` preamble; `csagent memory fact purge-seen-post` to drop legacy rows
+- **cursor-ide ingest cap (D2)** — truncate archive body at 200 KB; full jsonl on disk; `memory audit` labels curated vs archive
+- **Embeddings backfill** — enable `memory.embeddings` + `memory reindex-embeddings` for episodic/lesson wings (not archive); `setup-home.sh` no longer overwrites prod `agent.config.json`
+
+### Fixed
+
+- **Run log tokens (I-33)** — capture usage from SDK `onDelta` `turn-ended` updates (not emitted on `run.stream()`); `runs.jsonl` input/output tokens populated for gateway/cron chat turns
+- **Cursor-ide archive hash** — `withHashComment` stores hash inside HTML comment; `resolveArchiveContentHash` handles malformed legacy headers
+- **Cursor mine skip logic** — `noteNeedsUpdate` compares embedded header hash (not hash of body including comment); fix `withHashComment` mtime regex so hash is actually written
+- **OKF legacy HTML meta** — `strip-legacy-meta` removes stale `<!-- csagent cursor-lesson … -->` when YAML frontmatter is source of truth
+
 ## [0.2.0] - 2026-06-13
 
 ### Fixed (audit 2026-06-10)

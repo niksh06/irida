@@ -7,5 +7,5 @@
     "messageFormat": "rich"
   },
   "allowedChatIds": ["YOUR_CHAT_ID"],
-  "skills": ["memory-ops", "browser-ops", "obsidian-ops", "cron-ops", "profile-ops"]
+  "skills": ["memory-ops", "kb-ops", "tool-economy", "browser-ops", "obsidian-ops", "cron-ops", "profile-ops"]
 }

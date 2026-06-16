@@ -6,6 +6,8 @@ import { loadConfig } from "./config.js";
 import { createMemoryStore, type IMemoryStore } from "./memoryStore.js";
 import { createStore, type RunRecord, type SessionRecord } from "./store.js";
 import { formatSessionRunsMarkdown } from "./sessionExport.js";
+import { basename, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
 
 /** Wing for auto-ingested session summaries — excluded from @memory:* bulk load. */
 export const EPISODIC_WING = "episodic";
@@ -30,6 +32,22 @@ export interface SessionIngestResult {
 export function episodicNoteName(sessionId: string): string {
   const base = `ep.${sessionId.trim()}`;
   return base.length <= 64 ? base : `ep.${sessionId.trim().slice(0, 60)}`;
+}
+
+/** Burst/temp cwd patterns that pollute episodic memory (I-68 / I-27 extension). */
+const EPISODIC_NOISE_CWD_RE = /^(rotate-fail|chat-)/;
+
+export function isEpisodicNoiseCwd(cwd: string): boolean {
+  const resolved = resolve(cwd);
+  const tmpRoot = resolve(tmpdir());
+  if (!resolved.startsWith(tmpRoot + sep) && resolved !== tmpRoot) return false;
+  return EPISODIC_NOISE_CWD_RE.test(basename(resolved));
+}
+
+/** Skip test/temp cwd sessions from nightly episodic ingest (I-68 / I-27 extension). */
+export function shouldSkipEpisodicIngest(session: SessionRecord, runs: RunRecord[]): boolean {
+  if (isEpisodicNoiseCwd(session.cwd)) return true;
+  return runs.some((r) => r.is_test === true && isEpisodicNoiseCwd(r.cwd));
 }
 
 function sessionNeedsIngest(
@@ -86,6 +104,10 @@ export async function ingestRecentSessions(
         skipped++;
         continue;
       }
+      if (shouldSkipEpisodicIngest(session, runs)) {
+        skipped++;
+        continue;
+      }
       const name = episodicNoteName(session.id);
       const existing = await memory.getNote(name);
       if (!sessionNeedsIngest(session, existing?.updated_at, force)) {
@@ -120,6 +142,7 @@ export async function ingestSessionRecord(
   opts: { force?: boolean } = {}
 ): Promise<"ingested" | "updated" | "skipped"> {
   if (runs.length === 0) return "skipped";
+  if (shouldSkipEpisodicIngest(session, runs)) return "skipped";
   const name = episodicNoteName(session.id);
   const existing = await memory.getNote(name);
   if (!sessionNeedsIngest(session, existing?.updated_at, opts.force === true)) {

@@ -3,9 +3,11 @@
  */
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { resolveMemoryRoot } from "../config.js";
+import { resolveMemoryRoot, loadConfig } from "../config.js";
 import { saveMemory } from "../memory.js";
 import { createMemoryStore, SECURE_WING } from "../memoryStore.js";
+import { MemoryFactValidationError } from "../memoryFactValidate.js";
+import { buildMemorySearchOptions } from "../memorySearchPolicy.js";
 
 export interface MemoryMcpContext {
   dir: string;
@@ -109,20 +111,59 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
     "memory_search",
     {
       description:
-        "Search csagent memory notes. semantic=true uses local vector embeddings (paraphrase recall); default is keyword/FTS.",
+        "Search csagent memory notes. hybrid=true merges FTS + vector (default when embeddings on); semantic=true is vector-only.",
       inputSchema: {
         query: z.string().describe("Search text"),
         limit: z.number().int().min(1).max(50).optional().describe("Max hits (default 10)"),
-        semantic: z.boolean().optional().describe("Vector search via local embeddings (PG only)"),
+        hybrid: z
+          .boolean()
+          .optional()
+          .describe("RRF merge of FTS + vector (default true when embeddings enabled)"),
+        semantic: z
+          .boolean()
+          .optional()
+          .describe("Vector-only search (skip hybrid merge; PG + embeddings)"),
+        includeArchive: z
+          .boolean()
+          .optional()
+          .describe("Include cursor-ide transcript archive wing (default false)"),
+        includeEpisodic: z
+          .boolean()
+          .optional()
+          .describe("Include episodic session-ingest wing (default false)"),
+        wings: z
+          .array(z.string())
+          .optional()
+          .describe("Restrict search to these wings (overrides default exclude for listed wings)"),
       },
     },
-    async ({ query, limit, semantic }) => {
+    async ({ query, limit, hybrid, semantic, includeArchive, includeEpisodic, wings }) => {
+      let useHybrid = hybrid;
+      let useSemantic = semantic;
+      let embeddingsOn = false;
+      try {
+        embeddingsOn = loadConfig(ctx.dir).memory?.embeddings?.enabled === true;
+      } catch {
+        embeddingsOn = false;
+      }
+      if (useHybrid === undefined && useSemantic === undefined && embeddingsOn) {
+        useHybrid = true;
+      }
+      if (useHybrid === undefined && useSemantic === true) {
+        useHybrid = true;
+      }
+      const searchOpts = buildMemorySearchOptions({ includeArchive, includeEpisodic, wings });
+      const lim = limit ?? 10;
       const hits = await withStore(ctx, async (s) => {
-        if (semantic && s.searchNotesSemantic) {
-          const out = await s.searchNotesSemantic(query, limit ?? 10);
+        if (useHybrid && s.searchNotesHybrid) {
+          const out = await s.searchNotesHybrid(query, lim, searchOpts);
           if (out.length > 0) return out;
         }
-        return s.searchNotes(query, limit ?? 10);
+        if (useSemantic && s.searchNotesSemantic) {
+          const out = await s.searchNotesSemantic(query, lim, searchOpts);
+          if (out.length > 0) return out;
+        }
+        return s.searchNotes(query, lim, searchOpts);
       });
       if (hits.length === 0) return textResult("No matches.");
       const lines = hits.map(
@@ -207,10 +248,17 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
       },
     },
     async ({ subject, predicate, object }) => {
-      const fact = await withStore(ctx, (s) =>
-        s.addFact({ subject, predicate, object, source: "mcp" })
-      );
-      return textResult(`fact ${fact.id}: ${subject} ${predicate} ${object}`);
+      try {
+        const fact = await withStore(ctx, (s) =>
+          s.addFact({ subject, predicate, object, source: "mcp" })
+        );
+        return textResult(`fact ${fact.id}: ${subject} ${predicate} ${object}`);
+      } catch (e) {
+        if (e instanceof MemoryFactValidationError) {
+          return textResult(`error: ${e.message}`);
+        }
+        throw e;
+      }
     }
   );
 

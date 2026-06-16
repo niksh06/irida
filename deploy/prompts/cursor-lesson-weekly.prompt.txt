@@ -1,0 +1,22 @@
+[cron:cursor-lesson-weekly]
+
+Weekly Cursor IDE transcript distill (I-65). Follow skill **cursor-lesson-ops**.
+
+Distill queue (from upstream `cursor-distill-queue-weekly`):
+
+{{context_from}}
+
+If the queue says empty — reply "cursor-lesson: queue empty" and stop (no memory_save).
+
+For each queued source (max 10 per run):
+
+1. `memory_get` the source note (`cursor.*`).
+2. **`memory_save` upsert** — use the queue **Lesson name** exactly (e.g. `lesson.<uuid>`). If Reason=`stale`, overwrite; never invent a new name.
+3. Sections: Summary, Decisions, Playbook, Friction. Set `sourceHash` from archive meta.
+4. Optional: up to **3** `memory_fact_add` triples (`subject=cursor_lesson`, `predicate=<lesson name>`, `object=<decision>`).
+
+Profile patches are proposals only — never save to wing `meta`.
+
+Template: deploy/prompts/cursor-lesson.template.md
+
+No code changes, no cron edits, no git. HITL: user approves profile patches and may delete weak lessons.

@@ -30,6 +30,9 @@ import { loadGatewayConfig, validateGatewayConfig, gatewayConfigPath } from "./g
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
 import { gatherCronPromptGuardIssues } from "./cronPromptGuard.js";
 import { listSkills, loadSkill, scanSkillThreat, skillExists } from "./skills.js";
+import { loadRunMetrics } from "./runMetrics.js";
+import { gatherStaleDistChecks } from "./doctorDistStale.js";
+import { createMemoryStore } from "./memoryStore.js";
 
 export interface DoctorCheck {
   name: string;
@@ -106,6 +109,8 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   checks.push(...gatherGatewaySkillsChecks(dir));
   checks.push(...gatherCredentialsEnvChecks(dir));
   checks.push(...gatherDoctorSecretFormatChecks(dir));
+  checks.push(...gatherRunLogChecks(dir));
+  checks.push(...gatherStaleDistChecks(dir));
 
   const cronPath = cronJobsPath(dir);
   if (existsSync(cronPath)) {
@@ -146,6 +151,29 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   }
 
   return checks;
+}
+
+function gatherRunLogChecks(dir: string): DoctorCheck[] {
+  let stateDir = ".agent";
+  try {
+    stateDir = loadConfig(dir).stateDir;
+  } catch {
+    return [];
+  }
+  const metrics = loadRunMetrics(dir, stateDir, 24);
+  if (metrics.runs === 0) {
+    return [{ name: "run log tokens", ok: true, detail: "no runs in last 24h" }];
+  }
+  const hasTokens = metrics.inputTokens > 0 || metrics.outputTokens > 0;
+  return [
+    {
+      name: "run log tokens",
+      ok: hasTokens,
+      detail: hasTokens
+        ? `tokens in/out ${metrics.inputTokens}/${metrics.outputTokens} (${metrics.runs} runs 24h)`
+        : `${metrics.runs} run(s) in 24h with null token fields — SDK usage may not be captured (I-33)`,
+    },
+  ];
 }
 
 function gatherDoctorSecretFormatChecks(dir: string): DoctorCheck[] {
@@ -357,18 +385,42 @@ export function doctorAllOk(checks: DoctorCheck[]): boolean {
 
 export type ModelsListFn = (opts: { apiKey: string }) => Promise<Array<{ id?: string }>>;
 
-export async function gatherDoctorStoreChecks(_dir: string = process.cwd()): Promise<DoctorCheck[]> {
+export async function gatherDoctorStoreChecks(dir: string = process.cwd()): Promise<DoctorCheck[]> {
   const url = process.env.CSAGENT_DATABASE_URL?.trim();
-  if (!url) {
-    return [{ name: "store", ok: true, detail: "sqlite (CSAGENT_DATABASE_URL unset)" }];
-  }
   const checks: DoctorCheck[] = [];
-  const probe = await probePostgresStore(url);
-  checks.push({ name: "CSAGENT_DATABASE_URL", ok: probe.ok, detail: probe.detail });
-  if (pgSecretsEnabled()) {
-    const cred = await probePgCredentialStore(url, secretsKey());
-    checks.push({ name: "credential_secrets", ok: cred.ok, detail: cred.detail });
+  if (!url) {
+    checks.push({ name: "store", ok: true, detail: "sqlite (CSAGENT_DATABASE_URL unset)" });
+  } else {
+    const probe = await probePostgresStore(url);
+    checks.push({ name: "CSAGENT_DATABASE_URL", ok: probe.ok, detail: probe.detail });
+    if (pgSecretsEnabled()) {
+      const cred = await probePgCredentialStore(url, secretsKey());
+      checks.push({ name: "credential_secrets", ok: cred.ok, detail: cred.detail });
+    }
   }
+
+  const store = createMemoryStore(dir);
+  try {
+    const malformed = await store.countMalformedSubjectFacts();
+    checks.push({
+      name: "fact hygiene",
+      ok: malformed === 0,
+      detail:
+        malformed === 0
+          ? "no malformed --* fact fields"
+          : `${malformed} fact(s) with subject/predicate starting with "--"`,
+      fix: "csagent memory fact purge-malformed-subjects",
+    });
+  } catch (e) {
+    checks.push({
+      name: "fact hygiene",
+      ok: false,
+      detail: e instanceof Error ? e.message : String(e),
+    });
+  } finally {
+    await store.close();
+  }
+
   return checks;
 }
 

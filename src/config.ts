@@ -22,7 +22,7 @@ export interface EmbeddingsConfig {
   model?: string;
 }
 
-/** Silent top-k memory retrieval before each turn (Wave B auto-RAG). */
+/** Silent memory retrieval before each turn (Wave B auto-RAG). */
 export interface AutoRagConfig {
   /** When true, search memory for the user message and prepend top hits. */
   enabled?: boolean;
@@ -61,6 +61,11 @@ export interface SkillPolicyConfig {
   allowUnsafe?: string[];
 }
 
+/** Hybrid FTS + vector search tuning (I-72). */
+export interface MemorySearchConfig {
+  hybridWeights?: { fts?: number; vector?: number };
+}
+
 /** Durable memory injected before the first turn of each chat session (issue 036). */
 export interface MemoryConfig {
   /** Optional: inject named notes on first turn only (prefer MCP tools). */
@@ -75,6 +80,12 @@ export interface MemoryConfig {
   autoRag?: AutoRagConfig;
   /** Mode prefix + profile excerpt before each turn (I-52). */
   preTurn?: PreTurnConfig;
+  /** Wings omitted from FTS/semantic search unless includeArchive/includeEpisodic (default: cursor-ide, secure, episodic). */
+  searchExcludeWings?: string[];
+  /** Wings skipped by embed-on-save and reindex-embeddings (default: cursor-ide, secure). */
+  embedExcludeWings?: string[];
+  /** Hybrid search weights and related options (Postgres + embeddings). */
+  search?: MemorySearchConfig;
 }
 
 /** Stealth browser MCP (puppeteer-extra + persistent Chromium profile). */
@@ -311,6 +322,34 @@ function validate(obj: unknown, dir: string): AgentConfig {
       }
       cfg.memory.autoRag = autoRag;
     }
+    if (m.search !== undefined) {
+      if (typeof m.search !== "object" || m.search === null || Array.isArray(m.search)) {
+        throw new ConfigError("memory.search must be an object");
+      }
+      const s = m.search as Record<string, unknown>;
+      const search: MemorySearchConfig = {};
+      if (s.hybridWeights !== undefined) {
+        if (typeof s.hybridWeights !== "object" || s.hybridWeights === null || Array.isArray(s.hybridWeights)) {
+          throw new ConfigError("memory.search.hybridWeights must be an object");
+        }
+        const hw = s.hybridWeights as Record<string, unknown>;
+        const hybridWeights: { fts?: number; vector?: number } = {};
+        if (hw.fts !== undefined) {
+          if (typeof hw.fts !== "number" || hw.fts <= 0) {
+            throw new ConfigError("memory.search.hybridWeights.fts must be a number > 0");
+          }
+          hybridWeights.fts = hw.fts;
+        }
+        if (hw.vector !== undefined) {
+          if (typeof hw.vector !== "number" || hw.vector <= 0) {
+            throw new ConfigError("memory.search.hybridWeights.vector must be a number > 0");
+          }
+          hybridWeights.vector = hw.vector;
+        }
+        search.hybridWeights = hybridWeights;
+      }
+      cfg.memory.search = search;
+    }
     if (m.preTurn !== undefined) {
       if (typeof m.preTurn !== "object" || m.preTurn === null || Array.isArray(m.preTurn)) {
         throw new ConfigError("memory.preTurn must be an object");
@@ -336,6 +375,14 @@ function validate(obj: unknown, dir: string): AgentConfig {
         preTurn.modeEnv = p.modeEnv.trim();
       }
       cfg.memory.preTurn = preTurn;
+    }
+    for (const key of ["searchExcludeWings", "embedExcludeWings"] as const) {
+      const raw = m[key];
+      if (raw === undefined) continue;
+      if (!Array.isArray(raw) || !raw.every((x) => typeof x === "string")) {
+        throw new ConfigError(`memory.${key} must be an array of strings`);
+      }
+      cfg.memory[key] = raw.map((x) => x.trim()).filter(Boolean);
     }
   }
   if (o.browser !== undefined) {

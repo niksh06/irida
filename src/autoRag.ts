@@ -50,6 +50,10 @@ async function searchForAutoRag(
   limit: number,
   semantic: boolean
 ): Promise<MemoryNote[]> {
+  if (semantic && store.searchNotesHybrid) {
+    const hits = await store.searchNotesHybrid(query, limit);
+    if (hits.length > 0) return hits;
+  }
   if (semantic && store.searchNotesSemantic) {
     const hits = await store.searchNotesSemantic(query, limit);
     if (hits.length > 0) return hits;

@@ -7,6 +7,7 @@ import { resolve, basename, extname } from "node:path";
 import { loadConfig, resolveMemoryRoot, type AgentConfig } from "./config.js";
 import { createMemoryStore } from "./memoryStore.js";
 import { redact } from "./redact.js";
+import { titleFromOkfOrBody } from "./okf.js";
 
 export class MemoryError extends Error {}
 
@@ -55,8 +56,7 @@ function memoryPath(dir: string, name: string): string {
 }
 
 function titleFromContent(name: string, body: string): string {
-  const m = body.match(/^#\s+(.+)$/m);
-  return m?.[1]?.trim() || name;
+  return titleFromOkfOrBody(name, body);
 }
 
 function readBody(abs: string, display: string): string {

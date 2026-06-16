@@ -32,7 +32,7 @@ csagent auth logout                  # remove credentials file
 ### Memory, cron, gateway
 
 ```bash
-csagent memory list|show|add|search|rm|import-md …
+csagent memory list|show|add|search|rm …
 csagent memory align-silo [--dry-run]   # merge repo/cron silos → CSAGENT_HOME memory
 csagent memory audit [--links] [--stale-days 90]  # notes/facts/silo QA
 csagent memory fact add|query|invalidate …
@@ -91,15 +91,38 @@ EOF
 
 In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
+### Technology knowledge base (file, not Postgres)
+
+HappyIn-style reference lives at **`$CSAGENT_HOME/knowledge-space`** (git clone). Articles: `docs/{domain}/{slug}.md`. Update: `git pull`. Agents use skill **`kb-ops`** — Grep/Read on disk; enable in `gateway.json` alongside `memory-ops`. See [skills/kb-ops.md](skills/kb-ops.md). Do not use `memory_search` for stack documentation.
+
+Legacy CLI `csagent memory import-md` (bulk copy into PG) is **deprecated** for prod — prefer file KB.
+
 **Secure notes (Postgres only):** `csagent memory add vault --wing secure --stdin` — body is pgcrypto-encrypted at rest (`CSAGENT_SECRETS_KEY`), never mirrored to `.md`, masked in `memory list`/`search`; only `memory show` (and MCP `memory_get`) decrypts. SQLite store refuses the `secure` wing explicitly.
 
-**Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, `memory_list`, `memory_save`, `memory_fact_query`, `memory_fact_add`, `memory_fact_invalidate`. Enable skill `memory-ops` in `gateway.json` for Telegram so the model queries memory before guessing. With `browser.mcp: true`, add skill `browser-ops` so gateway/cron use `browser_navigate` / `browser_snapshot` instead of guessing page content. For Obsidian vault read/write, add `obsidian-ops` and set `OBSIDIAN_VAULT_PATH` in `csagent.env`.
+**Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, … Enable skills `memory-ops` and **`kb-ops`** in `gateway.json` — memory for agent state, kb-ops for technology reference on disk.
 
 ```json
 "memory": { "mcp": true }
 ```
 
 **Manual inject:** `@memory:name` in a message still works. **Advanced:** optional `memory.onStart` (1–2 short notes on first turn only) — avoid with large libraries; use MCP search instead.
+
+### When memory is retrieved
+
+Four independent layers; only the ones you enable run. Order in `composePrompt`: **preTurn** → **onStart** (first turn) → **autoRag** → user message (`# Task`).
+
+| Layer | Config | When | Prod default |
+|-------|--------|------|--------------|
+| **preTurn** | `memory.preTurn` | Every turn — mode prefix; profile excerpt on **first turn only** (skipped on live SDK resume) | on if configured (I-52) |
+| **onStart** | `memory.onStart` | First turn only — inject named notes | **off** |
+| **autoRag** | `memory.autoRag` | Every turn — silent `searchNotes` on user text, prepends hits | **off** (MCP-first, I-55) |
+| **MCP `memory_search`** | `memory.mcp` (default true) | Model tool call on demand | on-demand via skill `memory-ops` |
+
+**CLI** `csagent memory search` is manual — cron/gateway never call it unless a job prompt or agent tool does.
+
+**Default search scope:** wings `cursor-ide`, `secure`, and `episodic` are excluded from FTS/semantic unless opted in (`includeArchive`, `includeEpisodic`, or CLI flags). Meta notes are included. Secure notes match by name/title only; body stays encrypted.
+
+See also: [Auto-RAG pilot](#auto-rag-optional-conservative-pilot--i-55), [Cursor IDE transcripts](#cursor-ide-transcripts-p3-3--r4-4), [Memory governance](docs/MEMORY-GOVERNANCE.md) (files vs Postgres, OKF, LLM wiki, review checklist).
 
 ### Semantic search (Postgres + local embeddings)
 
@@ -128,6 +151,69 @@ csagent memory ingest-sessions --window-hours 48 --force
 ```
 
 Cron builtin: `"builtin": "session-ingest"` (example: nightly after `session-export`). Episodic notes are for MCP/`memory_search` — not bulk `@memory:*` injection.
+
+### Cursor IDE transcripts (P3-3 / R4-4)
+
+Parent chats under `~/.cursor/projects/*/agent-transcripts/*.jsonl` → wing **`cursor-ide`** (`cursor.<uuid>`). Text-only (tool traces omitted); redacted on save. Skips files whose mtime is not newer than the stored note; re-imports when the jsonl grows across sessions.
+
+**Search:** `cursor-ide` is excluded from default FTS/semantic (archive). Use `--include-archive` or MCP `includeArchive: true` for forensic lookup.
+
+```bash
+csagent memory mine-cursor                    # last 7 days, max 30 (default)
+csagent memory mine-cursor --all              # every transcript (backfill + daily cron)
+csagent memory search "gateway cron"          # skips cursor-ide
+csagent memory search "gateway cron" --include-archive
+```
+
+Cron builtin: `"builtin": "cursor-mine"` (scans all transcripts; example `cursor-mine-daily` at `15 0 * * *`).
+
+### Cursor lesson distill (I-65)
+
+Compressed playbooks from raw `cursor-ide` archive → wing **`cursor-lesson`** (`lesson.<uuid>`). **Included in default search** (unlike archive). HITL: cron writes proposals only; profile patches never auto-merge to `meta`.
+
+```bash
+csagent memory distill-cursor              # delta queue (top 10, respects baseline)
+csagent memory distill-cursor --backfill --limit 10   # backfill batch
+csagent memory distill-cursor --backfill --run --parallel 3 --limit 10   # map-reduce SDK batch (composer-2.5-fast)
+csagent memory distill-cursor --backfill --run --dry-run   # chunk plan only
+csagent memory distill-cursor --show-baseline
+csagent memory distill-cursor --set-baseline --baseline-note "backfill complete"
+```
+
+State file: `.agent/cursor-distill.baseline.json` — after baseline, only archives **updated after** that timestamp are queued (delta).
+
+Weekly flow (example, disabled in repo):
+
+1. `cursor-distill-queue-weekly` builtin — builds queue artifact
+2. `cursor-lesson-weekly` SDK job + skill `cursor-lesson-ops` — distills queue via `memory_save`
+
+Template: `deploy/prompts/cursor-lesson.template.md` (OKF v0.1 Playbook)
+
+**Canonical playbooks** (operator-authored, stable names): `lesson.gateway-idle-rotation` — see `deploy/prompts/cursor-lesson-canonical-idle-rotation.md`. Load: `csagent memory add lesson.gateway-idle-rotation --wing cursor-lesson --stdin --dir <config-dir>`.
+
+**Delta upsert:** weekly distill must use queue **Lesson name** exactly; stale → overwrite, never fork. Optional `memory_fact_add` (`cursor_lesson`, lesson name, decision).
+
+**OKF hygiene & review:**
+
+```bash
+csagent memory okf audit [--json]
+csagent memory okf migrate-lessons [--apply]   # legacy HTML → YAML frontmatter
+csagent memory okf backfill-lineage [--apply] # sourceHash from archive (lineage audit)
+csagent memory okf repair-titles [--apply]    # fix uuid placeholder titles
+csagent memory okf strip-legacy-meta [--apply] # drop HTML lineage when YAML present
+csagent memory okf promote [--apply] [--keep-file deploy/promote-lessons.json] # HITL → status: approved
+csagent memory okf export-review [--out Reports/cursor-lesson-review]
+csagent memory okf export-bundle [--bundle-out .agent/memory/okf/cursor-lesson] [--exclude-fixtures]
+```
+
+**Browse on disk:** Postgres is source of truth; `export-bundle` mirrors the current corpus to markdown under `{config-dir}/.agent/memory/okf/cursor-lesson/` (use `--dir` for prod). Re-export removes stale `*.md` orphans from prior runs.
+
+```bash
+csagent memory okf purge-stubs [--apply] [--fixtures-only | --stubs-only]   # phase-1 hygiene
+csagent memory okf purge-meta-distill [--apply] [--keep-file deploy/meta-distill-keep.json]   # phase-2
+csagent memory okf purge-tparser [--apply] [--keep-file deploy/tparser-keep.json]
+csagent memory okf purge-gateway [--apply] [--keep-file deploy/gateway-keep.json]
+```
 
 ### Auto-RAG (optional, conservative pilot — I-55)
 
@@ -213,8 +299,6 @@ Synthesizer targets **≤3500 chars** with a **TL;DR** paragraph first (I-60). T
       "graceMinutes": 480,
       "cwd": "/path/to/TParser",
       "skills": ["memory-ops", "browser-ops"],
-      "memoryFactsSubject": "seen_post",
-      "memoryFactsLimit": 200,
       "topicDelegates": true,
       "topicWindowHours": 24,
       "topicPromptFile": "deploy/prompts/tparser-daily-topic.prompt.txt",
@@ -250,7 +334,7 @@ Job extras:
 - `"catchUp": "skip"` — drop stale slots instead of catching up (briefings that must not arrive late). Default `"once"`.
 - `"gateScript": "path.sh"` — cheap pre-check before waking the SDK: last stdout line `{"wakeAgent": false, "reason": "…"}` skips the run entirely (no tokens, no notify; slot is consumed). Fail-open: gate errors never block the job. Manual `cron run` bypasses the gate.
 - `"script": "path.sh"` — deterministic shell job with **no SDK at all**: non-empty stdout → notify text; empty stdout → silent success; non-zero exit → failed with stderr. Example: `deploy/scripts/csagent-watchdog.sh` (gateway/outbox/cron health, zero tokens).
-- Builtins: `"builtin": "memory-audit"` (notes/facts/silo QA + seen_post TTL prune), `"builtin": "session-export"` (daily transcripts → `Reports/sessions/YYYY-MM-DD/`), `"builtin": "session-ingest"` (sessions → episodic memory notes).
+- Builtins: `"builtin": "memory-audit"` (notes/facts/silo QA), `"builtin": "session-export"` (daily transcripts → `Reports/sessions/YYYY-MM-DD/`), `"builtin": "session-ingest"` (sessions → episodic memory notes), `"builtin": "cursor-mine"` (all Cursor IDE transcripts → wing `cursor-ide`), `"builtin": "cursor-distill-queue"` (stale/missing distill candidates for I-65). Legacy `seen_post` facts: `csagent memory fact purge-seen-post`.
 - Tick takes a cross-process lock (`cron.tick.lock`) — overlapping ticks skip instead of double-firing.
 - Optional `sessionId` binds to an existing `sess_`. Destructive prompts denied unless `"yesIUnderstand": true`. Doctor checks the **cron prompt guard** (injection patterns).
 
@@ -360,7 +444,7 @@ Project-local `agent.config.json`. **Secrets never go here.**
 }
 ```
 
-State: SQLite at `<stateDir>/state.sqlite` by default, or Postgres when `CSAGENT_DATABASE_URL` is set. Previews redacted; no secrets stored. Ops run log: `<stateDir>/logs/runs.jsonl` (no previews; `CSAGENT_RUN_LOG=0` disables).
+State: SQLite at `<stateDir>/state.sqlite` by default, or Postgres when `CSAGENT_DATABASE_URL` is set. Previews redacted; no secrets stored. Ops run log: `<stateDir>/logs/runs.jsonl` (no previews; `CSAGENT_RUN_LOG=0` disables). Each line includes optional **I-68** metadata: `channel` (`telegram` | `cli` | `tui` | `cron` | `run` | …), `cron_job` (when from cron), `is_test` (temp cwd / `CSAGENT_TEST=1`). `gateway status` aggregates prod-only (`is_test` excluded). Doctor warns when 24h runs exist but all token fields are null.
 
 **Cloud (016):** `runtime: "cloud"` + `safety.allowCloud` only gate today — **no real cloud SDK path** (deliberately deferred: cloud agents run without access to the local machine, which defeats the local-first design).
 
