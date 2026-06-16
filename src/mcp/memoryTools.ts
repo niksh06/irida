@@ -131,9 +131,13 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
           .boolean()
           .optional()
           .describe("Include episodic session-ingest wing (default false)"),
+        wings: z
+          .array(z.string())
+          .optional()
+          .describe("Restrict search to these wings (overrides default exclude for listed wings)"),
       },
     },
-    async ({ query, limit, hybrid, semantic, includeArchive, includeEpisodic }) => {
+    async ({ query, limit, hybrid, semantic, includeArchive, includeEpisodic, wings }) => {
       let useHybrid = hybrid;
       let useSemantic = semantic;
       let embeddingsOn = false;
@@ -148,7 +152,7 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
       if (useHybrid === undefined && useSemantic === true) {
         useHybrid = true;
       }
-      const searchOpts = buildMemorySearchOptions({ includeArchive, includeEpisodic });
+      const searchOpts = buildMemorySearchOptions({ includeArchive, includeEpisodic, wings });
       const lim = limit ?? 10;
       const hits = await withStore(ctx, async (s) => {
         if (useHybrid && s.searchNotesHybrid) {

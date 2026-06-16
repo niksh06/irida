@@ -26,6 +26,8 @@ export interface MemorySearchOptions {
   includeEpisodic?: boolean;
   /** Extra wings to exclude for this query only. */
   excludeWings?: string[];
+  /** Restrict hits to these wings (overrides default exclude for listed wings). */
+  wings?: string[];
 }
 
 export function resolveSearchExcludeWings(cfg?: MemoryConfig): string[] {
@@ -66,12 +68,40 @@ export function effectiveSearchExcludeWings(
 export function buildMemorySearchOptions(opts: {
   includeArchive?: boolean;
   includeEpisodic?: boolean;
+  wings?: string[];
 }): MemorySearchOptions | undefined {
-  if (!opts.includeArchive && !opts.includeEpisodic) return undefined;
+  const wings = normalizeSearchWings(opts.wings);
+  if (!opts.includeArchive && !opts.includeEpisodic && wings.length === 0) return undefined;
   return {
     ...(opts.includeArchive ? { includeArchive: true } : {}),
     ...(opts.includeEpisodic ? { includeEpisodic: true } : {}),
+    ...(wings.length ? { wings } : {}),
   };
+}
+
+export function normalizeSearchWings(wings?: string[]): string[] {
+  return (wings ?? []).map((w) => w.trim()).filter(Boolean);
+}
+
+/** SQLite wing filter: allow-list wins over default exclude. */
+export function resolveSqliteSearchWingFilter(
+  excludeWings: readonly string[],
+  opts?: MemorySearchOptions
+): { clause: string; params: string[] } {
+  const allow = normalizeSearchWings(opts?.wings);
+  if (allow.length > 0) return sqliteWingIn(allow);
+  return sqliteWingNotIn(excludeWings);
+}
+
+/** Postgres wing filter: allow-list wins over default exclude. */
+export function resolveSearchWingFilter(
+  excludeWings: readonly string[],
+  opts?: MemorySearchOptions,
+  startParam = 1
+): { clause: string; params: string[] } {
+  const allow = normalizeSearchWings(opts?.wings);
+  if (allow.length > 0) return wingInSql(allow, startParam);
+  return wingNotInSql(excludeWings, startParam);
 }
 
 export function filterNotesByWings<T extends { wing: string }>(
@@ -98,6 +128,23 @@ export function sqliteWingNotIn(excludeWings: readonly string[]): { clause: stri
   const params = [...excludeWings];
   const placeholders = params.map(() => "?").join(", ");
   return { clause: ` AND wing NOT IN (${placeholders})`, params };
+}
+
+export function sqliteWingIn(wings: readonly string[]): { clause: string; params: string[] } {
+  if (!wings.length) return { clause: "", params: [] };
+  const params = [...wings];
+  const placeholders = params.map(() => "?").join(", ");
+  return { clause: ` AND wing IN (${placeholders})`, params };
+}
+
+export function wingInSql(wings: readonly string[], startParam = 1): {
+  clause: string;
+  params: string[];
+} {
+  if (!wings.length) return { clause: "", params: [] };
+  const params = [...wings];
+  const placeholders = params.map((_, i) => `$${startParam + i}`).join(", ");
+  return { clause: ` AND wing IN (${placeholders})`, params };
 }
 
 export function shouldEmbedNote(wing: string, embedExclude: readonly string[]): boolean {

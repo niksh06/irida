@@ -21,7 +21,7 @@ Not every turn runs memory search. **`memory_search` is on-demand** — call it 
 
 CLI `csagent memory search` is manual lookup only — the gateway does not run it automatically.
 
-**Archive wings** (`cursor-ide`, `secure`, `episodic`) are excluded from default search. Use `includeArchive: true` for forensic IDE transcript lookup; `includeEpisodic: true` for session-ingest notes. Distilled playbooks live in wing **`cursor-lesson`** (default search).
+**Archive wings** (`cursor-ide`, `secure`, `episodic`) are excluded from default search. Use `includeArchive: true` for forensic IDE transcript lookup; `includeEpisodic: true` for session-ingest notes. **`wings: ["default", "cursor-lesson"]`** restricts ops search without archive noise. Distilled playbooks live in wing **`cursor-lesson`** (default search).
 
 ## Retrieval router
 
@@ -30,7 +30,7 @@ Route before calling tools — wrong store wastes tokens and adds noise.
 | User question type | Action |
 |--------------------|--------|
 | Tech stack (Kafka, Docker, Python, …) | **`kb-ops`** — Grep/Read disk KB; **not** `memory_search` |
-| csagent ops / cron / TParser / gateway | `memory_search` — wings: `default`, `cursor-lesson`, `meta`, `ops` |
+| csagent ops / cron / TParser / gateway | `memory_search` — e.g. `wings: ["default", "cursor-lesson", "meta"]` |
 | Past IDE session / forensic transcript | `memory_search` with `includeArchive: true` |
 | Past agent **session** summary (episodic) | `memory_search` with `includeEpisodic: true`, or `memory_get ep.sess_*` if known |
 | Personal journal / PKM | **`obsidian-ops`** (if enabled) |

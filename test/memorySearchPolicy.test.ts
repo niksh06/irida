@@ -85,3 +85,47 @@ test("searchNotes excludes episodic by default", async () => {
     await memory.close();
   }
 });
+
+test("searchNotes wings allow-list overrides default exclude", async () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "mem-search-wing-"));
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  writeFileSync(
+    join(dir, "agent.config.json"),
+    JSON.stringify({ model: "m", runtime: "local", cwd: dir, stateDir: ".agent" }),
+    "utf8"
+  );
+  const memory = createMemoryStore(dir);
+  try {
+    await memory.upsertNote({
+      name: "ops-gateway",
+      wing: "default",
+      title: "Gateway cron",
+      body: "gateway cron tick launchd",
+    });
+    await memory.upsertNote({
+      name: "lesson.gateway",
+      wing: "cursor-lesson",
+      title: "Gateway lesson",
+      body: "gateway cron idle rotation playbook",
+    });
+    await memory.upsertNote({
+      name: "cursor.test",
+      wing: CURSOR_TRANSCRIPT_WING,
+      title: "Archive",
+      body: "gateway cron raw transcript archive",
+    });
+    const opsOnly = await memory.searchNotes("gateway cron", 10, {
+      wings: ["default", "cursor-lesson"],
+    });
+    assert.ok(opsOnly.some((n) => n.name === "ops-gateway"));
+    assert.ok(opsOnly.some((n) => n.name === "lesson.gateway"));
+    assert.ok(!opsOnly.some((n) => n.wing === CURSOR_TRANSCRIPT_WING));
+    const archiveOnly = await memory.searchNotes("gateway cron", 10, {
+      wings: [CURSOR_TRANSCRIPT_WING],
+    });
+    assert.equal(archiveOnly.length, 1);
+    assert.equal(archiveOnly[0]!.name, "cursor.test");
+  } finally {
+    await memory.close();
+  }
+});

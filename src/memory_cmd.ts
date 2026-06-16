@@ -40,6 +40,28 @@ import {
 import { parseOlderThanDays, pruneSeenPostFacts, purgeAllSeenPostFacts, purgeMalformedSubjectFacts, SEEN_POST_TTL_DAYS } from "./memoryFactPrune.js";
 import { MemoryFactValidationError } from "./memoryFactValidate.js";
 import { buildMemorySearchOptions } from "./memorySearchPolicy.js";
+
+const SEARCH_FLAG_RE = /^--(?:include-archive|include-episodic|semantic|hybrid)$/;
+
+/** Parse `--wing default` / `--wing=a,b` from memory search argv. */
+export function parseMemorySearchWingFlags(args: string[]): { wings: string[]; rest: string[] } {
+  const wings: string[] = [];
+  const rest: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--wing" || a === "--wings") {
+      const v = args[++i];
+      if (v) wings.push(...v.split(",").map((s) => s.trim()).filter(Boolean));
+      continue;
+    }
+    if (a.startsWith("--wing=")) {
+      wings.push(...a.slice("--wing=".length).split(",").map((s) => s.trim()).filter(Boolean));
+      continue;
+    }
+    rest.push(a);
+  }
+  return { wings, rest };
+}
 import { EXIT, type ExitCode } from "./exit.js";
 import { recordMemoryDelete } from "./actionTranscript.js";
 
@@ -213,6 +235,7 @@ export async function cmdMemorySearch(
     hybrid?: boolean;
     includeArchive?: boolean;
     includeEpisodic?: boolean;
+    wings?: string[];
   } = {}
 ): Promise<ExitCode> {
   const dir = opts.dir ?? process.cwd();
@@ -908,20 +931,20 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemoryShow(name ?? "", opts);
     case "search": {
       const args = [name, ...rest].filter((a): a is string => Boolean(a));
-      const semantic = args.includes("--semantic");
-      const hybrid = args.includes("--hybrid");
-      const includeArchive = args.includes("--include-archive");
-      const includeEpisodic = args.includes("--include-episodic");
-      const q = args
-        .filter(
-          (a) =>
-            a !== "--semantic" &&
-            a !== "--hybrid" &&
-            a !== "--include-archive" &&
-            a !== "--include-episodic"
-        )
-        .join(" ");
-      return cmdMemorySearch(q, { ...opts, semantic, hybrid, includeArchive, includeEpisodic });
+      const { wings, rest: queryArgs } = parseMemorySearchWingFlags(args);
+      const semantic = queryArgs.includes("--semantic");
+      const hybrid = queryArgs.includes("--hybrid");
+      const includeArchive = queryArgs.includes("--include-archive");
+      const includeEpisodic = queryArgs.includes("--include-episodic");
+      const q = queryArgs.filter((a) => !SEARCH_FLAG_RE.test(a)).join(" ");
+      return cmdMemorySearch(q, {
+        ...opts,
+        semantic,
+        hybrid,
+        includeArchive,
+        includeEpisodic,
+        wings: wings.length ? wings : undefined,
+      });
     }
     case "reindex-embeddings":
       return cmdMemoryReindexEmbeddings(opts);

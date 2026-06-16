@@ -16,8 +16,9 @@ import {
   effectiveSearchExcludeWings,
   resolveEmbedExcludeWings,
   resolveSearchExcludeWings,
+  resolveSearchWingFilter,
+  resolveSqliteSearchWingFilter,
   shouldEmbedNote,
-  sqliteWingNotIn,
   type MemorySearchOptions,
   wingNotInSql,
 } from "./memorySearchPolicy.js";
@@ -251,7 +252,7 @@ export class SqliteMemoryStore implements IMemoryStore {
 
   async searchNotes(query: string, limit = 20, opts?: MemorySearchOptions): Promise<MemoryNote[]> {
     const exclude = effectiveSearchExcludeWings(this.searchExcludeWings, opts);
-    const wingFilter = sqliteWingNotIn(exclude);
+    const wingFilter = resolveSqliteSearchWingFilter(exclude, opts);
     const ftsQ = sqliteFtsMatchQuery(query);
     if (ftsQ) {
       try {
@@ -521,7 +522,7 @@ export class PostgresMemoryStore implements IMemoryStore {
     if (!emb) return [];
     const exclude = effectiveSearchExcludeWings(this.searchExcludeWings, opts);
     const sel = this.noteSelect(false);
-    const wingFilter = wingNotInSql(exclude, sel.params.length + 1);
+    const wingFilter = resolveSearchWingFilter(exclude, opts, sel.params.length + 1);
     const n = sel.params.length;
     const res = await this.pool.query(
       `SELECT ${sel.expr} FROM memory_notes
@@ -614,7 +615,7 @@ export class PostgresMemoryStore implements IMemoryStore {
     const ftsQ = postgresFtsQuery(query);
     if (ftsQ.length >= 2) {
       try {
-        const wingFilter = wingNotInSql(exclude, sel.params.length + 2);
+        const wingFilter = resolveSearchWingFilter(exclude, opts, sel.params.length + 2);
         const limitIdx = 1 + sel.params.length + wingFilter.params.length + 1;
         const res = await this.pool.query(
           `SELECT ${sel.expr} FROM memory_notes
@@ -628,7 +629,7 @@ export class PostgresMemoryStore implements IMemoryStore {
         /* fall through to ILIKE */
       }
     }
-    const wingFilter = wingNotInSql(exclude, sel.params.length + 2);
+    const wingFilter = resolveSearchWingFilter(exclude, opts, sel.params.length + 2);
     const limitIdx = 1 + sel.params.length + wingFilter.params.length + 1;
     const res = await this.pool.query(
       `SELECT ${sel.expr} FROM memory_notes
