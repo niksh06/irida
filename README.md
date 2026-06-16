@@ -9,7 +9,7 @@ Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/s
 | Area | Highlights |
 |------|------------|
 | **CLI / TUI** | `doctor`, `run`, `chat`, `tui` (tabs, slash cmds, `@file`, `/find`), `sessions`, `resume` |
-| **Memory** | `@memory:name`, MCP tools, FTS search, encrypted `secure` wing (PG), KB import |
+| **Memory** | `@memory:name`, MCP tools, FTS search, encrypted `secure` wing (PG); tech KB via skill `kb-ops` (git markdown) |
 | **Cron** | Five-field cron + missed-slot grace, topic-delegate digests, builtins, prompt guard, tick lock |
 | **Gateway** | Telegram (long-poll) / webhook → stable session per chat; pairing, slash catalog, HTML replies, persistent outbox |
 | **Browser** | `csagent-browser` MCP — stealth Chromium (`browser_navigate`, `browser_snapshot`, …) |

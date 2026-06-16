@@ -10,9 +10,13 @@
 | cron-tick | каждые 300s | launchd `ai.csagent.cron-tick` |
 | gateway | always | launchd `ai.csagent.gateway` |
 | session-ingest | `5 0 * * *` | builtin → episodic memory notes (Wave B) |
+| cursor-mine | `15 0 * * *` | builtin → wing `cursor-ide` (all IDE transcripts; mtime refresh) |
+| cursor-lesson | `0 7 * * 1` | queue builtin + SDK distill → wing `cursor-lesson` (disabled by default) |
 | introspection | `0 6 * * 1` | weekly proposal note via `introspection-ops` skill |
 
-**Wave B (memory loop):** nightly `session-ingest` → wing `episodic`; weekly `introspection-weekly` → proposal note. **autoRag off in prod** (MCP-first); pilot config: [autoRag pilot](#autorag-pilot). First backfill: `csagent memory ingest-sessions --window-hours 168`.
+**Wave B (memory loop):** nightly `session-ingest` → wing `episodic`; nightly `cursor-mine` → wing `cursor-ide`; weekly `cursor-lesson` (distill) + `introspection-weekly` → proposal notes. **autoRag off in prod** (MCP-first); pilot config: [autoRag pilot](#autorag-pilot). First backfill: `csagent memory ingest-sessions --window-hours 168`; IDE archive: `csagent memory mine-cursor --all`.
+
+**Memory governance:** tiers (files / PG / embeddings), OKF scope, LLM wiki — [docs/MEMORY-GOVERNANCE.md](../docs/MEMORY-GOVERNANCE.md). Tech KB: [skills/kb-ops.md](../skills/kb-ops.md). Monthly: `memory audit` + checklist §7.
 
 После digest в Telegram приходят **два** сообщения:
 
@@ -105,7 +109,8 @@ bash ~/.csagent/csagent/deploy/prod-check-morning.sh   # ручной прого
 | Job | Schedule | Notes |
 |-----|----------|-------|
 | `memory-curator-weekly` | `0 4 * * 0` | memory-ops, отчёт в Telegram |
-| `happyin-kb-weekly` | `0 3 * * 0` | disabled by default |
+
+Tech reference KB: skill **`kb-ops`**, path `~/.csagent/knowledge-space` (`git pull`). Not in Postgres — see [skills/kb-ops.md](../skills/kb-ops.md).
 
 ### Memory audit
 

@@ -67,6 +67,7 @@ sync_install() {
     --exclude docs \
     --exclude repos \
     --exclude .agent \
+    --exclude agent.config.json \
     "$SOURCE_ROOT/" "$CSAGENT_ROOT/"
 
   if [[ ! -d "$CSAGENT_ROOT/node_modules" ]] || [[ ! -d "$CSAGENT_ROOT/node_modules/pg" ]]; then

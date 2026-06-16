@@ -85,7 +85,7 @@ Verify: `launchctl list | grep csagent`, logs in `~/.csagent/logs/`.
 
 ## Option 2 — Postgres (full)
 
-**Sessions, runs, and memory** in Postgres — best for **Telegram gateway + cron + large KB** with one store for all processes. Required for **secure notes** (pgcrypto) and **semantic search** (pgvector).
+**Sessions, runs, and memory** in Postgres — best for **Telegram gateway + cron** with one store for all processes. Required for **secure notes** (pgcrypto) and **semantic search** (pgvector). Technology reference KB stays on disk — skill **`kb-ops`**.
 
 ### 2.1. Postgres in Docker
 
@@ -121,16 +121,15 @@ bash ~/.csagent/csagent/deploy/install-launchd.sh
 
 Migrations (`deploy/postgres/migrations/*.sql`) run on first connect.
 
-### 2.3. Memory / knowledge base (optional)
+### 2.3. Technology knowledge base (file)
 
-Import a markdown KB into PG (example):
+Clone or sync under `~/.csagent/knowledge-space` (git). Agents use skill **`kb-ops`** — Grep/Read `docs/{domain}/*.md`; update with `git pull`. **Do not** import into Postgres for prod gateway.
 
 ```bash
-~/.csagent/csagent/scripts/csagent-run.sh memory import-md \
-  --kb-root /path/to/agent_tutorial \
-  --domains kafka
-~/.csagent/csagent/scripts/csagent-run.sh memory list
+git -C ~/.csagent/knowledge-space pull --ff-only
 ```
+
+Optional in `~/.csagent/csagent.env`: `export CSAGENT_KB_ROOT="$CSAGENT_HOME/knowledge-space"`. Enable `kb-ops` in `gateway.json` skills (see `deploy/gateway.json.example`).
 
 Cron (TParser **daily** digest at `59 23 * * *`): copy `deploy/cron.jobs.example.json` → `~/.csagent/.agent/cron.jobs.json`, set `notify.chatId` and `cwd` to TParser. See [deploy/README.md](deploy/README.md).
 

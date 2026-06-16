@@ -146,5 +146,5 @@ Default: **`memory.mcp: true`**, no `memory.onStart` — agent pulls notes via M
 # First-time agent.config (also created by setup-home.sh if missing):
 cp deploy/agent.config.example.json ~/.csagent/csagent/agent.config.json
 
-# Telegram: memory-ops skill in gateway.json (see deploy/gateway.json.example)
+# Telegram: memory-ops + kb-ops in gateway.json (see deploy/gateway.json.example)
 ```
