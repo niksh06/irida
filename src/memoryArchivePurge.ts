@@ -32,10 +32,21 @@ export interface PurgeArchiveResult {
   candidates: PurgeArchiveCandidate[];
 }
 
-function parseNoteTime(iso: string | undefined): number | null {
-  if (!iso?.trim()) return null;
-  const ms = Date.parse(iso);
+function parseNoteTime(iso: string | Date | null | undefined): number | null {
+  if (iso == null) return null;
+  if (iso instanceof Date) {
+    const ms = iso.getTime();
+    return Number.isNaN(ms) ? null : ms;
+  }
+  const trimmed = String(iso).trim();
+  if (!trimmed) return null;
+  const ms = Date.parse(trimmed);
   return Number.isNaN(ms) ? null : ms;
+}
+
+function formatNoteTime(iso: string | Date | null | undefined): string {
+  if (iso instanceof Date) return iso.toISOString();
+  return String(iso ?? "");
 }
 
 function lessonNameForArchive(name: string): string | undefined {
@@ -66,7 +77,7 @@ export async function collectArchivePurgeCandidates(
       if (!lesson || lesson.wing !== CURSOR_LESSON_WING) continue;
       candidates.push({
         name: note.name,
-        updatedAt: note.updated_at,
+        updatedAt: formatNoteTime(note.updated_at),
         reason: `older than ${olderThanDays}d + lesson ${lessonName}`,
       });
       continue;
@@ -74,7 +85,7 @@ export async function collectArchivePurgeCandidates(
 
     candidates.push({
       name: note.name,
-      updatedAt: note.updated_at,
+      updatedAt: formatNoteTime(note.updated_at),
       reason: `older than ${olderThanDays}d`,
     });
   }
