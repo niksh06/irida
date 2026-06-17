@@ -6,6 +6,8 @@ import { resolve } from "node:path";
 import {
   assessTelegramAllowedUpdates,
   summarizeTelegramUpdateTypes,
+  telegramInboundMessage,
+  telegramUpdateChatId,
   processTelegramUpdate,
   resolveTelegramGetUpdatesTimeoutSec,
   telegramGetUpdates,
@@ -138,6 +140,41 @@ test("processTelegramUpdate routes text to router", async () => {
     assert.match(out.reply ?? "", /reply/);
     await router.closeAll();
   });
+});
+
+test("processTelegramUpdate routes edited_message and channel_post", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const cfg = writeExampleGatewayConfig(dir, { adapter: "telegram", allowedChatIds: ["42", "-1001"] });
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+    const edited = await processTelegramUpdate(
+      cfg,
+      router,
+      { update_id: 2, edited_message: { message_id: 2, chat: { id: 42 }, text: "edited hello" } },
+      { token: "tok" }
+    );
+    assert.equal(edited.handled, true);
+    assert.match(edited.reply ?? "", /reply/);
+
+    const channel = await processTelegramUpdate(
+      cfg,
+      router,
+      { update_id: 3, channel_post: { message_id: 3, chat: { id: -1001 }, text: "channel ping" } },
+      { token: "tok" }
+    );
+    assert.equal(channel.handled, true);
+    assert.match(channel.reply ?? "", /reply/);
+    await router.closeAll();
+  });
+});
+
+test("telegramInboundMessage and telegramUpdateChatId cover all inbound types", () => {
+  const msg = { message_id: 1, chat: { id: 99 }, text: "x" };
+  assert.equal(telegramInboundMessage({ update_id: 1, message: msg })?.chat.id, 99);
+  assert.equal(telegramInboundMessage({ update_id: 2, edited_message: msg })?.chat.id, 99);
+  assert.equal(telegramInboundMessage({ update_id: 3, channel_post: msg })?.chat.id, 99);
+  assert.equal(telegramUpdateChatId({ update_id: 4 }), undefined);
+  assert.equal(telegramUpdateChatId({ update_id: 5, message: msg }), "99");
 });
 
 test("processTelegramUpdate sends typing and tool progress", async () => {

@@ -137,6 +137,22 @@ export async function assessTelegramAllowedUpdates(
   }
 }
 
+/** Text-bearing message on any polled inbound update type. */
+export function telegramInboundMessage(update: TelegramUpdate): TelegramMessage | undefined {
+  return (
+    update.message ??
+    update.edited_message ??
+    update.channel_post ??
+    update.edited_channel_post
+  );
+}
+
+/** Chat id for per-chat turn serialization; undefined when update has no inbound message. */
+export function telegramUpdateChatId(update: TelegramUpdate): string | undefined {
+  const msg = telegramInboundMessage(update);
+  return msg ? String(msg.chat.id) : undefined;
+}
+
 /** Label update type for poll logging (I-87). */
 export function describeTelegramUpdateType(update: TelegramUpdate): string {
   if (update.message) return "message";
@@ -476,7 +492,7 @@ export async function processTelegramUpdate(
   update: TelegramUpdate,
   opts: ProcessTelegramUpdateOptions
 ): Promise<ProcessTelegramUpdateResult> {
-  const msg = update.message;
+  const msg = telegramInboundMessage(update);
   if (!msg?.text?.trim()) return { handled: false };
   const chatId = String(msg.chat.id);
   const dir = opts.dir ?? process.cwd();
@@ -774,18 +790,22 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       }
       for (const u of updates) {
         if (!running) break;
-        const chatKey = String(u.message?.chat.id ?? "-");
-        const prev = chatQueues.get(chatKey) ?? Promise.resolve();
-        const settled = prev
-          .then(() => handleUpdate(u))
-          .catch((e) => {
+        const chatId = telegramUpdateChatId(u);
+        const runUpdate = () =>
+          handleUpdate(u).catch((e) => {
             logError(
-              `[gateway] telegram update failed chat=${chatKey}: ${e instanceof Error ? e.message : String(e)}`
+              `[gateway] telegram update failed chat=${chatId ?? u.update_id}: ${e instanceof Error ? e.message : String(e)}`
             );
           });
-        chatQueues.set(chatKey, settled);
-        // Ack only after this update is handled — avoid losing user messages on crash/hang.
-        await settled;
+        if (!chatId) {
+          await runUpdate();
+        } else {
+          const prev = chatQueues.get(chatId) ?? Promise.resolve();
+          const settled = prev.then(runUpdate);
+          chatQueues.set(chatId, settled);
+          // Ack only after this update is handled — avoid losing user messages on crash/hang.
+          await settled;
+        }
         offset = Math.max(offset, u.update_id + 1);
         saveTelegramPollOffset(opts.dir ?? process.cwd(), offset);
       }

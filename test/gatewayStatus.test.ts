@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gatherGatewayStatus } from "../src/gatewayStatus.js";
-import { writeExampleGatewayConfig } from "../src/gateway_cmd.js";
+import { cmdGatewayStatus, writeExampleGatewayConfig } from "../src/gateway_cmd.js";
 import { enqueueOutbox } from "../src/gatewayOutbox.js";
 
 test("gatherGatewayStatus reports gateway config when present", () => {
@@ -46,4 +46,11 @@ test("gatherGatewayStatus reports outbox pending count", () => {
   assert.ok(row);
   assert.equal(row!.ok, true);
   assert.match(row!.detail, /1 pending/);
+});
+
+test("cmdGatewayStatus resolves async exit code", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "gwstat-cmd-"));
+  writeExampleGatewayConfig(dir, { adapter: "webhook" });
+  const code = await cmdGatewayStatus({ dir });
+  assert.equal(typeof code, "number");
 });

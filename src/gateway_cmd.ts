@@ -135,7 +135,7 @@ export async function cmdGateway(argv: string[], opts: GatewayRunOptions = {}): 
   const [sub, ...rest] = argv;
   switch (sub) {
     case "status":
-      return cmdGatewayStatus(opts);
+      return await cmdGatewayStatus(opts);
     case "run": {
       let adapter: string | undefined;
       let port: number | undefined;

@@ -113,7 +113,7 @@ async function main(argv: string[]): Promise<number> {
     case "cron":
       return cmdCron(rest);
     case "gateway":
-      return cmdGateway(rest);
+      return await cmdGateway(rest);
     case "eval":
       return cmdEval(rest);
     case undefined:
