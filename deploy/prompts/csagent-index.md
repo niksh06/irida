@@ -27,6 +27,7 @@ csagent memory add csagent-index --stdin --dir "$CSAGENT_HOME" < deploy/prompts/
 |------|------|---------|
 | tparser-workflow | tparser | TParser API, channels |
 | reddit-feeds | reddit | RSS sub list |
+| reddit-digest-YYYY-MM-DD | reddit | Daily Reddit digest (cron `reddit-digest-daily`) |
 | ops-gateway | default | Gateway/cron ops |
 | csagent-index | default | Corpus map (this note) |
 | *-post-style | style | Telegram post formatting |
