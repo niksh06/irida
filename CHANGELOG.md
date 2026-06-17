@@ -30,6 +30,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 - **Default corpus re-wing (I-81)** — `csagent memory re-wing [--apply]`; wings `tparser`, `reddit`, `style`
 - **cursor-lesson paired eval (I-79)** — `eval/cases/cursor-lesson-paired`; `csagent memory lesson-eval validate|list|sheet|record|summary`; facts `cursor_lesson_eval`
+- **Reddit digest cron (I-77)** — `reddit-rss-fetch` script + `reddit-digest-daily` SDK job; `reddit-digest-YYYY-MM-DD` wing `reddit`; fact `reddit_digest last_run`
 - **gateway-ops skill (I-85)** — Telegram Bot API guardrails; inbound silent / `allowed_updates` playbook
 - **Gateway post-deploy smoke (I-88)** — `deploy/gateway-smoke.sh` (allowed_updates + launchd + poll log); wired into `prod-check.sh`
 

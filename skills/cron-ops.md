@@ -27,7 +27,7 @@ Other slash commands: `/schedule list`, `/schedule user`, `/schedule pending`, `
 ## Rules
 
 - User jobs get id prefix **`user-`** automatically.
-- Cannot replace system jobs: `tparser-daily-digest`, `memory-curator-weekly`, etc.
+- Cannot replace system jobs: `tparser-daily-digest`, `reddit-digest-daily`, `memory-curator-weekly`, etc.
 - Max **10** user jobs.
 - Prompts pass **cron prompt guard** — no injection patterns.
 - Notify goes to **this Telegram chat** only.

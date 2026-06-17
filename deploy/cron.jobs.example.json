@@ -17,6 +17,27 @@
       }
     },
     {
+      "id": "reddit-rss-fetch",
+      "cron": "58 23 * * *",
+      "enabled": false,
+      "graceMinutes": 480,
+      "catchUp": "skip",
+      "script": "deploy/scripts/reddit-rss-fetch.sh"
+    },
+    {
+      "id": "reddit-digest-daily",
+      "cron": "59 23 * * *",
+      "enabled": false,
+      "graceMinutes": 480,
+      "contextFrom": "reddit-rss-fetch",
+      "skills": ["memory-ops"],
+      "promptFile": "deploy/prompts/reddit-daily-digest.prompt.txt",
+      "notify": {
+        "chatId": "YOUR_CHAT_ID",
+        "telegram": true
+      }
+    },
+    {
       "id": "tparser-bi-hourly-digest",
       "cron": "0 */2 * * *",
       "cwd": "/path/to/TParser",

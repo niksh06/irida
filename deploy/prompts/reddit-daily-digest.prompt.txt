@@ -1,0 +1,41 @@
+Reddit **daily digest** — window last 24h (RSS snapshot below).
+
+You receive pre-fetched RSS from cron job `reddit-rss-fetch`. **Do not** re-fetch Reddit in browser unless a post link needs verification (max 2 browser checks).
+
+## RSS snapshot
+
+{{context_from}}
+
+## Setup
+
+1. `memory_get` name=`reddit-feeds` — confirm sub list and monitoring notes.
+2. Today's UTC date for artifacts: use `YYYY-MM-DD` from the snapshot `To:` timestamp (date part only).
+
+## Deliverables (order matters)
+
+1. **`memory_save`** — upsert note:
+   - **name:** `reddit-digest-YYYY-MM-DD` (today UTC)
+   - **wing:** `reddit`
+   - **body:** full Russian markdown digest (stats, grouped by sub/theme, every post with title + reddit link + 1–2 sentence summary)
+2. **`memory_fact_add`** — idempotency:
+   - subject=`reddit_digest` predicate=`last_run` object=`YYYY-MM-DD`
+   - Skip if `memory_fact_query reddit_digest last_run` already returns today's date.
+3. **Telegram output** — reply with **only** the message body (Russian), ≤3500 chars:
+   - Header: `📮 Reddit · день · YYYY-MM-DD`
+   - TL;DR 2–3 sentences
+   - Top highlights (≤12 posts) with `reddit.com` links on their own lines
+   - Footer stats: `{total} posts · subs: LocalLLM, cursor, …`
+
+## Grouping rules
+
+- Group by subreddit, then cluster related themes (Local LLM, Cursor IDE, RAG/retrieval).
+- Preserve original post titles (English ok); summaries in Russian.
+- Include direct post URLs from the snapshot — do not invent links.
+- If snapshot `Total posts: 0`, still save a short note + fact; Telegram: `📮 Reddit · день · YYYY-MM-DD · новых постов за 24ч не было.`
+
+## Hard rules
+
+- Russian for summaries and Telegram body.
+- No Obsidian writes (optional mirror is out of scope for this job).
+- Do not paste the full RSS snapshot into Telegram — compress to highlights.
+- Do not use Reddit JSON API (`/new.json`) — RSS only (snapshot is source of truth).

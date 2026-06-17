@@ -18,9 +18,11 @@ export const MAX_USER_CRON_JOBS = 10;
 
 export const PROTECTED_CRON_JOB_IDS = new Set([
   "tparser-daily-digest",
+  "tparser-bi-hourly-digest",
+  "reddit-rss-fetch",
+  "reddit-digest-daily",
   "memory-curator-weekly",
   "memory-audit-weekly",
-  "tparser-bi-hourly-digest",
 ]);
 
 export interface UserCronDraft {

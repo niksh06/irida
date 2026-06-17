@@ -7,6 +7,7 @@
 | Что | Когда | Где |
 |-----|-------|-----|
 | TParser daily digest | `59 23 * * *` | `~/.csagent/.agent/cron.jobs.json` → `tparser-daily-digest` |
+| Reddit daily digest | `58 23` fetch · `59 23` SDK | `reddit-rss-fetch` → `reddit-digest-daily`; note `reddit-digest-YYYY-MM-DD` wing `reddit` |
 | cron-tick | каждые 300s | launchd `ai.csagent.cron-tick` |
 | gateway | always | launchd `ai.csagent.gateway` |
 | session-ingest | `5 0 * * *` | builtin → episodic memory notes (Wave B) |
@@ -45,6 +46,11 @@ bash ~/.csagent/csagent/deploy/gateway-smoke.sh
 
 # ручной digest (smoke)
 ~/.csagent/csagent/scripts/csagent-run.sh cron run tparser-daily-digest
+
+# Reddit digest (I-77): fetch RSS → context artifact → SDK summarize + memory_save
+bash ~/.csagent/csagent/deploy/scripts/reddit-rss-fetch.sh | head
+~/.csagent/csagent/scripts/csagent-run.sh cron run reddit-rss-fetch
+~/.csagent/csagent/scripts/csagent-run.sh cron run reddit-digest-daily
 
 # логи
 tail -f ~/.csagent/logs/gateway.log
@@ -208,6 +214,7 @@ Post-mortem inbound Telegram 2026-06-17 (`allowed_updates` → только `cha
 | Симптом | Действие |
 |---------|----------|
 | digest не пришёл | `cron list`, `cron run tparser-daily-digest`, лог `cron-tick.error.log` |
+| Reddit RSS 429 | Reddit rate-limits rapid fetches; snapshot lists `Fetch errors`; retry later or increase delay; digest still runs on partial data |
 | `/status` FAIL gateway | `gateway status`, `tail gateway.error.log`, `doctor` (format секретов) |
 | inbound тишина, outbound OK | `getWebhookInfo` → `allowed_updates` must include `message` (not only `channel_post`); см. [postmortem 2026-06-17](../Reports/analysis/postmortem-gateway-telegram-inbound-silent-2026-06-17.md) |
 | poll `Not Found` | битый token в PG → `auth telegram login --from-env` или `--stdin` |
