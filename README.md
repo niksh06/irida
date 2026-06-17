@@ -2,7 +2,7 @@
 
 Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
 
-> **Local-first** by design. **Cron** · **Gateway** (webhook + Telegram) · **Browser MCP** · **Memory** (notes + facts, FTS, pgcrypto) · **Ink TUI** · **330+ tests** green.
+> **Local-first** by design. **Cron** · **Gateway** (webhook + Telegram) · **Browser MCP** · **Memory** (notes + facts, FTS, pgcrypto) · **Ink TUI** · **530+ tests** green.
 
 ## What you get
 
@@ -54,6 +54,7 @@ Each chat gets a stable session; unknown chats need pairing approval. Digests, s
 
 ```bash
 npm run typecheck && npm test    # mocked SDK; PG-gated tests via CSAGENT_TEST_PG_URL
+npm run pack:check               # npm pack dry-run (tarball whitelist)
 ```
 
 More: [REFERENCE.md](REFERENCE.md#develop).

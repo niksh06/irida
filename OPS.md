@@ -177,7 +177,7 @@ Defense in depth after the "bot silent, 6-char token in PG" incident:
 
 ```bash
 cd /path/to/csagent-clone
-npm test && npm run build
+npm test && npm run build && npm run pack:check
 bash deploy/setup-home.sh                                  # never copies credentials.json
 ~/.csagent/csagent/scripts/csagent-run.sh doctor           # MUST: format ok + API probe
 ~/.csagent/csagent/scripts/csagent-run.sh auth status
