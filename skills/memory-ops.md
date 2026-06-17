@@ -23,6 +23,8 @@ CLI `csagent memory search` is manual lookup only — the gateway does not run i
 
 **Archive wings** (`cursor-ide`, `secure`, `episodic`) are excluded from default search. Use `includeArchive: true` for forensic IDE transcript lookup; `includeEpisodic: true` for session-ingest notes. **`wings: ["default", "tparser", "cursor-lesson", "meta"]`** restricts ops search without archive/style noise. Distilled playbooks live in wing **`cursor-lesson`** (default search). Topic wings: **`tparser`**, **`reddit`**, **`style`** (I-81 split from `default`).
 
+**Archive retention (I-80):** raw `cursor-ide` notes are capped at 200 KB on ingest; purge stale rows with `csagent memory purge-archive --older-than-days 180` (dry-run by default). Safer cut: `--require-lesson` deletes only when matching `lesson.*` exists.
+
 ## Retrieval router
 
 Route before calling tools — wrong store wastes tokens and adds noise.

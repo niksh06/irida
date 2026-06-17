@@ -35,6 +35,7 @@ csagent auth logout                  # remove credentials file
 csagent memory list|show|add|search|rm …
 csagent memory align-silo [--dry-run]   # merge repo/cron silos → CSAGENT_HOME memory
 csagent memory audit [--links] [--stale-days 90]  # notes/facts/silo QA
+csagent memory purge-archive [--wing cursor-ide] [--older-than-days 180] [--require-lesson] [--apply]
 csagent memory fact add|query|invalidate …
 csagent cron list|run <id>|tick|qa
 csagent gateway status         # launchd + log probe + outbox + 24h run metrics

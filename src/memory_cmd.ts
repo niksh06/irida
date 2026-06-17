@@ -8,6 +8,7 @@ import { importHappyinKb } from "./importHappyinKb.js";
 import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from "./memory.js";
 import { alignMemorySilos } from "./memorySiloOps.js";
 import { createMemoryStore, SECURE_WING } from "./memoryStore.js";
+import { CURSOR_TRANSCRIPT_WING } from "./memoryWings.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
 import { mineCursorTranscripts } from "./cursorTranscriptMine.js";
 import {
@@ -41,6 +42,7 @@ import { parseOlderThanDays, pruneSeenPostFacts, purgeAllSeenPostFacts, purgeMal
 import { MemoryFactValidationError } from "./memoryFactValidate.js";
 import { buildMemorySearchOptions } from "./memorySearchPolicy.js";
 import { runDefaultCorpusReWing } from "./memoryReWing.js";
+import { purgeArchiveNotes, DEFAULT_ARCHIVE_RETENTION_DAYS } from "./memoryArchivePurge.js";
 import {
   buildLessonEvalRows,
   parseLessonEvalVerdict,
@@ -1043,6 +1045,45 @@ export async function cmdMemoryLessonEval(argv: string[], opts: MemoryCmdOptions
   }
 }
 
+export async function cmdMemoryPurgeArchive(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  let wing = CURSOR_TRANSCRIPT_WING;
+  let olderThanDays = DEFAULT_ARCHIVE_RETENTION_DAYS;
+  let requireLesson = false;
+  let apply = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--apply") apply = true;
+    else if (a === "--require-lesson") requireLesson = true;
+    else if (a === "--wing" && argv[i + 1]) wing = argv[++i]!;
+    else if (a === "--older-than-days" && argv[i + 1]) {
+      olderThanDays = Number(argv[++i]);
+    }
+  }
+  if (!Number.isFinite(olderThanDays) || olderThanDays <= 0) {
+    console.error("memory purge-archive: --older-than-days must be a positive number");
+    return EXIT.usage;
+  }
+  try {
+    loadConfig(dir);
+    const result = await purgeArchiveNotes(dir, { wing, olderThanDays, requireLesson, apply });
+    const mode = result.dryRun ? "dry-run" : "applied";
+    console.log(
+      `memory purge-archive (${mode}) wing=${result.wing} older=${result.olderThanDays}d requireLesson=${result.requireLesson}: matched=${result.matched}${apply ? ` deleted=${result.deleted}` : ""}`
+    );
+    for (const c of result.candidates.slice(0, 25)) {
+      console.log(`  ${c.name} (${c.updatedAt}) — ${c.reason}`);
+    }
+    if (result.candidates.length > 25) {
+      console.log(`  … +${result.candidates.length - 25} more`);
+    }
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory purge-archive: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
 export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
   argv = consumeDirFlag(argv, opts);
   const [sub, name, ...rest] = argv;
@@ -1088,6 +1129,8 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemoryReWing([name ?? "", ...rest], opts);
     case "lesson-eval":
       return cmdMemoryLessonEval([name ?? "", ...rest], opts);
+    case "purge-archive":
+      return cmdMemoryPurgeArchive([name ?? "", ...rest], opts);
     case "import-md":
       return cmdMemoryImportMd([name ?? "", ...rest], opts);
     case "add": {
@@ -1124,6 +1167,7 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory audit [--links] [--stale-days N] [--all-notes] [--json]
   csagent memory re-wing [--apply]            move default corpus → tparser/reddit/style (I-81)
   csagent memory lesson-eval validate|list|sheet|record|summary  (I-79 paired eval)
+  csagent memory purge-archive [--wing cursor-ide] [--older-than-days 180] [--require-lesson] [--apply]
   csagent memory fact add|query|invalidate …
 
 In chat/TUI, inject with @memory:<name> or @memory: for all.

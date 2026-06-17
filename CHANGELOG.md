@@ -31,11 +31,13 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - **Default corpus re-wing (I-81)** — `csagent memory re-wing [--apply]`; wings `tparser`, `reddit`, `style`
 - **cursor-lesson paired eval (I-79)** — `eval/cases/cursor-lesson-paired`; `csagent memory lesson-eval validate|list|sheet|record|summary`; facts `cursor_lesson_eval`
 - **Reddit digest cron (I-77)** — `reddit-rss-fetch` script + `reddit-digest-daily` SDK job; `reddit-digest-YYYY-MM-DD` wing `reddit`; fact `reddit_digest last_run`
+- **Archive purge CLI (I-80)** — `csagent memory purge-archive` TTL 180d dry-run; `--require-lesson` gated delete
 - **gateway-ops skill (I-85)** — Telegram Bot API guardrails; inbound silent / `allowed_updates` playbook
 - **Gateway post-deploy smoke (I-88)** — `deploy/gateway-smoke.sh` (allowed_updates + launchd + poll log); wired into `prod-check.sh`
 
 ### Changed
 
+- **Packaging (I-32)** — `npm run pack:check`; README test count; OPS develop checklist
 - **Episodic search exclude (I-73)** — wing `episodic` omitted from default FTS/semantic; CLI `--include-episodic`; MCP `includeEpisodic`
 - **TParser digest dedup** — stop writing `seen_post` memory facts (~15–20k/week); window-only dedup in prompts; removed cron `memoryFactsSubject` preamble; `csagent memory fact purge-seen-post` to drop legacy rows
 - **cursor-ide ingest cap (D2)** — truncate archive body at 200 KB; full jsonl on disk; `memory audit` labels curated vs archive
