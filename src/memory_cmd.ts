@@ -41,6 +41,15 @@ import { parseOlderThanDays, pruneSeenPostFacts, purgeAllSeenPostFacts, purgeMal
 import { MemoryFactValidationError } from "./memoryFactValidate.js";
 import { buildMemorySearchOptions } from "./memorySearchPolicy.js";
 import { runDefaultCorpusReWing } from "./memoryReWing.js";
+import {
+  buildLessonEvalRows,
+  parseLessonEvalVerdict,
+  recordLessonEval,
+  resolveLessonEvalOutPath,
+  summarizeLessonEval,
+  validateLessonEvalScaffold,
+  writeLessonEvalSheet,
+} from "./cursorLessonEval.js";
 
 const SEARCH_FLAG_RE = /^--(?:include-archive|include-episodic|semantic|hybrid)$/;
 
@@ -943,6 +952,97 @@ export async function cmdMemoryReWing(argv: string[], opts: MemoryCmdOptions = {
   }
 }
 
+export async function cmdMemoryLessonEval(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  const [action, ...rest] = argv;
+  let json = false;
+  let promoteFile: string | undefined;
+  let tasksFile: string | undefined;
+  let out = "Reports/cursor-lesson-eval-sheet.md";
+  let note: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === "--json") json = true;
+    else if (a === "--promote-file" && rest[i + 1]) promoteFile = rest[++i];
+    else if (a === "--tasks-file" && rest[i + 1]) tasksFile = rest[++i];
+    else if (a === "--out" && rest[i + 1]) out = rest[++i];
+    else if (a === "--note" && rest[i + 1]) note = rest[++i];
+  }
+  try {
+    loadConfig(dir);
+    switch (action) {
+      case "validate": {
+        const r = validateLessonEvalScaffold(dir, { promoteFile, tasksPath: tasksFile });
+        if (json) {
+          console.log(JSON.stringify(r, null, 2));
+        } else {
+          console.log(r.ok ? "lesson-eval validate: ok" : "lesson-eval validate: FAIL");
+          for (const e of r.errors) console.error(`  error: ${e}`);
+          for (const w of r.warnings) console.log(`  warn: ${w}`);
+        }
+        return r.ok ? EXIT.ok : EXIT.software;
+      }
+      case "list": {
+        const rows = await buildLessonEvalRows(dir, { promoteFile, tasksPath: tasksFile });
+        if (json) {
+          console.log(JSON.stringify(rows, null, 2));
+        } else {
+          for (const row of rows) {
+            const verdict = row.verdict?.split(":")[0]?.trim() ?? "—";
+            const title = row.title ?? "—";
+            console.log(`${row.task.lesson}\t${verdict}\t${title.slice(0, 60)}`);
+          }
+        }
+        return EXIT.ok;
+      }
+      case "sheet": {
+        const outPath = resolveLessonEvalOutPath(dir, out);
+        await writeLessonEvalSheet(dir, outPath, { promoteFile, tasksPath: tasksFile });
+        console.log(`lesson-eval sheet: ${outPath}`);
+        return EXIT.ok;
+      }
+      case "record": {
+        const positional = rest.filter((a) => !a.startsWith("--"));
+        const lesson = positional[0];
+        const verdict = positional[1] ? parseLessonEvalVerdict(positional[1]) : undefined;
+        if (!lesson || !verdict) {
+          console.error("usage: csagent memory lesson-eval record <lesson> pass|fail|neutral [--note TEXT]");
+          return EXIT.usage;
+        }
+        const fact = await recordLessonEval(dir, lesson, verdict, note);
+        console.log(`lesson-eval record: ${lesson} → ${fact.object} (${fact.id})`);
+        return EXIT.ok;
+      }
+      case "summary": {
+        const s = await summarizeLessonEval(dir, { promoteFile, tasksPath: tasksFile });
+        if (json) {
+          console.log(JSON.stringify(s, null, 2));
+        } else {
+          for (const row of s.rows) {
+            console.log(`${row.lesson}\t${row.verdict ?? "—"}\t${row.taskId ?? ""}`);
+          }
+          if (s.archiveCandidates.length) {
+            console.log(`archive candidates (fail): ${s.archiveCandidates.join(", ")}`);
+          }
+        }
+        return EXIT.ok;
+      }
+      default:
+        console.error(`memory lesson-eval: unknown action '${action ?? ""}'`);
+        console.error(`Usage:
+  csagent memory lesson-eval validate [--json] [--promote-file PATH] [--tasks-file PATH]
+  csagent memory lesson-eval list [--json]
+  csagent memory lesson-eval sheet [--out Reports/cursor-lesson-eval-sheet.md]
+  csagent memory lesson-eval record <lesson> pass|fail|neutral [--note TEXT]
+  csagent memory lesson-eval summary [--json]`);
+        return EXIT.usage;
+    }
+  } catch (e) {
+    console.error("memory lesson-eval: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
 export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
   argv = consumeDirFlag(argv, opts);
   const [sub, name, ...rest] = argv;
@@ -986,6 +1086,8 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemoryAudit([name ?? "", ...rest], opts);
     case "re-wing":
       return cmdMemoryReWing([name ?? "", ...rest], opts);
+    case "lesson-eval":
+      return cmdMemoryLessonEval([name ?? "", ...rest], opts);
     case "import-md":
       return cmdMemoryImportMd([name ?? "", ...rest], opts);
     case "add": {
@@ -1021,6 +1123,7 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   csagent memory align-silo [--dry-run]   merge repo/cron silos → canonical ~/.csagent/.agent/memory
   csagent memory audit [--links] [--stale-days N] [--all-notes] [--json]
   csagent memory re-wing [--apply]            move default corpus → tparser/reddit/style (I-81)
+  csagent memory lesson-eval validate|list|sheet|record|summary  (I-79 paired eval)
   csagent memory fact add|query|invalidate …
 
 In chat/TUI, inject with @memory:<name> or @memory: for all.

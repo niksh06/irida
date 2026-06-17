@@ -8,6 +8,10 @@
     {
       "id": "memory-search-smoke",
       "verify": "verify.sh"
+    },
+    {
+      "id": "cursor-lesson-paired",
+      "verify": "verify.sh"
     }
   ]
 }

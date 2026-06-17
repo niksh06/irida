@@ -98,3 +98,15 @@ Operator flow:
 2. **Cron HITL batch:** Run `cursor-lesson-backfill` cron (or manual skill run) in batches of 10 until queue empty
 3. `csagent memory distill-cursor --set-baseline --baseline-note "backfill complete"`
 4. Enable weekly `cursor-distill-queue-weekly` + `cursor-lesson-weekly` for ongoing delta
+
+## Paired eval (I-79)
+
+Quality gate for approved lessons (`deploy/promote-lessons.json`):
+
+1. `csagent memory lesson-eval validate` — tasks.json vs promote list
+2. `csagent memory lesson-eval sheet --dir $CSAGENT_HOME` — HITL markdown sheet
+3. Run each task **A** (no lesson) and **B** (`memory_get` lesson) in fresh sessions
+4. `csagent memory lesson-eval record <lesson> pass|fail|neutral [--note "…"]` — stores `cursor_lesson_eval` fact
+5. `csagent memory lesson-eval summary` — list fail verdicts as archive candidates (HITL demote via okf purge-shard / remove from promote list)
+
+CI: `npm run eval` case `cursor-lesson-paired` (scaffold only, no live SDK).

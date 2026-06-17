@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "note": "Paired eval tasks for deploy/promote-lessons.json (I-79). Run A=baseline, B=with memory_get lesson.",
+  "tasks": [
+    {
+      "id": "gateway-idle-rotation",
+      "lesson": "lesson.gateway-idle-rotation",
+      "prompt": "Telegram gateway bot stops replying after ~20 minutes idle but works right after restart. Diagnose csagent gateway/chatEngine — what to check first and why?",
+      "rubric": "Names idle TTL rotation vs auth failure; model on resume/send; live resume skill reinjection gap; does not blame Telegram token shape alone"
+    },
+    {
+      "id": "gateway-outbox-postmortem",
+      "lesson": "lesson.2fc93ef1-5727-498e-9e21-0bbe604da92e",
+      "prompt": "After a gateway delivery bug, operator wants a postmortem under Reports/analysis/ and to clear a stuck outbox. What steps and file paths in csagent?",
+      "rubric": "Mentions Reports/analysis postmortem artifact, gateway outbox/redeliver path, commit reference or deploy ops — not generic incident template only"
+    },
+    {
+      "id": "doctor-morning-await",
+      "lesson": "lesson.04fa554b-1425-4e85-9fa2-90b10ddc382c",
+      "prompt": "Morning doctor alert cron exits 0 but never sends Telegram. Suspect async CLI handler bug in src/cli.ts. Where to look?",
+      "rubric": "Finds missing await on async cmdDoctorMorningAlert (or equivalent) in CLI main/dispatch — not network/VPN first"
+    },
+    {
+      "id": "tparser-timestamp-msk",
+      "lesson": "lesson.44ea7b45-8cbe-4ed8-931f-72e50ac17c3a",
+      "prompt": "TParser ops UI and logs show UTC timestamps; operator expects MSK (UTC+3). What was the fix pattern?",
+      "rubric": "Timezone display fix (MSK offset or locale), not confusing with cron schedule TZ"
+    },
+    {
+      "id": "tparser-post-ui",
+      "lesson": "lesson.4372ec7a-8635-4d66-b4d7-861568afe4d4",
+      "prompt": "TParser post detail page: move topic tags to hero after AI block, keep AnalysisPanel in sidebar, remove duplicate Links. Summarize layout decisions.",
+      "rubric": "Tags after AI hero, sidebar AnalysisPanel retained, duplicate Links removed — Astro/UI specific"
+    },
+    {
+      "id": "tparser-bi-hourly-source",
+      "lesson": "lesson.e53d0c50-60bb-4ffe-886a-f40e6725f08d",
+      "prompt": "Configure tparser-bi-hourly-digest cron: which API endpoint and time window? Where are sphere rules documented?",
+      "rubric": "GET /api/posts/recent-live (not /api/feed), 2h UTC window, tparser-workflow memory note for sphere rules"
+    },
+    {
+      "id": "tparser-bi-hourly-format",
+      "lesson": "lesson.338fce9a-60a6-42b6-9d6f-eb0ca180b28e",
+      "prompt": "tparser-bi-hourly-digest output is a wall of posts. How should v2 digest be structured?",
+      "rubric": "Summary + top-15 by priority (not all posts); references deploy/prompts/tparser-bi-hourly-output-template.txt"
+    },
+    {
+      "id": "tparser-scoring-model",
+      "lesson": "lesson.9bdab982-06b9-47fd-ab2c-6e185fd50239",
+      "prompt": "Explain TParser post scoring: pipeline rule-based signals vs CatBoost personal feed. What stays interpretable in global digest?",
+      "rubric": "post_signals rule pipeline vs ML embeddings for personal feed; global digest stays interpretable, ML as features not sole truth"
+    }
+  ]
+}
