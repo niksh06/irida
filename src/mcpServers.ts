@@ -4,10 +4,12 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { csagentHome } from "./env.js";
 import { DEFAULT_BROWSER_PROFILE } from "./browser/defaults.js";
 import type { AgentConfig } from "./config.js";
 import { resolveBrowserRoot } from "./mcp/browserContext.js";
 import type { McpServers } from "./host.js";
+import { pgUrl } from "./pg/pool.js";
 
 export const MEMORY_MCP_NAME = "csagent-memory";
 export const BROWSER_MCP_NAME = "csagent-browser";
@@ -109,6 +111,11 @@ export function resolveMcpServers(
 ): McpServers {
   const merged: McpServers = { ...cfg.mcpServers };
   const stateDir = resolve(projectDir, cfg.stateDir);
+  // Env forwarded to child MCP servers when set.
+  const dbUrl = pgUrl();
+  const home = csagentHome();
+  const withDbUrl = dbUrl ? { CSAGENT_DATABASE_URL: dbUrl } : {};
+  const withHome = home ? { CSAGENT_HOME: home } : {};
 
   if (memoryMcpEnabled(cfg) && !(MEMORY_MCP_NAME in merged)) {
     const { command, args } = memoryServerEntry(projectDir);
@@ -118,10 +125,8 @@ export function resolveMcpServers(
       env: {
         CSAGENT_MEMORY_DIR: resolve(projectDir),
         CSAGENT_STATE_DIR: stateDir,
-        ...(process.env.CSAGENT_HOME ? { CSAGENT_HOME: process.env.CSAGENT_HOME } : {}),
-        ...(process.env.CSAGENT_DATABASE_URL
-          ? { CSAGENT_DATABASE_URL: process.env.CSAGENT_DATABASE_URL }
-          : {}),
+        ...withHome,
+        ...withDbUrl,
       },
     };
   }
@@ -138,7 +143,7 @@ export function resolveMcpServers(
         CSAGENT_BROWSER_PROFILE: profile,
         CSAGENT_BROWSER_HEADLESS: cfg.browser?.headless === false ? "false" : "true",
         ...(cfg.browser?.chromePath ? { CSAGENT_CHROME_PATH: cfg.browser.chromePath } : {}),
-        ...(process.env.CSAGENT_HOME ? { CSAGENT_HOME: process.env.CSAGENT_HOME } : {}),
+        ...withHome,
       },
     };
   }
@@ -153,10 +158,8 @@ export function resolveMcpServers(
         CSAGENT_STATE_DIR: stateDir,
         CSAGENT_GATEWAY_CHAT_ID: ctx.gatewayChatId!.trim(),
         CSAGENT_GATEWAY_ADAPTER: ctx.gatewayAdapter?.trim() || "telegram",
-        ...(process.env.CSAGENT_HOME ? { CSAGENT_HOME: process.env.CSAGENT_HOME } : {}),
-        ...(process.env.CSAGENT_DATABASE_URL
-          ? { CSAGENT_DATABASE_URL: process.env.CSAGENT_DATABASE_URL }
-          : {}),
+        ...withHome,
+        ...withDbUrl,
       },
     };
   }

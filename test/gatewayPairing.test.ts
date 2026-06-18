@@ -25,17 +25,17 @@ function seedGateway(dir: string, allowed: string[]): void {
   );
 }
 
-test("pairing register + approve flow", () => {
+test("pairing register + approve flow", async () => {
   const dir = mkdtempSync(resolve(tmpdir(), "pair-"));
   seedGateway(dir, ["admin-chat"]);
   const reg = tryRegisterPairing(dir, "telegram", "new-chat");
   assert.equal(reg.registered, true);
   assert.match(reg.message, /\/approve/);
-  const codeMatch = reg.message.match(/([A-F0-9]{6})/);
+  const codeMatch = reg.message.match(/([A-F0-9]{12})/);
   assert.ok(codeMatch);
-  const approved = tryApprovePairing(dir, "admin-chat", codeMatch![1]!);
+  const approved = await tryApprovePairing(dir, "admin-chat", codeMatch![1]!);
   assert.equal(approved.ok, true);
-  const denied = tryApprovePairing(dir, "new-chat", codeMatch![1]!);
+  const denied = await tryApprovePairing(dir, "new-chat", codeMatch![1]!);
   assert.equal(denied.ok, false);
 });
 
@@ -46,8 +46,8 @@ test("pairing: same chat reuses code, pending capped, stale expired (I-35)", () 
   // Same chat twice → same code, one entry.
   const first = tryRegisterPairing(dir, "telegram", "spammer");
   const second = tryRegisterPairing(dir, "telegram", "spammer");
-  const c1 = first.message.match(/([A-F0-9]{6})/)![1];
-  const c2 = second.message.match(/([A-F0-9]{6})/)![1];
+  const c1 = first.message.match(/([A-F0-9]{12})/)![1];
+  const c2 = second.message.match(/([A-F0-9]{12})/)![1];
   assert.equal(c1, c2);
   assert.equal(loadPairingFile(dir).pending.length, 1);
 

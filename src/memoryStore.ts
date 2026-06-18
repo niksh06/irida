@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { acquireSharedSqliteDb, releaseSharedSqliteDb } from "./sqliteShared.js";
+import { acquirePgPool, pgUrl, releasePgPool } from "./pg/pool.js";
 import { redact } from "./redact.js";
 import { newId, nowIso } from "./util.js";
 import { loadConfig, resolveMemoryRoot } from "./config.js";
@@ -407,6 +408,7 @@ export class SqliteMemoryStore implements IMemoryStore {
 }
 
 export class PostgresMemoryStore implements IMemoryStore {
+  private readonly connectionString: string;
   private pool: pg.Pool;
   private migrated = false;
   private embedder?: EmbedFn;
@@ -423,7 +425,8 @@ export class PostgresMemoryStore implements IMemoryStore {
       hybridWeights?: HybridSearchWeights;
     } = {}
   ) {
-    this.pool = new pg.Pool({ connectionString, max: 5 });
+    this.connectionString = connectionString;
+    this.pool = acquirePgPool(connectionString);
     this.embedder = opts.embedder;
     this.searchExcludeWings = opts.searchExcludeWings ?? resolveSearchExcludeWings();
     this.embedExcludeWings = opts.embedExcludeWings ?? resolveEmbedExcludeWings();
@@ -770,12 +773,12 @@ export class PostgresMemoryStore implements IMemoryStore {
   }
 
   async close(): Promise<void> {
-    await this.pool.end();
+    await releasePgPool(this.connectionString);
   }
 }
 
 export function createMemoryStore(projectDir: string, _stateDir?: string): IMemoryStore {
-  const url = process.env.CSAGENT_DATABASE_URL?.trim();
+  const url = pgUrl();
   let memoryCfg;
   try {
     memoryCfg = loadConfig(projectDir).memory;

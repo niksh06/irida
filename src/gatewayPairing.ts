@@ -1,79 +1,32 @@
 /**
  * Gateway pairing lite (I-26) — approve new chatIds via /approve <code>.
+ *
+ * High-level register/approve operations. The pairing-file primitives live in
+ * gatewayPairingStore.ts (Arch-2 leaf) and are re-exported here for back-compat.
  */
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { loadConfig } from "./config.js";
-import { writeFileAtomic } from "./util.js";
+import { loadGatewayConfig } from "./gatewayConfigTypes.js";
+import { persistGatewayAllowedChatId, resolveAllowedChatIds } from "./gatewayAllowlist.js";
+import { pgGatewayAllowlistEnabled } from "./gatewayAllowedPg.js";
+import {
+  loadPairingFile,
+  savePairingFile,
+  PAIRING_PENDING_MAX,
+} from "./gatewayPairingStore.js";
 
-export const PAIRING_FILE = "gateway.pairing.json";
-/** Unknown chats can spam pairing requests — cap pending and expire stale codes (I-35). */
-export const PAIRING_PENDING_MAX = 20;
-export const PAIRING_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
-
-export interface PairingPending {
-  code: string;
-  chatId: string;
-  adapter: string;
-  createdAt: string;
-}
-
-export interface PairingFile {
-  version: number;
-  approved: string[];
-  pending: PairingPending[];
-}
-
-function pairingPath(dir: string): string {
-  const cfg = loadConfig(dir);
-  return resolve(dir, cfg.stateDir, PAIRING_FILE);
-}
-
-function pendingFresh(p: PairingPending, now: number): boolean {
-  const t = Date.parse(p.createdAt);
-  return Number.isFinite(t) && now - t <= PAIRING_PENDING_TTL_MS;
-}
-
-export function loadPairingFile(dir: string): PairingFile {
-  const path = pairingPath(dir);
-  if (!existsSync(path)) {
-    return { version: 1, approved: [], pending: [] };
-  }
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as PairingFile;
-    const now = Date.now();
-    const pending = Array.isArray(parsed.pending)
-      ? parsed.pending.filter((p) => pendingFresh(p, now))
-      : [];
-    return {
-      version: 1,
-      approved: Array.isArray(parsed.approved) ? parsed.approved.map(String) : [],
-      pending,
-    };
-  } catch {
-    return { version: 1, approved: [], pending: [] };
-  }
-}
-
-export function savePairingFile(dir: string, data: PairingFile): void {
-  const path = pairingPath(dir);
-  mkdirSync(resolve(path, ".."), { recursive: true });
-  writeFileAtomic(path, JSON.stringify(data, null, 2) + "\n");
-}
-
-export function isChatApproved(
-  allowedChatIds: string[],
-  dir: string,
-  chatId: string
-): boolean {
-  if (allowedChatIds.includes(chatId)) return true;
-  const pairing = loadPairingFile(dir);
-  return pairing.approved.includes(chatId);
-}
+export {
+  PAIRING_FILE,
+  PAIRING_PENDING_MAX,
+  PAIRING_PENDING_TTL_MS,
+  loadPairingFile,
+  savePairingFile,
+  isChatApproved,
+} from "./gatewayPairingStore.js";
+export type { PairingFile, PairingPending } from "./gatewayPairingStore.js";
 
 function newCode(): string {
-  return randomBytes(3).toString("hex").toUpperCase();
+  // 6 random bytes = 48 bits of entropy; the short 3-byte code was guessable.
+  return randomBytes(6).toString("hex").toUpperCase();
 }
 
 /** Unknown chat requests access — returns message with pairing code. */
@@ -112,22 +65,13 @@ export function tryRegisterPairing(
 }
 
 /** Admin (must already be allowed) approves a pending code. */
-export function tryApprovePairing(
+export async function tryApprovePairing(
   dir: string,
   adminChatId: string,
   code: string
-): { ok: boolean; message: string } {
-  const cfg = loadConfig(dir);
-  const gwPath = resolve(dir, cfg.stateDir, "gateway.json");
-  let allowed: string[] = [];
-  if (existsSync(gwPath)) {
-    try {
-      const gw = JSON.parse(readFileSync(gwPath, "utf8")) as { allowedChatIds?: string[] };
-      allowed = Array.isArray(gw.allowedChatIds) ? gw.allowedChatIds.map(String) : [];
-    } catch {
-      allowed = [];
-    }
-  }
+): Promise<{ ok: boolean; message: string }> {
+  const cfg = loadGatewayConfig(dir);
+  const allowed = resolveAllowedChatIds(cfg, dir);
   if (!allowed.includes(adminChatId)) {
     return { ok: false, message: "Только разрешённый чат может /approve." };
   }
@@ -138,11 +82,15 @@ export function tryApprovePairing(
     return { ok: false, message: `Код «${code}» не найден.` };
   }
   const pending = data.pending[idx]!;
-  if (!data.approved.includes(pending.chatId)) {
+  // When the allowlist lives in Postgres it is the sole source of truth and the
+  // plaintext `approved` list is ignored by resolveAllowedChatIds — writing it
+  // would only leave a stale, plaintext record of who paired. Skip it there.
+  if (!pgGatewayAllowlistEnabled() && !data.approved.includes(pending.chatId)) {
     data.approved.push(pending.chatId);
   }
   data.pending.splice(idx, 1);
   savePairingFile(dir, data);
+  await persistGatewayAllowedChatId(dir, pending.chatId, "pairing");
   return {
     ok: true,
     message: `OK: chat ${pending.chatId} одобрен (pairing ${norm}).`,

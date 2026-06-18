@@ -70,6 +70,8 @@ export async function migrateSqliteToPostgres(
   if (!existsSync(sqlitePath)) {
     throw new Error(`no sqlite at ${sqlitePath}`);
   }
+  // Intentional raw env manipulation (not a read to centralize via pgUrl): force
+  // the *source* store to sqlite by hiding the PG url while constructing it.
   const prevPg = process.env.CSAGENT_DATABASE_URL;
   delete process.env.CSAGENT_DATABASE_URL;
   const src = new SqliteStore(dir, cfg.stateDir);

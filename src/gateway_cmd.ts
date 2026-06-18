@@ -1,13 +1,12 @@
 /**
  * `csagent gateway run` — long-running messaging bridge (issue 037).
  */
-import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { csagentHome } from "./env.js";
 import { loadConfig } from "./config.js";
-import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
+import { API_KEY_HELP, resolveApiKey, warmCredentialsCache } from "./credentials.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import {
-  GATEWAY_FILE,
   GatewayConfigError,
   loadGatewayConfig,
   type GatewayConfig,
@@ -15,9 +14,10 @@ import {
 import { GatewaySessionRouter } from "./gatewayRouter.js";
 import { startWebhookServer, type WebhookServer } from "./gatewayWebhook.js";
 import { startTelegramPoller, type TelegramPoller } from "./gatewayTelegram.js";
-import { gatherGatewayStatus, gatherTelegramGatewayStatusLines } from "./gatewayStatus.js";
+import { gatherGatewayStatus, gatherGatewayStoreStatusLines, gatherTelegramGatewayStatusLines } from "./gatewayStatus.js";
 import { installGatewayProcessGuards } from "./gatewayProcessGuards.js";
 import { emitServiceLog } from "./serviceLog.js";
+import { warmGatewayAllowlistCache, resolveAllowedChatIds } from "./gatewayAllowlist.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
 export interface GatewayRunOptions {
@@ -43,15 +43,18 @@ function applyCliOverrides(cfg: GatewayConfig, opts: GatewayRunOptions): Gateway
 }
 
 export async function startGateway(opts: GatewayRunOptions = {}): Promise<GatewayRunHandle> {
-  const dir = opts.dir ?? process.env.CSAGENT_HOME?.trim() ?? process.cwd();
+  const dir = opts.dir ?? csagentHome() ?? process.cwd();
+  await warmCredentialsCache(dir);
+  await warmGatewayAllowlistCache(dir);
   const { key: apiKey } = resolveApiKey(dir);
   if (!apiKey) throw new GatewayConfigError(API_KEY_HELP);
 
   let cfg = loadGatewayConfig(dir);
   cfg = applyCliOverrides(cfg, opts);
+  cfg = { ...cfg, allowedChatIds: resolveAllowedChatIds(cfg, dir) };
 
   if (cfg.allowedChatIds.length === 0) {
-    throw new GatewayConfigError("allowedChatIds is empty — configure peers in gateway.json");
+    throw new GatewayConfigError("allowedChatIds is empty — configure peers in gateway.json or postgres allowlist");
   }
 
   const router = new GatewaySessionRouter({
@@ -120,8 +123,14 @@ export async function cmdGatewayRun(opts: GatewayRunOptions = {}): Promise<ExitC
 }
 
 export async function cmdGatewayStatus(opts: GatewayRunOptions = {}): Promise<ExitCode> {
-  const dir = opts.dir ?? process.env.CSAGENT_HOME?.trim() ?? process.cwd();
-  const rows = [...gatherGatewayStatus(dir), ...(await gatherTelegramGatewayStatusLines(dir))];
+  const dir = opts.dir ?? csagentHome() ?? process.cwd();
+  await warmCredentialsCache(dir);
+  await warmGatewayAllowlistCache(dir);
+  const rows = [
+    ...gatherGatewayStatus(dir),
+    ...(await gatherGatewayStoreStatusLines()),
+    ...(await gatherTelegramGatewayStatusLines(dir)),
+  ];
   let ok = true;
   for (const r of rows) {
     const mark = r.ok ? "ok" : "FAIL";
@@ -176,6 +185,12 @@ Example gateway.json (telegram):
   "maxMessageLength": 8000
 }
 
+Group/channel auth: a negative chat id is a group/supergroup/channel where
+the chat allowlist alone does not identify the actor. For a GROUP, also set
+telegram.allowedSenderIds: ["<your user id>"] — other members are ignored.
+For a CHANNEL, set telegram.allowChannelPosts: true (admins-only; no per-user
+sender). Private 1:1 chats need neither.
+
 Webhook request:
   POST /hook
   Header: X-Gateway-Secret: <secret>
@@ -188,52 +203,3 @@ Webhook request:
   }
 }
 
-/** Write example config (tests). */
-export function writeExampleGatewayConfig(dir: string, partial: Partial<GatewayConfig> = {}): GatewayConfig {
-  const cfg = loadConfig(dir);
-  const root = resolve(dir, cfg.stateDir);
-  mkdirSync(root, { recursive: true });
-  const example: GatewayConfig = {
-    version: 1,
-    adapter: "webhook",
-    host: "127.0.0.1",
-    port: partial.port ?? 18789,
-    webhookPath: "/hook",
-    secretEnv: "GATEWAY_WEBHOOK_SECRET",
-    allowedChatIds: ["u1"],
-    maxMessageLength: 8000,
-    skills: [],
-    telegramTokenEnv: "TELEGRAM_BOT_TOKEN",
-    telegramPollIntervalMs: 1500,
-    telegramShowTyping: true,
-    telegramShowToolProgress: false,
-    telegramToolProgressMode: "new",
-    telegramMessageFormat: "rich",
-    ...partial,
-  };
-  const json: Record<string, unknown> = {
-    version: 1,
-    adapter: example.adapter,
-    allowedChatIds: example.allowedChatIds,
-    maxMessageLength: example.maxMessageLength,
-    skills: example.skills,
-  };
-  if (example.adapter === "webhook") {
-    json.listen = { host: example.host, port: example.port };
-    json.webhook = { path: example.webhookPath, secretEnv: example.secretEnv };
-  } else {
-    json.telegram = {
-      tokenEnv: example.telegramTokenEnv,
-      pollIntervalMs: example.telegramPollIntervalMs,
-      showTyping: example.telegramShowTyping,
-      showToolProgress: example.telegramShowToolProgress,
-      toolProgressMode: example.telegramToolProgressMode,
-      messageFormat: example.telegramMessageFormat,
-    };
-  }
-  writeFileSync(resolve(root, GATEWAY_FILE), JSON.stringify(json, null, 2) + "\n", {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  return example;
-}

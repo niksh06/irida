@@ -4,6 +4,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { csagentHome } from "./env.js";
 
 export const CONFIG_FILE = "agent.config.json";
 
@@ -138,11 +139,9 @@ export function validateMcpServers(mcp: Record<string, unknown>): string[] {
 
 const SECRET_KEYS = ["CURSOR_API_KEY", "cursorApiKey", "apiKey", "api_key"];
 
-/** Runtime home (~/.csagent): credentials, gateway, sqlite, memory. */
-export function csagentHome(): string | undefined {
-  const home = process.env.CSAGENT_HOME?.trim();
-  return home || undefined;
-}
+/** Runtime home (~/.csagent): credentials, gateway, sqlite, memory. Defined in
+ * the env leaf (Arch-4); re-exported for existing `from "./config.js"` imports. */
+export { csagentHome };
 
 export function defaultStateDir(_dir: string): string {
   const home = csagentHome();

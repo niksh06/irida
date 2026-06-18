@@ -3,6 +3,7 @@
  */
 import { accessSync, constants, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { csagentHome } from "./env.js";
 import { CONFIG_FILE, ConfigError, loadConfig, resolveMemoryRoot, validateMcpServers } from "./config.js";
 import { browserMcpEnabled, resolveMcpServers } from "./mcpServers.js";
 import { resolveBrowserRoot } from "./mcp/browserContext.js";
@@ -16,7 +17,16 @@ import {
   validateCursorApiKeyFormat,
   validateTelegramBotTokenFormat,
 } from "./credentials.js";
-import { probePgCredentialStore, SECRETS_KEY_ENV, secretsKey } from "./credentialsPg.js";
+import { probePgCredentialStore, SECRETS_KEY_ENV, secretsKey, secretsKeyStrengthIssue } from "./credentialsPg.js";
+import { probePgGatewayAllowlist } from "./gatewayAllowedPg.js";
+import { pgUrl } from "./pg/pool.js";
+import {
+  gatewayAllowlistHasTestIds,
+  hasPlaintextGatewayAllowlist,
+  pgAllowlistCacheReady,
+  resolveAllowedChatIds,
+  warmGatewayAllowlistCache,
+} from "./gatewayAllowlist.js";
 import { probePostgresStore } from "./store.js";
 import {
   findLatestCronJobsBackup,
@@ -30,7 +40,13 @@ import { loadGatewayConfig, validateGatewayConfig, gatewayConfigPath } from "./g
 import { assessTelegramAllowedUpdates, telegramBotToken } from "./gatewayTelegram.js";
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
 import { gatherCronPromptGuardIssues } from "./cronPromptGuard.js";
-import { listSkills, loadSkill, scanSkillThreat, skillExists } from "./skills.js";
+import {
+  listSkills,
+  loadSkill,
+  resolveSkillsRoot,
+  scanSkillThreat,
+  skillExists,
+} from "./skills.js";
 import { loadRunMetrics } from "./runMetrics.js";
 import { gatherStaleDistChecks } from "./doctorDistStale.js";
 import { createMemoryStore } from "./memoryStore.js";
@@ -57,7 +73,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   const major = Number(process.versions.node.split(".")[0]);
   checks.push({ name: "node >= 20", ok: major >= 20, detail: `v${process.versions.node}` });
   checks.push({ name: "cwd", ok: true, detail: dir });
-  const home = process.env.CSAGENT_HOME?.trim();
+  const home = csagentHome();
   if (home) {
     checks.push({ name: "CSAGENT_HOME", ok: true, detail: home });
   }
@@ -206,7 +222,7 @@ function gatherDoctorSecretFormatChecks(dir: string): DoctorCheck[] {
 
 function gatherCredentialsEnvChecks(dir: string): DoctorCheck[] {
   const checks: DoctorCheck[] = [];
-  const pg = process.env.CSAGENT_DATABASE_URL?.trim();
+  const pg = pgUrl();
   const key = secretsKey();
   if (pg && !key) {
     checks.push({
@@ -225,6 +241,13 @@ function gatherCredentialsEnvChecks(dir: string): DoctorCheck[] {
         ? "credentials.json still has plaintext — run auth login to migrate"
         : "no plaintext secrets on disk",
       fix: 'printf %s "cursor_..." | csagent auth login --stdin  # re-save migrates to pgcrypto',
+    });
+    const weak = secretsKeyStrengthIssue();
+    checks.push({
+      name: "secrets key strength",
+      ok: !weak,
+      detail: weak ?? `${SECRETS_KEY_ENV} length ok`,
+      fix: weak ? `export ${SECRETS_KEY_ENV}="$(openssl rand -base64 32)"  # then re-save secrets` : undefined,
     });
   }
   return checks;
@@ -259,8 +282,8 @@ function gatherBrowserEnvChecks(dir: string): DoctorCheck[] {
 
 function gatherMemoryEnvChecks(dir: string): DoctorCheck[] {
   const checks: DoctorCheck[] = [];
-  const pg = process.env.CSAGENT_DATABASE_URL?.trim();
-  const home = process.env.CSAGENT_HOME?.trim();
+  const pg = pgUrl();
+  const home = csagentHome();
   const canonical = resolveMemoryRoot(dir);
 
   checks.push({
@@ -325,15 +348,29 @@ function gatherGatewaySkillsChecks(dir: string): DoctorCheck[] {
   try {
     const gw = loadGatewayConfig(dir);
     const cfg = loadConfig(dir);
-    const missing = gw.skills.filter((s) => !skillExists(dir, cfg.skillsPath, s));
+    const skillsRoot = resolveSkillsRoot(dir, cfg.skillsPath);
+    const bundled = listSkills(dir, cfg.skillsPath);
+    const rootOk = existsSync(skillsRoot) && bundled.length > 0;
+    checks.push({
+      name: "skills root",
+      ok: rootOk,
+      detail: rootOk
+        ? `${skillsRoot} (${bundled.length} bundled)`
+        : `${skillsRoot} missing or empty — run deploy/setup-home.sh`,
+      fix: rootOk ? undefined : "bash deploy/setup-home.sh",
+    });
+
     if (gw.skills.length === 0) return checks;
+
+    const missing = gw.skills.filter((s) => !skillExists(dir, cfg.skillsPath, s));
     checks.push({
       name: "gateway skills",
       ok: missing.length === 0,
       detail:
         missing.length === 0
-          ? `${gw.skills.join(", ")} present in skills/`
-          : `missing: ${missing.join(", ")} (run deploy/setup-home.sh)`,
+          ? `${gw.skills.length} at ${skillsRoot}: ${gw.skills.join(", ")}`
+          : `missing at ${skillsRoot}: ${missing.join(", ")}`,
+      fix: missing.length === 0 ? undefined : "bash deploy/setup-home.sh",
     });
     const allowUnsafe = cfg.skillPolicy?.allowUnsafe ?? [];
     const threatFails: string[] = [];
@@ -346,36 +383,16 @@ function gatherGatewaySkillsChecks(dir: string): DoctorCheck[] {
         threatFails.push(`${name} (${e instanceof Error ? e.message : String(e)})`);
       }
     }
-    if (gw.skills.length) {
-      checks.push({
-        name: "skills threat scan",
-        ok: threatFails.length === 0,
-        detail:
-          threatFails.length === 0
-            ? `${gw.skills.length} skill(s) ok`
-            : `FAIL: ${threatFails.join(", ")}`,
-      });
-    }
+    checks.push({
+      name: "skills threat scan",
+      ok: threatFails.length === 0,
+      detail:
+        threatFails.length === 0
+          ? `${gw.skills.length} skill(s) ok at ${skillsRoot}`
+          : `FAIL at ${skillsRoot}: ${threatFails.join(", ")}`,
+    });
   } catch {
     /* gateway parse errors surfaced elsewhere */
-  }
-  const root = process.env.CSAGENT_ROOT?.trim();
-  if (root && root !== dir) {
-    try {
-      const gw = loadGatewayConfig(dir);
-      const missingRoot = gw.skills.filter(
-        (s) => !skillExists(root, loadConfig(root).skillsPath, s)
-      );
-      if (missingRoot.length) {
-        checks.push({
-          name: "CSAGENT_ROOT skills",
-          ok: false,
-          detail: `${root}/skills missing: ${missingRoot.join(", ")}`,
-        });
-      }
-    } catch {
-      /* optional */
-    }
   }
   return checks;
 }
@@ -387,7 +404,7 @@ export function doctorAllOk(checks: DoctorCheck[]): boolean {
 export type ModelsListFn = (opts: { apiKey: string }) => Promise<Array<{ id?: string }>>;
 
 export async function gatherDoctorStoreChecks(dir: string = process.cwd()): Promise<DoctorCheck[]> {
-  const url = process.env.CSAGENT_DATABASE_URL?.trim();
+  const url = pgUrl();
   const checks: DoctorCheck[] = [];
   if (!url) {
     checks.push({ name: "store", ok: true, detail: "sqlite (CSAGENT_DATABASE_URL unset)" });
@@ -397,6 +414,49 @@ export async function gatherDoctorStoreChecks(dir: string = process.cwd()): Prom
     if (pgSecretsEnabled()) {
       const cred = await probePgCredentialStore(url, secretsKey());
       checks.push({ name: "credential_secrets", ok: cred.ok, detail: cred.detail });
+      const allow = await probePgGatewayAllowlist(url, secretsKey());
+      checks.push({ name: "gateway allowlist", ok: allow.ok, detail: allow.detail });
+    }
+  }
+
+  await warmGatewayAllowlistCache(dir);
+  const gwPath = gatewayConfigPath(dir);
+  if (existsSync(gwPath) && pgSecretsEnabled()) {
+    if (hasPlaintextGatewayAllowlist(dir)) {
+      checks.push({
+        name: "gateway allowlist plaintext",
+        ok: false,
+        detail: "allowedChatIds still in gateway.json — should migrate to postgres",
+        fix: "csagent gateway run  # auto-migrates, or clear allowedChatIds and set allowedChatIdsStorage: pg",
+      });
+    }
+    try {
+      const cfg = loadGatewayConfig(dir);
+      const resolved = resolveAllowedChatIds(cfg, dir);
+      const testIds = gatewayAllowlistHasTestIds(resolved);
+      if (testIds.length > 0) {
+        checks.push({
+          name: "gateway allowlist sanity",
+          ok: false,
+          detail: `test chat id(s) in allowlist: ${testIds.join(", ")}`,
+          fix: "remove test ids from postgres gateway_allowed_chats or restore prod chat ids",
+        });
+      } else if (resolved.length === 0 && pgAllowlistCacheReady()) {
+        checks.push({
+          name: "gateway allowlist sanity",
+          ok: false,
+          detail: "postgres allowlist empty",
+          fix: "csagent gateway peers add <chatId> or restore gateway.json then gateway run",
+        });
+      } else if (resolved.length > 0) {
+        checks.push({
+          name: "gateway allowlist sanity",
+          ok: true,
+          detail: `${resolved.length} peer(s) (${pgAllowlistCacheReady() ? "postgres" : "file"})`,
+        });
+      }
+    } catch {
+      /* gateway.json parse errors covered by gateway check */
     }
   }
 

@@ -4,12 +4,13 @@
 import { loadConfig, ConfigError } from "./config.js";
 import { migrateSqliteToPostgres } from "./storeMigrate.js";
 import { EXIT, type ExitCode } from "./exit.js";
+import { pgUrl as configuredPgUrl } from "./pg/pool.js";
 
 export async function cmdStoreMigrate(
   pgUrl: string | undefined,
   dir: string = process.cwd()
 ): Promise<ExitCode> {
-  const url = pgUrl?.trim() || process.env.CSAGENT_DATABASE_URL?.trim();
+  const url = pgUrl?.trim() || configuredPgUrl();
   if (!url) {
     console.error("store migrate: set CSAGENT_DATABASE_URL or pass postgres URL");
     return EXIT.config;

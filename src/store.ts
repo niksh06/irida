@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { acquireSharedSqliteDb, releaseSharedSqliteDb } from "./sqliteShared.js";
+import { acquirePgPool, pgUrl, releasePgPool } from "./pg/pool.js";
 import { redact } from "./redact.js";
 import { appendRunLog } from "./runLog.js";
 import { nowIso } from "./util.js";
@@ -308,29 +309,6 @@ export class SqliteStore implements IStore {
 /** @deprecated use SqliteStore or createStore */
 export const Store = SqliteStore;
 
-/** Shared pg.Pool per connection string — ChatSession.close() must not end the pool while others use it. */
-const pgPoolRegistry = new Map<string, { pool: pg.Pool; refs: number }>();
-
-function acquirePgPool(connectionString: string): pg.Pool {
-  let entry = pgPoolRegistry.get(connectionString);
-  if (!entry) {
-    entry = { pool: new pg.Pool({ connectionString, max: 5 }), refs: 0 };
-    pgPoolRegistry.set(connectionString, entry);
-  }
-  entry.refs += 1;
-  return entry.pool;
-}
-
-async function releasePgPool(connectionString: string): Promise<void> {
-  const entry = pgPoolRegistry.get(connectionString);
-  if (!entry) return;
-  entry.refs = Math.max(0, entry.refs - 1);
-  if (entry.refs === 0) {
-    pgPoolRegistry.delete(connectionString);
-    await entry.pool.end();
-  }
-}
-
 /** Postgres backend (Phase 1). */
 export class PostgresStore implements IStore {
   private readonly connectionString: string;
@@ -470,7 +448,7 @@ function withRunLog(store: IStore, dir: string, stateDir: string): IStore {
 }
 
 export function createStore(dir: string, stateDir: string): IStore {
-  const url = process.env.CSAGENT_DATABASE_URL?.trim();
+  const url = pgUrl();
   const store = url ? new PostgresStore(url) : new SqliteStore(dir, stateDir);
   return withRunLog(store, dir, stateDir);
 }

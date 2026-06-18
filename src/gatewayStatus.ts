@@ -3,10 +3,15 @@
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { csagentHome } from "./env.js";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
+import { resolveAllowedChatIds, hasPlaintextGatewayAllowlist, gatewayAllowlistHasTestIds } from "./gatewayAllowlist.js";
+import { pgGatewayAllowlistEnabled } from "./gatewayAllowedPg.js";
+import { probePgGatewayAllowlist } from "./gatewayAllowedPg.js";
 import { assessTelegramAllowedUpdates, telegramBotToken } from "./gatewayTelegram.js";
+import { pgConfigured, probePgReachable } from "./pg/pool.js";
 import { assessGatewayServiceHealth, tailLogLines } from "./gatewayLogHealth.js";
 import { gatherCronContextDirIssue } from "./cronContextArtifact.js";
 import { cronJobsPath, loadCronJobs, loadCronState, validateCronJobsFile } from "./cronJobs.js";
@@ -57,7 +62,7 @@ function logAgeMs(path: string): number {
 
 export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusLine[] {
   const rows: GatewayStatusLine[] = [];
-  const home = process.env.CSAGENT_HOME?.trim() || resolve(dir, "..", "..");
+  const home = csagentHome() || resolve(dir, "..", "..");
   const logDir = resolve(home, "logs");
   const cronLog = resolve(logDir, "cron-tick.log");
 
@@ -65,10 +70,15 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   if (existsSync(gwPath)) {
     try {
       const cfg = loadGatewayConfig(dir);
+      const peers = resolveAllowedChatIds(cfg, dir);
+      const storage = pgGatewayAllowlistEnabled() ? "postgres" : "gateway.json";
       rows.push({
         name: "gateway config",
-        ok: true,
-        detail: `${cfg.adapter} · ${cfg.allowedChatIds.length} peer(s)`,
+        ok: peers.length > 0,
+        detail:
+          peers.length > 0
+            ? `${cfg.adapter} · ${peers.length} peer(s) · allowlist ${storage}`
+            : `${cfg.adapter} · allowlist empty (${storage})`,
       });
     } catch (e) {
       rows.push({
@@ -172,6 +182,23 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   }
 
   return rows;
+}
+
+/**
+ * Postgres store reachability for `gateway status` (postmortem 2026-06-18 PG
+ * down). Without this the status stays green while every turn fails because the
+ * store is unreachable. No-op line when running on SQLite.
+ */
+export async function gatherGatewayStoreStatusLines(): Promise<GatewayStatusLine[]> {
+  if (!pgConfigured()) return [];
+  const probe = await probePgReachable();
+  return [
+    {
+      name: "store (postgres)",
+      ok: probe.ok,
+      detail: probe.ok ? probe.detail : `${probe.detail} → start Docker/csagent-postgres`,
+    },
+  ];
 }
 
 /** Live Telegram Bot API probe for gateway status /status (I-83). */

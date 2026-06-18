@@ -3,9 +3,52 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gatherGatewayStatus } from "../src/gatewayStatus.js";
-import { cmdGatewayStatus, writeExampleGatewayConfig } from "../src/gateway_cmd.js";
+import { gatherGatewayStatus, gatherGatewayStoreStatusLines } from "../src/gatewayStatus.js";
+import { cmdGatewayStatus } from "../src/gateway_cmd.js";
+import { writeExampleGatewayConfig } from "./helpers/gatewayConfig.js";
 import { enqueueOutbox } from "../src/gatewayOutbox.js";
+import { probePgReachable } from "../src/pg/pool.js";
+
+async function withDbUrl<T>(url: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const prev = process.env.CSAGENT_DATABASE_URL;
+  if (url === undefined) delete process.env.CSAGENT_DATABASE_URL;
+  else process.env.CSAGENT_DATABASE_URL = url;
+  try {
+    return await fn();
+  } finally {
+    if (prev === undefined) delete process.env.CSAGENT_DATABASE_URL;
+    else process.env.CSAGENT_DATABASE_URL = prev;
+  }
+}
+
+test("probePgReachable: sqlite note when no DATABASE_URL", async () => {
+  await withDbUrl(undefined, async () => {
+    const r = await probePgReachable(500);
+    assert.equal(r.ok, true);
+    assert.match(r.detail, /sqlite/);
+  });
+});
+
+test("probePgReachable: FAIL + redacted password when PG unreachable (postmortem PG down)", async () => {
+  // Port 1 → immediate ECONNREFUSED; password must not leak into the detail.
+  const bad = await withDbUrl("postgres://u:secretpw@127.0.0.1:1/db", () => probePgReachable(800));
+  assert.equal(bad.ok, false);
+  assert.match(bad.detail, /unreachable/);
+  assert.doesNotMatch(bad.detail, /secretpw/);
+});
+
+test("gatherGatewayStoreStatusLines: empty on sqlite, FAIL line when PG down", async () => {
+  await withDbUrl(undefined, async () => {
+    assert.deepEqual(await gatherGatewayStoreStatusLines(), []);
+  });
+  await withDbUrl("postgres://u:secretpw@127.0.0.1:1/db", async () => {
+    const rows = await gatherGatewayStoreStatusLines();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.name, "store (postgres)");
+    assert.equal(rows[0]!.ok, false);
+    assert.doesNotMatch(rows[0]!.detail, /secretpw/);
+  });
+});
 
 test("gatherGatewayStatus reports gateway config when present", () => {
   const dir = mkdtempSync(join(tmpdir(), "gwstat-"));

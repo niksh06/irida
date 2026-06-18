@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
-import { writeFileAtomic } from "./util.js";
+import { guardProdStateWrite, writeFileAtomic } from "./util.js";
 
 export const GATEWAY_PEERS_FILE = "gateway.peers.json";
 
@@ -35,6 +35,7 @@ export function loadGatewayPeers(dir: string): GatewayPeersFile {
 export function saveGatewayPeers(dir: string, data: GatewayPeersFile): void {
   const cfg = loadConfig(dir);
   const root = resolve(dir, cfg.stateDir);
+  guardProdStateWrite(root, GATEWAY_PEERS_FILE);
   mkdirSync(root, { recursive: true });
   writeFileAtomic(peersPath(dir), JSON.stringify(data, null, 2) + "\n");
 }

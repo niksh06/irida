@@ -173,7 +173,7 @@ export async function handleGatewaySlash(
 
     case "approve": {
       if (!p.arg) return "Использование: /approve <код>";
-      const out = tryApprovePairing(ctx.dir, ctx.chatId, p.arg);
+      const out = await tryApprovePairing(ctx.dir, ctx.chatId, p.arg);
       return out.message;
     }
 

@@ -1,5 +1,33 @@
 import { randomUUID } from "node:crypto";
 import { renameSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { csagentHome } from "./env.js";
+
+/** True when running under the test runner (npm test / --test). */
+export function isTestRun(): boolean {
+  return (
+    process.env.npm_lifecycle_event === "test" ||
+    process.argv.includes("--test") ||
+    process.execArgv.some((a) => a.includes("test"))
+  );
+}
+
+/**
+ * Block writes to CSAGENT_HOME/.agent during npm test (postmortem 2026-06-18
+ * allowlist split-brain: test fixtures overwrote prod gateway state). Only
+ * `cron.jobs.json` was guarded before — gateway.json/peers/pairing were not.
+ * Set CSAGENT_ALLOW_PROD_STATE_WRITE=1 to override.
+ */
+export function guardProdStateWrite(stateRoot: string, label = "state"): void {
+  const home = csagentHome();
+  if (!home || !isTestRun()) return;
+  if (process.env.CSAGENT_ALLOW_PROD_STATE_WRITE === "1") return;
+  if (resolve(stateRoot) === resolve(home, ".agent")) {
+    throw new Error(
+      `refusing to write ${label} under CSAGENT_HOME/.agent during npm test — use a temp directory`
+    );
+  }
+}
 
 export function newId(prefix: string): string {
   return `${prefix}_${randomUUID().slice(0, 8)}`;

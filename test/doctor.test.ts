@@ -117,6 +117,47 @@ test("gatherDoctorChecks fails autoRag when meta wing enabled", () => {
   assert.match(ar!.detail, /meta/);
 });
 
+test("gatherDoctorChecks resolves skills root via CSAGENT_ROOT", () => {
+  const home = mkdtempSync(resolve(tmpdir(), "doc-sk-home-"));
+  const root = join(home, "csagent");
+  const skillsDir = join(root, "skills");
+  mkdirSync(skillsDir, { recursive: true });
+  mkdirSync(join(home, ".agent"), { recursive: true });
+  writeFileSync(join(skillsDir, "memory-ops.md"), "---\nname: memory-ops\n---\nbody");
+  writeFileSync(
+    join(home, ".agent", "gateway.json"),
+    JSON.stringify({
+      version: 1,
+      adapter: "telegram",
+      allowedChatIds: ["1"],
+      skills: ["memory-ops"],
+      telegram: { tokenEnv: "TELEGRAM_BOT_TOKEN" },
+    })
+  );
+
+  const prevHome = process.env.CSAGENT_HOME;
+  const prevRoot = process.env.CSAGENT_ROOT;
+  process.env.CSAGENT_HOME = home;
+  process.env.CSAGENT_ROOT = root;
+  try {
+    const checks = gatherDoctorChecks(home);
+    const skillsRoot = checks.find((c) => c.name === "skills root");
+    assert.ok(skillsRoot);
+    assert.equal(skillsRoot!.ok, true);
+    assert.match(skillsRoot!.detail, new RegExp(`${skillsDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    const gwSkills = checks.find((c) => c.name === "gateway skills");
+    assert.ok(gwSkills);
+    assert.equal(gwSkills!.ok, true);
+    assert.match(gwSkills!.detail, /memory-ops/);
+    assert.ok(gwSkills!.detail.includes(skillsDir));
+  } finally {
+    if (prevHome === undefined) delete process.env.CSAGENT_HOME;
+    else process.env.CSAGENT_HOME = prevHome;
+    if (prevRoot === undefined) delete process.env.CSAGENT_ROOT;
+    else process.env.CSAGENT_ROOT = prevRoot;
+  }
+});
+
 test("gatherStaleDistChecks warns when dist is older than src", () => {
   const dir = mkdtempSync(resolve(tmpdir(), "doc-dist-"));
   mkdirSync(join(dir, "src"), { recursive: true });
