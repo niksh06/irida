@@ -121,6 +121,30 @@ bash ~/.csagent/csagent/deploy/install-launchd.sh
 
 Migrations (`deploy/postgres/migrations/*.sql`) run on first connect.
 
+### 2.2a. Postgres resilience / Docker self-heal (I-112)
+
+The prod host runs Postgres under Docker Desktop, which can die on long uptime
+without a reboot. When it does, the gateway long-poll stays alive but every turn
+fails on `ECONNREFUSED 127.0.0.1:5435` (a silent outage). Tooling to handle it:
+
+```bash
+# Idempotent self-heal: starts Docker Desktop + the container if needed, waits
+# for pg_isready. Fast exit when already healthy. Wire into cron or run by hand.
+bash deploy/scripts/ensure-postgres.sh
+```
+
+- **`gateway status`** now FAILs with a `store (postgres)` line when PG is down,
+  and the gateway replies "Store temporarily unavailable" instead of going silent.
+- **`prod-check.sh`** runs `ensure-postgres.sh` first, so a down store self-heals
+  before the rest of the checks.
+- **`csagent-watchdog.sh`** (cron, every ~30 min → Telegram) now reports a down
+  Docker daemon / container as a problem — early warning for this exact failure.
+- **Gateway auto-ensures the store on (re)start** via
+  `deploy/scripts/gateway-launch.sh` (the launchd plist now points at it). This
+  takes effect after a **re-install**: `bash deploy/install-launchd.sh`.
+- Durable fix for repeated Docker crashes: **reboot the Mac mini** (clears the
+  Docker Desktop VM leak).
+
 ### 2.3. Technology knowledge base (file)
 
 Clone or sync under `~/.csagent/knowledge-space` (git). Agents use skill **`kb-ops`** — Grep/Read `docs/{domain}/*.md`; update with `git pull`. **Do not** import into Postgres for prod gateway.

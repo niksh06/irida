@@ -56,7 +56,16 @@ During development: `npm run dev -- <subcommand>` (same as above).
 
 ## Skills
 
-Bundled: `memory-ops`, `browser-ops`, `obsidian-ops`, `cron-ops` (see `skills/`). Drop more under `skills/<name>.md` with frontmatter:
+Bundled: `memory-ops`, `browser-ops`, `obsidian-ops`, `cron-ops` (see `skills/`). Drop more under `skills/<name>.md` with frontmatter.
+
+**Where skills live:** one directory on disk, resolved by `resolveSkillsRoot()`:
+
+| Layout | Skills root |
+|--------|-------------|
+| Dev (repo checkout) | `<repo>/skills/` |
+| Prod (`~/.csagent` home) | **`$CSAGENT_ROOT/skills`** (typically `~/.csagent/csagent/skills`) |
+
+Resolution order: `CSAGENT_HOME` + `skillsPath` → **`CSAGENT_ROOT`** + `skillsPath` → `cwd` + `skillsPath`. Gateway uses `CSAGENT_HOME` for state (`.agent/gateway.json`) but loads skills from the install copy. `csagent doctor` prints `skills root: …`; `csagent skills list` prints `Skills root: …`. There is no separate `~/.csagent/skills/` unless you create an overlay.
 
 ```markdown
 ---

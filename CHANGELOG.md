@@ -8,7 +8,11 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Fixed
 
+- **TUI thinking leak** — pre-turn `thinking…: waiting for model` no longer injects into the assistant bubble (ActivityBar only); streaming deltas strip stale tool-progress placeholders
+- **Gateway skills resolution** — `listSkills` / `loadSkill` fall back to `CSAGENT_ROOT/skills` when `CSAGENT_HOME/skills` is missing (launchd layout: home state + repo checkout)
+- **Doctor skills clarity** — `skills root` check with absolute path; gateway/threat scan details cite resolved directory; removed redundant `CSAGENT_ROOT skills` check; `csagent skills list` prints skills root
 - **Gateway Telegram inbound silent (I-84)** — `TELEGRAM_GATEWAY_ALLOWED_UPDATES` on every `getUpdates` (Bot API global filter had been narrowed to `channel_post` only); short poll (`timeout=0`); persisted poll offset; ack after handle; parse `/cmd@BotUsername` in groups
+- **Gateway test config isolation** — `writeExampleGatewayConfig` writes under test `dir/.agent` only (no CSAGENT_HOME bleed)
 - **Telegram allowed_updates health (I-83)** — `doctor` + `gateway status` probe `getWebhookInfo`; poll batch logs update types (I-87)
 - **Memory retrieval router (I-74)** — routing table in `memory-ops`; MCP `memory_search` defaults `hybrid: true` when `memory.embeddings.enabled`
 - **Hybrid memory search (I-72)** — Postgres `searchNotesHybrid` RRF merge of FTS + vector; CLI `--hybrid`; config `memory.search.hybridWeights`; FTS fallback when embedder down
@@ -28,12 +32,13 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
-- **Default corpus re-wing (I-81)** — `csagent memory re-wing [--apply]`; wings `tparser`, `reddit`, `style`
+- **Gateway allowlist in Postgres (I-96)** — when `CSAGENT_DATABASE_URL` + `CSAGENT_SECRETS_KEY`: chat IDs stored encrypted in `gateway_allowed_chats` (pgcrypto); auto-migrate from `gateway.json` on gateway start; SQLite path unchanged (`allowedChatIds` in file)
 - **cursor-lesson paired eval (I-79)** — `eval/cases/cursor-lesson-paired`; `csagent memory lesson-eval validate|list|sheet|record|summary`; facts `cursor_lesson_eval`
 - **Reddit digest cron (I-77)** — `reddit-rss-fetch` script + `reddit-digest-daily` SDK job; `reddit-digest-YYYY-MM-DD` wing `reddit`; fact `reddit_digest last_run`
 - **Archive purge CLI (I-80)** — `csagent memory purge-archive` TTL 180d dry-run; `--require-lesson` gated delete
 - **gateway-ops skill (I-85)** — Telegram Bot API guardrails; inbound silent / `allowed_updates` playbook
 - **Gateway post-deploy smoke (I-88)** — `deploy/gateway-smoke.sh` (allowed_updates + launchd + poll log); wired into `prod-check.sh`
+- **Desktop pet (I-97)** — **Wisp** mascot in `csagent tui` (hand-drawn Unicode, multi-color); `csagent pet status` for optional snapshot
 
 ### Changed
 
