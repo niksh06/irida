@@ -55,8 +55,21 @@ function parseTags(val: string): string[] {
     .filter(Boolean);
 }
 
+/** Same candidate order as cron promptFile: config dir → CSAGENT_ROOT → cwd. */
+export function resolveSkillsRoot(dir: string, skillsPath: string): string {
+  const candidates: string[] = [resolve(dir, skillsPath)];
+  const agentRoot = process.env.CSAGENT_ROOT?.trim();
+  if (agentRoot) candidates.push(resolve(agentRoot, skillsPath));
+  const cwd = process.cwd();
+  if (cwd !== dir && cwd !== agentRoot) candidates.push(resolve(cwd, skillsPath));
+  for (const path of candidates) {
+    if (existsSync(path)) return path;
+  }
+  return candidates[0] ?? resolve(dir, skillsPath);
+}
+
 function candidateFiles(dir: string, skillsPath: string): string[] {
-  const root = resolve(dir, skillsPath);
+  const root = resolveSkillsRoot(dir, skillsPath);
   if (!existsSync(root)) return [];
   const out: string[] = [];
   for (const entry of readdirSync(root)) {

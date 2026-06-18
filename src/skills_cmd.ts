@@ -2,7 +2,7 @@
  * `csagent skills list|search` — discover local Markdown skills (issue 015).
  */
 import { loadConfig, ConfigError } from "./config.js";
-import { listSkills, searchSkills } from "./skills.js";
+import { listSkills, resolveSkillsRoot, searchSkills } from "./skills.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { relative } from "node:path";
 
@@ -26,11 +26,13 @@ export function cmdSkillsList(opts: SkillsCmdOptions = {}): ExitCode {
     console.error("skills: " + (e instanceof ConfigError ? e.message : String(e)));
     return EXIT.config;
   }
+  const skillsRoot = resolveSkillsRoot(dir, cfg.skillsPath);
   const all = listSkills(dir, cfg.skillsPath);
   if (all.length === 0) {
-    console.log(`No skills found under ${cfg.skillsPath}/`);
+    console.log(`No skills found at ${skillsRoot}`);
     return EXIT.ok;
   }
+  console.log(`Skills root: ${skillsRoot} (${all.length})`);
   console.log("NAME             DESCRIPTION                              TAGS           PATH");
   for (const s of all) console.log(formatSkill(s, dir));
   return EXIT.ok;
@@ -49,11 +51,13 @@ export function cmdSkillsSearch(query: string, opts: SkillsCmdOptions = {}): Exi
     console.error("skills: " + (e instanceof ConfigError ? e.message : String(e)));
     return EXIT.config;
   }
+  const skillsRoot = resolveSkillsRoot(dir, cfg.skillsPath);
   const hits = searchSkills(dir, cfg.skillsPath, query);
   if (hits.length === 0) {
-    console.log(`No skills match "${query.trim()}" under ${cfg.skillsPath}/`);
+    console.log(`No skills match "${query.trim()}" at ${skillsRoot}`);
     return EXIT.ok;
   }
+  console.log(`Skills root: ${skillsRoot}`);
   console.log(`NAME             DESCRIPTION                              TAGS           PATH`);
   for (const s of hits) console.log(formatSkill(s, dir));
   return EXIT.ok;

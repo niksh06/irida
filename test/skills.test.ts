@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
-import { loadSkill, listSkills, searchSkills, suggestSkillNames, SkillError } from "../src/skills.js";
+import {
+  loadSkill,
+  listSkills,
+  resolveSkillsRoot,
+  searchSkills,
+  suggestSkillNames,
+  SkillError,
+} from "../src/skills.js";
 import { buildPrompt } from "../src/promptBuilder.js";
 
 function tmp(): string {
@@ -104,4 +111,24 @@ test("buildPrompt injects skill content as context", () => {
 
 test("buildPrompt without skills is identity", () => {
   assert.equal(buildPrompt("just this", []), "just this");
+});
+
+test("resolveSkillsRoot falls back to CSAGENT_ROOT when config dir has no skills/", () => {
+  const home = tmp();
+  const root = join(home, "csagent");
+  seed(root);
+  const prevHome = process.env.CSAGENT_HOME;
+  const prevRoot = process.env.CSAGENT_ROOT;
+  process.env.CSAGENT_HOME = home;
+  process.env.CSAGENT_ROOT = root;
+  try {
+    assert.equal(resolveSkillsRoot(home, "skills"), join(root, "skills"));
+    assert.deepEqual(listSkills(home, "skills").map((s) => s.name).sort(), ["bar", "foo"]);
+    assert.equal(loadSkill(home, "skills", "foo").name, "foo");
+  } finally {
+    if (prevHome === undefined) delete process.env.CSAGENT_HOME;
+    else process.env.CSAGENT_HOME = prevHome;
+    if (prevRoot === undefined) delete process.env.CSAGENT_ROOT;
+    else process.env.CSAGENT_ROOT = prevRoot;
+  }
 });

@@ -34,14 +34,25 @@ test("skills list prints skills", () => {
 
 test("skills list empty dir", () => {
   const dir = mkdtempSync(resolve(tmpdir(), "skempty-"));
+  const prevRoot = process.env.CSAGENT_ROOT;
+  const prevHome = process.env.CSAGENT_HOME;
+  const prevCwd = process.cwd();
+  delete process.env.CSAGENT_ROOT;
+  delete process.env.CSAGENT_HOME;
+  process.chdir(dir);
   const logs: string[] = [];
   const orig = console.log;
   console.log = (...a: unknown[]) => logs.push(a.join(" "));
   try {
     assert.equal(cmdSkillsList({ dir }), EXIT.ok);
-    assert.match(logs.join("\n"), /No skills found/);
+    assert.match(logs.join("\n"), /No skills found at/);
   } finally {
     console.log = orig;
+    process.chdir(prevCwd);
+    if (prevRoot === undefined) delete process.env.CSAGENT_ROOT;
+    else process.env.CSAGENT_ROOT = prevRoot;
+    if (prevHome === undefined) delete process.env.CSAGENT_HOME;
+    else process.env.CSAGENT_HOME = prevHome;
   }
 });
 
