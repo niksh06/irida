@@ -31,3 +31,10 @@ AGENTS.md
 AGENTS.local.md
 .cursor/
 .codegraph/
+
+# pet art local-only (manifest.json + build-pet-assets.py stay in git)
+deploy/assets/pet/source/
+deploy/assets/pet/dist/
+deploy/assets/pet/*.png
+deploy/assets/pet/pet-concept-*
+deploy/assets/pet/*-v2.png

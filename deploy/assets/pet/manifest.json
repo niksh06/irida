@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "character": "tparser-dog-butterfly",
+  "issue": "I-97",
+  "targetWidth": 192,
+  "palette": {
+    "dog": "#6495ED",
+    "outline": "#000000",
+    "butterflyLight": "#7DD3FC",
+    "butterflyDark": "#38BDF8"
+  },
+  "workingGif": {
+    "env": "TPARSER_ROOT",
+    "relative": "web/public/pes_pitaetsja_pojmat_babochku.gif",
+    "darkRelative": "web/public/pes_pitaetsja_pojmat_babochku_dark.gif"
+  },
+  "states": {
+    "idle": {
+      "type": "static",
+      "source": "source/idle.png",
+      "description": "Calm sitting pose (TParser loader frame 0)"
+    },
+    "working": {
+      "type": "gif",
+      "description": "Chase loop — resolved from TPARSER_ROOT at runtime/build"
+    },
+    "happy": {
+      "type": "static",
+      "source": "source/happy.png"
+    },
+    "sad": {
+      "type": "static",
+      "source": "source/sad.png"
+    },
+    "sleep": {
+      "type": "static",
+      "source": "source/sleep.png"
+    }
+  },
+  "overlayEvents": [
+    "idle",
+    "working",
+    "happy",
+    "sad",
+    "sleep"
+  ],
+  "build": {
+    "script": "deploy/scripts/build-pet-assets.py",
+    "outputLight": "dist/light",
+    "outputDark": "dist/dark",
+    "terminalLight": "terminal/light",
+    "terminalDark": "terminal/dark"
+  }
+}

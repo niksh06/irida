@@ -21,6 +21,7 @@ import { cmdCron } from "./cron_cmd.js";
 import { cmdGateway } from "./gateway_cmd.js";
 import { cmdStore } from "./store_cmd.js";
 import { cmdEval } from "./eval_cmd.js";
+import { cmdPet } from "./pet_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -45,6 +46,7 @@ Usage:
   csagent gateway run         messaging bridge (webhook → chat)
   csagent skills list         list local Markdown skills
   csagent skills search <q>   search skills by name/description/tags
+  csagent pet status          pet snapshot (debug; mascot is in tui)
 
 Note: bare \`cursor-agent\` in PATH is Cursor's official CLI (different tool).
 Use \`csagent\`, \`npm run doctor\`, or \`npm run dev -- …\` for this project.
@@ -116,6 +118,8 @@ async function main(argv: string[]): Promise<number> {
       return await cmdGateway(rest);
     case "eval":
       return cmdEval(rest);
+    case "pet":
+      return await cmdPet(rest);
     case undefined:
     case "-h":
     case "--help":

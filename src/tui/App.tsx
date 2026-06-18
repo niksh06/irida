@@ -18,6 +18,7 @@ import { DoctorPanel } from "./components/DoctorPanel.js";
 import { SkillsPanel } from "./components/SkillsPanel.js";
 import { MemoryPanel } from "./components/MemoryPanel.js";
 import { SessionTabBar } from "./components/SessionTabBar.js";
+import { PetCorner } from "./components/PetCorner.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { McpPanel } from "./components/McpPanel.js";
 import { ToolsPanel } from "./components/ToolsPanel.js";
@@ -59,7 +60,11 @@ import { resolveAgentLogger } from "../agentLog.js";
 import { resolve as resolvePath } from "node:path";
 import { loadConfig } from "../config.js";
 import { indexOfLastAssistant, indexOfStreamingAssistant } from "./streamingTarget.js";
-import { formatToolProgressLine } from "./toolProgress.js";
+import {
+  formatToolProgressLine,
+  isStreamToolProgressPlaceholder,
+  shouldInjectToolProgressIntoStream,
+} from "./toolProgress.js";
 import {
   mergeTabBarSessions,
   parseSessionTabHotkey,
@@ -67,6 +72,8 @@ import {
   tabCycleIndex,
   visibleTabSessions,
 } from "./sessionTabs.js";
+import { deriveTuiPetState } from "../petTerminal.js";
+import type { PetState } from "../petState.js";
 
 let msgSeq = 0;
 function nextId(prefix: string): string {
@@ -161,6 +168,10 @@ export function App(props: TuiOptions) {
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [lastTurnStats, setLastTurnStats] = useState<TurnStats | null>(null);
   const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
+  const [petClock, setPetClock] = useState(0);
+  const [lastTurnOk, setLastTurnOk] = useState(false);
+  const [lastTurnError, setLastTurnError] = useState(false);
+  const lastPetEventAtRef = useRef(Date.now());
   const [, tick] = useState(0);
   const [pickerSessions, setPickerSessions] = useState<SessionRecord[]>([]);
   const [tabBarSessions, setTabBarSessions] = useState<SessionRecord[]>([]);
@@ -194,6 +205,7 @@ export function App(props: TuiOptions) {
     });
 
   const noteActivity = useCallback((entry: ActivityDetail) => {
+    lastPetEventAtRef.current = Date.now();
     setActivity(entry.toolName ?? entry.label);
     pushActivity(setActivityLog, {
       label: entry.label,
@@ -208,7 +220,7 @@ export function App(props: TuiOptions) {
       durationMs: entry.durationMs,
       stdoutPreview: entry.stdoutPreview,
     });
-    if (entry.phase === "call") {
+    if (shouldInjectToolProgressIntoStream(entry)) {
       const line = formatToolProgressLine(entry);
       if (line) {
         setMessages((prev) => {
@@ -230,6 +242,25 @@ export function App(props: TuiOptions) {
     return () => clearInterval(id);
   }, [busy, turnStartedAt]);
 
+  const petState: PetState = useMemo(
+    () =>
+      deriveTuiPetState({
+        busy,
+        activityLog,
+        lastTurnOk,
+        lastTurnError,
+        lastEventAtMs: lastPetEventAtRef.current,
+        nowMs: Date.now(),
+      }),
+    [busy, activityLog, lastTurnOk, lastTurnError, petClock]
+  );
+
+  useEffect(() => {
+    const ms = busy ? 400 : 1000;
+    const id = setInterval(() => setPetClock((c) => c + 1), ms);
+    return () => clearInterval(id);
+  }, [busy]);
+
   const patchThinking = useCallback((chunk: string) => {
     setThinkingText((prev) => {
       if (!chunk) return prev;
@@ -239,12 +270,14 @@ export function App(props: TuiOptions) {
   }, []);
 
   const patchStreaming = useCallback((delta: string) => {
+    if (!delta) return;
     setMessages((prev) => {
       const idx = indexOfStreamingAssistant(prev);
       if (idx < 0) return prev;
       const next = [...prev];
       const cur = next[idx]!;
-      next[idx] = { ...cur, text: cur.text + delta };
+      const base = isStreamToolProgressPlaceholder(cur.text) ? "" : cur.text;
+      next[idx] = { ...cur, text: base + delta };
       return next;
     });
   }, []);
@@ -783,10 +816,13 @@ export function App(props: TuiOptions) {
     setScrollMode(false);
     setBusy(true);
     setTurnStartedAt(Date.now());
+    lastPetEventAtRef.current = Date.now();
+    setLastTurnOk(false);
+    setLastTurnError(false);
     setLastTurnStats(null);
     setThinkingText("");
     setThinkingExpanded(false);
-    noteActivity({ label: "thinking…", kind: "other", command: "waiting for model", phase: "call" });
+    setActivity("thinking…");
 
     try {
       const out = await session.sendTurn(text);
@@ -794,6 +830,9 @@ export function App(props: TuiOptions) {
 
       if (out.kind === "ok") {
         setLastTurnStats(out.stats);
+        setLastTurnOk(true);
+        setLastTurnError(false);
+        lastPetEventAtRef.current = Date.now();
         if (!out.assistantText.trim()) {
           setMessages((prev) => {
             const idx = indexOfLastAssistant(prev);
@@ -812,6 +851,9 @@ export function App(props: TuiOptions) {
       }
 
       if (out.kind === "blocked") {
+        setLastTurnOk(false);
+        setLastTurnError(true);
+        lastPetEventAtRef.current = Date.now();
         setMessages((prev) => {
           const next = prev.slice(0, -1);
           return [...next, { id: nextId("err"), role: "error", text: `Blocked: ${out.reason}` }];
@@ -819,6 +861,9 @@ export function App(props: TuiOptions) {
         return;
       }
       if (out.kind === "error") {
+        setLastTurnOk(false);
+        setLastTurnError(true);
+        lastPetEventAtRef.current = Date.now();
         setMessages((prev) => {
           const idx = indexOfLastAssistant(prev);
           if (out.partialAssistantText && idx >= 0) {
@@ -838,6 +883,9 @@ export function App(props: TuiOptions) {
       }
     } catch (e) {
       finishStreaming();
+      setLastTurnOk(false);
+      setLastTurnError(true);
+      lastPetEventAtRef.current = Date.now();
       const formatted = formatSdkError(e);
       setMessages((prev) => {
         const next = prev.slice(0, -1);
@@ -875,9 +923,12 @@ export function App(props: TuiOptions) {
 
   return (
     <Box flexDirection="column" width="100%">
-      <Box flexDirection="column" marginBottom={0}>
-        <Text color={theme.primary}>{banner.trimEnd()}</Text>
-        <SessionTabBar sessions={tabBarSessions} activeId={meta?.sessionId ?? null} width={cols} />
+      <Box flexDirection="row" justifyContent="space-between" width="100%">
+        <Box flexDirection="column" flexGrow={1}>
+          <Text color={theme.primary}>{banner.trimEnd()}</Text>
+          <SessionTabBar sessions={tabBarSessions} activeId={meta?.sessionId ?? null} width={cols} />
+        </Box>
+        <PetCorner state={petState} animTick={petClock} />
       </Box>
 
       <Box
