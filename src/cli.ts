@@ -22,6 +22,7 @@ import { cmdGateway } from "./gateway_cmd.js";
 import { cmdStore } from "./store_cmd.js";
 import { cmdEval } from "./eval_cmd.js";
 import { cmdPet } from "./pet_cmd.js";
+import { cmdBackground } from "./background_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
@@ -43,6 +44,7 @@ Usage:
   csagent auth status         keys configured? (never prints secrets)
   csagent memory list         durable notes (.agent/memory/)
   csagent cron list           scheduled jobs (.agent/cron.jobs.json)
+  csagent background pause    pause autonomous cron (only my-side initiation)
   csagent gateway run         messaging bridge (webhook → chat)
   csagent skills list         list local Markdown skills
   csagent skills search <q>   search skills by name/description/tags
@@ -114,6 +116,9 @@ async function main(argv: string[]): Promise<number> {
       return cmdMemory(rest);
     case "cron":
       return cmdCron(rest);
+    case "background":
+    case "bg":
+      return cmdBackground(rest);
     case "gateway":
       return await cmdGateway(rest);
     case "eval":

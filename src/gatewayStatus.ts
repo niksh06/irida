@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { csagentHome } from "./env.js";
+import { backgroundPauseState } from "./backgroundPause.js";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
@@ -90,6 +91,15 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   } else {
     rows.push({ name: "gateway config", ok: false, detail: "gateway.json missing" });
   }
+
+  const pause = backgroundPauseState(dir);
+  rows.push({
+    name: "background",
+    ok: true,
+    detail: pause.paused
+      ? `PAUSED — cron runs no jobs (${[pause.source, pause.reason].filter(Boolean).join(": ")})`
+      : "active — cron runs due jobs",
+  });
 
   const gwLaunch = launchdRunning(GATEWAY_LABEL);
   rows.push({ name: "launchd gateway", ok: gwLaunch.ok, detail: gwLaunch.detail });

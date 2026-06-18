@@ -4,6 +4,7 @@
 import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { loadConfig, ConfigError } from "./config.js";
+import { isBackgroundPaused } from "./backgroundPause.js";
 import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
 import { openChatSession } from "./chatEngine.js";
 import { SESSION_CHANNEL } from "./sessionChannel.js";
@@ -390,6 +391,14 @@ export async function cronTick(
 ): Promise<CronTickResult> {
   const dir = opts.dir ?? process.cwd();
   const jobs = loadCronJobs(dir);
+
+  if (isBackgroundPaused(dir)) {
+    console.error(
+      "[cron] tick skipped — background paused (`csagent background resume` or unset CSAGENT_PAUSE_BACKGROUND)"
+    );
+    return { ran: [], skipped: jobs.map((j) => j.id), errors: [] };
+  }
+
   const at = new Date(opts.at ?? new Date());
   at.setSeconds(0, 0);
 

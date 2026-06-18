@@ -16,3 +16,12 @@ function readTrimmed(name: string): string | undefined {
 export function csagentHome(): string | undefined {
   return readTrimmed("CSAGENT_HOME");
 }
+
+/**
+ * Hard override that pauses all background/cron activity (truthy = paused).
+ * Wins over the on-disk pause flag, so launchd jobs can be neutered via env
+ * even before a deploy carries the file-based toggle. See backgroundPause.ts.
+ */
+export function backgroundPauseEnv(): string | undefined {
+  return readTrimmed("CSAGENT_PAUSE_BACKGROUND");
+}

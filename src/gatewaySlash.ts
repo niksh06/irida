@@ -7,6 +7,7 @@ import { gatherGatewayStatus } from "./gatewayStatus.js";
 import { loadGatewayConfig, type GatewayConfig } from "./gatewayConfig.js";
 import { loadGatewayPeers, peerKey } from "./gatewayPeers.js";
 import { tryApprovePairing } from "./gatewayPairing.js";
+import { backgroundPauseState, setBackgroundPaused } from "./backgroundPause.js";
 import { createMemoryStore } from "./memoryStore.js";
 import { loadConfig } from "./config.js";
 import { createStore } from "./store.js";
@@ -175,6 +176,21 @@ export async function handleGatewaySlash(
       if (!p.arg) return "Использование: /approve <код>";
       const out = await tryApprovePairing(ctx.dir, ctx.chatId, p.arg);
       return out.message;
+    }
+
+    case "pause": {
+      const reason = p.arg.trim() || `gateway chat ${ctx.chatId}`;
+      setBackgroundPaused(ctx.dir, true, reason);
+      return `⏸ Фоновые задачи на паузе — ${reason}. Cron не запускает задания (отвечаю только на твои сообщения). /resume чтобы снять.`;
+    }
+
+    case "resume": {
+      setBackgroundPaused(ctx.dir, false);
+      const st = backgroundPauseState(ctx.dir);
+      if (st.paused && st.source === "env") {
+        return "Флаг снят, но CSAGENT_PAUSE_BACKGROUND ещё установлен — фон остаётся на паузе.";
+      }
+      return "▶️ Фоновые задачи возобновлены — cron снова запускает задания по расписанию.";
     }
 
     case "delegate": {
