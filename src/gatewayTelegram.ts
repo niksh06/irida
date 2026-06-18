@@ -18,8 +18,52 @@ import { loadTelegramPollOffset, saveTelegramPollOffset } from "./gatewayTelegra
 
 export interface TelegramMessage {
   message_id: number;
-  chat: { id: number };
+  chat: { id: number; type?: string };
+  /** Present in private/group messages; absent for channel_post and anon admins. */
+  from?: { id: number; is_bot?: boolean };
+  /** Channel/anon-admin identity when `from` is absent. */
+  sender_chat?: { id: number };
   text?: string;
+}
+
+export type TelegramChatKind = "private" | "group" | "channel";
+
+/** Classify a chat by Telegram's `chat.type`, falling back to the id sign. */
+export function classifyTelegramChat(msg: TelegramMessage): TelegramChatKind {
+  const t = msg.chat.type;
+  if (t === "private") return "private";
+  if (t === "group" || t === "supergroup") return "group";
+  if (t === "channel") return "channel";
+  // `chat.type` absent (legacy/synthetic) — positive id is a private chat,
+  // negative is a group/channel. Treat unknown negatives as group (stricter).
+  return msg.chat.id >= 0 ? "private" : "group";
+}
+
+/**
+ * Authorize the *sender* once the *chat* has passed the allowlist. The chat
+ * allowlist proves "this conversation is permitted"; this proves "this actor is
+ * permitted to act within it". Private chats are 1:1 so the chat is the actor.
+ */
+export function authorizeTelegramSender(
+  cfg: GatewayConfig,
+  msg: TelegramMessage
+): { ok: boolean; reason?: string } {
+  const kind = classifyTelegramChat(msg);
+  if (kind === "private") return { ok: true };
+  if (kind === "channel") {
+    return cfg.telegramAllowChannelPosts
+      ? { ok: true }
+      : { ok: false, reason: "channel posts disabled (set telegram.allowChannelPosts)" };
+  }
+  // group / supergroup — require an explicitly allowlisted human sender.
+  const senderId = msg.from && !msg.from.is_bot ? String(msg.from.id) : undefined;
+  if (senderId && cfg.telegramAllowedSenderIds.includes(senderId)) return { ok: true };
+  return {
+    ok: false,
+    reason: senderId
+      ? `group sender ${senderId} not in telegram.allowedSenderIds`
+      : "group message without an identifiable sender",
+  };
 }
 
 export interface TelegramUpdate {
@@ -93,6 +137,13 @@ export const TELEGRAM_GATEWAY_ALLOWED_UPDATES = [
 
 /** Required for gateway inbound (private + group messages). */
 export const TELEGRAM_INBOUND_MESSAGE_UPDATE = "message";
+
+/** True when a turn error is a backing-store/connection outage, not a logic error. */
+export function isStoreUnavailableError(message: string): boolean {
+  return /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENOTFOUND|connection terminated|connect\b.*:\d+|the database system is (starting up|shutting down)|too many clients/i.test(
+    message
+  );
+}
 
 export interface TelegramAllowedUpdatesAssessment {
   ok: boolean;
@@ -472,6 +523,8 @@ export interface ProcessTelegramUpdateResult {
   chatId?: string;
   reply?: string;
   error?: string;
+  /** Silently dropped (no chat reply) — e.g. unauthorized group sender. Logged only. */
+  ignored?: string;
 }
 
 export interface ProcessTelegramUpdateOptions {
@@ -499,6 +552,13 @@ export async function processTelegramUpdate(
   if (!isChatAllowed(cfg, chatId, dir)) {
     const pairing = tryRegisterPairing(dir, "telegram", chatId);
     return { handled: true, chatId, reply: pairing.message };
+  }
+  // Chat is allowlisted — now authorize the actor. In groups/channels the chat
+  // id alone does not identify who is speaking (I-107). Drop silently to avoid
+  // reply-spam when the bot sees every group message.
+  const senderPolicy = authorizeTelegramSender(cfg, msg);
+  if (!senderPolicy.ok) {
+    return { handled: true, chatId, ignored: senderPolicy.reason };
   }
   const text = msg.text.trim();
   if (text.length > cfg.maxMessageLength) {
@@ -751,6 +811,10 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       dir: opts.dir,
     });
     if (!result.handled || !result.chatId) return;
+    if (result.ignored) {
+      logError(`[gateway] telegram chat=${result.chatId} ignored: ${result.ignored}`);
+      return;
+    }
     if (result.reply) {
       await deliverWithRetry(result.chatId, result.reply, true);
     } else if (result.error) {
@@ -761,6 +825,14 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
         await deliverWithRetry(result.chatId, "This chat is not allowlisted.", false);
       } else if (result.error === "message too long") {
         await deliverWithRetry(result.chatId, "Message too long — please shorten it.", false);
+      } else if (isStoreUnavailableError(result.error)) {
+        // Postgres/store down (postmortem 2026-06-18) — tell the user their
+        // message was not processed instead of failing silently/generically.
+        await deliverWithRetry(
+          result.chatId,
+          "Store temporarily unavailable — your message wasn't processed. Try again shortly.",
+          false
+        );
       } else {
         // Internal error details stay in the service log, not in the chat.
         await deliverWithRetry(result.chatId, "Something went wrong — check gateway logs.", false);

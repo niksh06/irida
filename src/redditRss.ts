@@ -58,12 +58,16 @@ function decodeXmlEntities(raw: string): string {
     .trim();
 }
 
+/** Cap entries parsed per feed — a hostile/large feed must not blow up memory. */
+export const REDDIT_FEED_MAX_ENTRIES = 200;
+
 /** Parse Reddit Atom /new.rss entries (best-effort, no XML dependency). */
 export function parseRedditAtomFeed(xml: string, sub: string): RedditRssItem[] {
   const items: RedditRssItem[] = [];
   const entryRe = /<entry[\s>]([\s\S]*?)<\/entry>/gi;
   let match: RegExpExecArray | null;
   while ((match = entryRe.exec(xml)) !== null) {
+    if (items.length >= REDDIT_FEED_MAX_ENTRIES) break;
     const block = match[1]!;
     const titleMatch = block.match(/<title(?:\s[^>]*)?>([\s\S]*?)<\/title>/i);
     const linkMatch = block.match(/<link[^>]*href="([^"]+)"/i);
@@ -74,12 +78,15 @@ export function parseRedditAtomFeed(xml: string, sub: string): RedditRssItem[] {
       block.match(/<content[^>]*>([\s\S]*?)<\/content>/i) ??
       block.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i);
     if (!titleMatch || !linkMatch || !publishedMatch) continue;
+    // Only http/https links reach the digest — drop javascript:/file:/data: etc.
+    const link = decodeXmlEntities(linkMatch[1]!).trim();
+    if (!/^https?:\/\//i.test(link)) continue;
     const published = new Date(publishedMatch[1]!.trim());
     if (Number.isNaN(published.getTime())) continue;
     items.push({
       sub,
       title: decodeXmlEntities(titleMatch[1]!),
-      link: linkMatch[1]!.trim(),
+      link,
       published,
       snippet: stripHtml(contentMatch?.[1] ?? "").slice(0, 280),
     });
@@ -114,6 +121,35 @@ export function buildRedditFeedSnapshot(
 
 const REDDIT_RSS_RETRY_DELAYS_MS = [2_500, 6_000];
 
+/** Max feed body we will buffer — guards against a hostile multi-GB response. */
+export const REDDIT_RSS_MAX_BYTES = 8 * 1024 * 1024;
+
+/** Read a response body up to a byte cap, aborting (throwing) if exceeded. */
+async function readCappedText(res: Response, maxBytes: number): Promise<string> {
+  const lenHeader = Number(res.headers.get("content-length"));
+  if (Number.isFinite(lenHeader) && lenHeader > maxBytes) {
+    throw new Error(`feed body too large (${lenHeader} bytes > ${maxBytes})`);
+  }
+  const body = res.body;
+  if (!body) return (await res.text()).slice(0, maxBytes);
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.length;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error(`feed body too large (> ${maxBytes} bytes)`);
+      }
+      chunks.push(value);
+    }
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8");
+}
+
 export async function fetchRedditSubFeed(
   def: RedditFeedDef,
   windowStart: Date,
@@ -138,7 +174,7 @@ export async function fetchRedditSubFeed(
     if (!res || !res.ok) {
       return { items: [], error: `${def.sub}: HTTP ${res?.status ?? "unknown"}` };
     }
-    const xml = await res.text();
+    const xml = await readCappedText(res, REDDIT_RSS_MAX_BYTES);
     const parsed = parseRedditAtomFeed(xml, def.sub);
     return { items: filterItemsByWindow(parsed, windowStart) };
   } catch (e) {

@@ -2,6 +2,7 @@
  * Webhook HTTP adapter for the messaging gateway (issue 037).
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import {
   type GatewayConfig,
   gatewayWebhookSecret,
@@ -61,12 +62,20 @@ export function parseWebhookBody(raw: string): WebhookRequestBody {
   return { chatId, text };
 }
 
+/** Constant-time string compare — avoids leaking secret length/prefix via timing. */
+function safeStrEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
 export function webhookAuthOk(req: IncomingMessage, secret: string): boolean {
   if (!secret) return false;
   const header = req.headers["x-gateway-secret"];
-  if (typeof header === "string" && header === secret) return true;
+  if (typeof header === "string" && safeStrEqual(header, secret)) return true;
   const auth = req.headers.authorization;
-  if (typeof auth === "string" && auth === `Bearer ${secret}`) return true;
+  if (typeof auth === "string" && safeStrEqual(auth, `Bearer ${secret}`)) return true;
   return false;
 }
 
@@ -117,8 +126,11 @@ export async function handleWebhookHttp(
     const { reply } = await router.handleInbound(body.chatId, body.text);
     json(res, 200, { ok: true, reply });
   } catch (e) {
+    // Match the Telegram adapter: never surface internal error detail (may
+    // include partial assistant text, session/file paths) to the caller.
     const message = e instanceof Error ? e.message : String(e);
-    json(res, 500, { ok: false, error: message });
+    console.error(`[gateway] webhook handler error: ${message}`);
+    json(res, 500, { ok: false, error: "internal error" });
   }
 }
 

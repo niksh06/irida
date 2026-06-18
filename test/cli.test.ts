@@ -25,3 +25,10 @@ test("redact masks key-shaped secrets", () => {
   assert.match(redact("CURSOR_API_KEY=key_abcdef123456"), /<redacted>/);
   assert.doesNotMatch(redact("CURSOR_API_KEY=key_abcdef123456"), /abcdef123456/);
 });
+
+test("redact masks DB connection-string passwords and secret assignments", () => {
+  const dsn = redact("connect postgres://csagent:Sup3rSecretPw@db.host:5432/csagent failed");
+  assert.doesNotMatch(dsn, /Sup3rSecretPw/);
+  assert.match(dsn, /postgres:\/\/csagent:<redacted>@db\.host/);
+  assert.doesNotMatch(redact('{"password": "hunter2tunafish"}'), /hunter2tunafish/);
+});

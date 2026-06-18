@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { loadConfig } from "../src/config.js";
-import { profileCookiesPath, saveCookies } from "../src/browser/session.js";
+import { assertSafeProfileName, profileCookiesPath, saveCookies } from "../src/browser/session.js";
+import { validateNavigateUrl } from "../src/mcp/browserTools.js";
 import { BROWSER_MCP_NAME, resolveMcpServers } from "../src/mcpServers.js";
 import { resolveBrowserMcpContext } from "../src/mcp/browserContext.js";
 import { gatherDoctorChecks } from "../src/doctorChecks.js";
@@ -62,4 +63,24 @@ test("doctor reports browser profile when browser.mcp enabled", () => {
   assert.ok(browserCheck);
   assert.equal(browserCheck.ok, true);
   assert.match(browserCheck.detail, /browser/);
+});
+
+test("validateNavigateUrl allows http/https, blocks file/scheme/metadata", () => {
+  assert.equal(validateNavigateUrl("https://example.com/x").ok, true);
+  assert.equal(validateNavigateUrl("http://example.com").ok, true);
+  assert.equal(validateNavigateUrl("file:///etc/passwd").ok, false);
+  assert.equal(validateNavigateUrl("javascript:alert(1)").ok, false);
+  assert.equal(validateNavigateUrl("ftp://example.com").ok, false);
+  assert.equal(validateNavigateUrl("not a url").ok, false);
+  assert.equal(validateNavigateUrl("http://169.254.169.254/latest/meta-data").ok, false);
+  assert.equal(validateNavigateUrl("http://metadata.google.internal/").ok, false);
+});
+
+test("assertSafeProfileName rejects path traversal in profile names", () => {
+  assert.equal(assertSafeProfileName("default"), "default");
+  assert.equal(assertSafeProfileName("work-1.2_x"), "work-1.2_x");
+  assert.throws(() => assertSafeProfileName("../../etc"));
+  assert.throws(() => assertSafeProfileName("a/b"));
+  assert.throws(() => assertSafeProfileName(".."));
+  assert.throws(() => assertSafeProfileName(""));
 });

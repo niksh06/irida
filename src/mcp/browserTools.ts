@@ -20,6 +20,29 @@ function textResult(text: string) {
   return { content: [{ type: "text" as const, text }] };
 }
 
+/**
+ * Reject navigation targets that turn the browser into a local-file reader or
+ * an SSRF primitive. Only http/https is allowed; cloud-metadata link-local is
+ * blocked. Page/RSS content can steer the agent, so this must gate every nav.
+ */
+export function validateNavigateUrl(raw: string): { ok: true; url: string } | { ok: false; reason: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return { ok: false, reason: `invalid url: ${raw}` };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { ok: false, reason: `blocked scheme '${parsed.protocol}' (only http/https allowed)` };
+  }
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  // Cloud-metadata / link-local — never a legitimate navigation target.
+  if (host === "169.254.169.254" || host.startsWith("169.254.") || host === "metadata.google.internal") {
+    return { ok: false, reason: `blocked link-local/metadata host: ${host}` };
+  }
+  return { ok: true, url: parsed.toString() };
+}
+
 function formatSnapshot(snap: Awaited<ReturnType<typeof captureSnapshot>>): string {
   const lines = [
     `url: ${snap.url}`,
@@ -51,6 +74,8 @@ export function registerBrowserMcpTools(server: McpServer, ctx: BrowserMcpContex
       },
     },
     async ({ url, waitUntil }) => {
+      const check = validateNavigateUrl(url);
+      if (!check.ok) return textResult(`navigation blocked: ${check.reason}`);
       const page = await ensureBrowser({
         browserRoot: ctx.browserRoot,
         profile: ctx.profile,
@@ -58,7 +83,7 @@ export function registerBrowserMcpTools(server: McpServer, ctx: BrowserMcpContex
         userAgent: ctx.userAgent,
         chromePath: ctx.chromePath,
       });
-      await navigate(page, url, waitUntil ?? "domcontentloaded");
+      await navigate(page, check.url, waitUntil ?? "domcontentloaded");
       const snap = await captureSnapshot(page);
       return textResult(`navigated\n\n${formatSnapshot(snap)}`);
     }

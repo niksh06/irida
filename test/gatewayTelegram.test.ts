@@ -22,10 +22,14 @@ import {
   formatTelegramMultipartBodies,
   shouldEmitTelegramToolProgress,
   splitTelegramMessages,
+  classifyTelegramChat,
+  authorizeTelegramSender,
+  isStoreUnavailableError,
   TELEGRAM_MESSAGE_MAX,
   TELEGRAM_RICH_MESSAGE_MAX,
 } from "../src/gatewayTelegram.js";
-import { writeExampleGatewayConfig } from "../src/gateway_cmd.js";
+import type { GatewayConfig } from "../src/gatewayConfig.js";
+import { writeExampleGatewayConfig } from "./helpers/gatewayConfig.js";
 import { GatewaySessionRouter } from "../src/gatewayRouter.js";
 import { GATEWAY_SLASH_COMMANDS } from "../src/gatewaySlash.js";
 import type { SdkLike, SdkCreateLike, SdkResumeLike, RunLike, AgentLike } from "../src/host.js";
@@ -145,12 +149,17 @@ test("processTelegramUpdate routes text to router", async () => {
 test("processTelegramUpdate routes edited_message and channel_post", async () => {
   await withKey("k", async () => {
     const dir = tmp();
-    const cfg = writeExampleGatewayConfig(dir, { adapter: "telegram", allowedChatIds: ["42", "-1001"] });
+    // Channel posts now require explicit opt-in (allowChannelPosts).
+    const cfg = writeExampleGatewayConfig(dir, {
+      adapter: "telegram",
+      allowedChatIds: ["42", "-1001"],
+      telegramAllowChannelPosts: true,
+    });
     const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
     const edited = await processTelegramUpdate(
       cfg,
       router,
-      { update_id: 2, edited_message: { message_id: 2, chat: { id: 42 }, text: "edited hello" } },
+      { update_id: 2, edited_message: { message_id: 2, chat: { id: 42, type: "private" }, text: "edited hello" } },
       { token: "tok" }
     );
     assert.equal(edited.handled, true);
@@ -159,11 +168,64 @@ test("processTelegramUpdate routes edited_message and channel_post", async () =>
     const channel = await processTelegramUpdate(
       cfg,
       router,
-      { update_id: 3, channel_post: { message_id: 3, chat: { id: -1001 }, text: "channel ping" } },
+      { update_id: 3, channel_post: { message_id: 3, chat: { id: -1001, type: "channel" }, text: "channel ping" } },
       { token: "tok" }
     );
     assert.equal(channel.handled, true);
     assert.match(channel.reply ?? "", /reply/);
+    await router.closeAll();
+  });
+});
+
+test("group chat authorizes only allowlisted senders (I-107)", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const cfg = writeExampleGatewayConfig(dir, {
+      adapter: "telegram",
+      allowedChatIds: ["-500"],
+      telegramAllowedSenderIds: ["7001"],
+    });
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+
+    // Allowed sender → routed.
+    const ok = await processTelegramUpdate(
+      cfg,
+      router,
+      { update_id: 1, message: { message_id: 1, chat: { id: -500, type: "supergroup" }, from: { id: 7001 }, text: "hi" } },
+      { token: "tok" }
+    );
+    assert.equal(ok.handled, true);
+    assert.match(ok.reply ?? "", /reply/);
+
+    // Stranger in the same allowlisted group → silently ignored, no reply.
+    const denied = await processTelegramUpdate(
+      cfg,
+      router,
+      { update_id: 2, message: { message_id: 2, chat: { id: -500, type: "supergroup" }, from: { id: 9999 }, text: "rm -rf" } },
+      { token: "tok" }
+    );
+    assert.equal(denied.handled, true);
+    assert.equal(denied.reply, undefined);
+    assert.equal(denied.error, undefined);
+    assert.match(denied.ignored ?? "", /9999/);
+    await router.closeAll();
+  });
+});
+
+test("channel posts ignored unless allowChannelPosts set (I-107)", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const cfg = writeExampleGatewayConfig(dir, { adapter: "telegram", allowedChatIds: ["-700"] });
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+    const out = await processTelegramUpdate(
+      cfg,
+      router,
+      { update_id: 1, channel_post: { message_id: 1, chat: { id: -700, type: "channel" }, text: "post" } },
+      { token: "tok" }
+    );
+    assert.equal(out.handled, true);
+    assert.equal(out.reply, undefined);
+    assert.match(out.ignored ?? "", /channel posts disabled/);
     await router.closeAll();
   });
 });
@@ -555,6 +617,56 @@ test("assessTelegramAllowedUpdates passes when message present", async () => {
   };
   const a = await assessTelegramAllowedUpdates("tok", fetchFn);
   assert.equal(a.ok, true);
+});
+
+test("classifyTelegramChat uses chat.type then id sign", () => {
+  assert.equal(classifyTelegramChat({ message_id: 1, chat: { id: 5, type: "private" } }), "private");
+  assert.equal(classifyTelegramChat({ message_id: 1, chat: { id: -5, type: "supergroup" } }), "group");
+  assert.equal(classifyTelegramChat({ message_id: 1, chat: { id: -5, type: "channel" } }), "channel");
+  // type absent → id sign heuristic
+  assert.equal(classifyTelegramChat({ message_id: 1, chat: { id: 5 } }), "private");
+  assert.equal(classifyTelegramChat({ message_id: 1, chat: { id: -5 } }), "group");
+});
+
+test("authorizeTelegramSender enforces per-chat-kind policy (I-107)", () => {
+  const base = {
+    telegramAllowedSenderIds: ["100"],
+    telegramAllowChannelPosts: false,
+  } as unknown as GatewayConfig;
+
+  // Private: always ok.
+  assert.equal(authorizeTelegramSender(base, { message_id: 1, chat: { id: 9, type: "private" } }).ok, true);
+
+  // Group: only listed sender, bots rejected.
+  assert.equal(
+    authorizeTelegramSender(base, { message_id: 1, chat: { id: -9, type: "group" }, from: { id: 100 } }).ok,
+    true
+  );
+  assert.equal(
+    authorizeTelegramSender(base, { message_id: 1, chat: { id: -9, type: "group" }, from: { id: 200 } }).ok,
+    false
+  );
+  assert.equal(
+    authorizeTelegramSender(base, { message_id: 1, chat: { id: -9, type: "group" }, from: { id: 100, is_bot: true } }).ok,
+    false
+  );
+  // Group without a sender (anon admin) → denied.
+  assert.equal(authorizeTelegramSender(base, { message_id: 1, chat: { id: -9, type: "group" } }).ok, false);
+
+  // Channel: gated by allowChannelPosts.
+  assert.equal(authorizeTelegramSender(base, { message_id: 1, chat: { id: -9, type: "channel" } }).ok, false);
+  const chanOk = { ...base, telegramAllowChannelPosts: true } as GatewayConfig;
+  assert.equal(authorizeTelegramSender(chanOk, { message_id: 1, chat: { id: -9, type: "channel" } }).ok, true);
+});
+
+test("isStoreUnavailableError detects connection/store outages", () => {
+  assert.equal(isStoreUnavailableError("connect ECONNREFUSED 127.0.0.1:5435"), true);
+  assert.equal(isStoreUnavailableError("read ECONNRESET"), true);
+  assert.equal(isStoreUnavailableError("Connection terminated unexpectedly"), true);
+  assert.equal(isStoreUnavailableError("the database system is starting up"), true);
+  // Not a store outage:
+  assert.equal(isStoreUnavailableError("skill 'memory-ops' not found"), false);
+  assert.equal(isStoreUnavailableError("blocked: destructive action"), false);
 });
 
 test("summarizeTelegramUpdateTypes counts batch types", () => {

@@ -48,9 +48,7 @@ let page: Page | null = null;
 let activeProfile = "default";
 
 function launchArgs(viewportW: number, viewportH: number): string[] {
-  return [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
+  const args = [
     "--disable-blink-features=AutomationControlled",
     "--disable-dev-shm-usage",
     `--window-size=${viewportW},${viewportH}`,
@@ -59,8 +57,17 @@ function launchArgs(viewportW: number, viewportH: number): string[] {
     "--disable-extensions",
     "--no-first-run",
     "--no-default-browser-check",
-    "--ignore-certificate-errors",
   ];
+  // Disabling the Chromium sandbox and TLS verification is dangerous when
+  // visiting arbitrary (agent-steerable) web content. Keep both OFF by default;
+  // only opt in via env for constrained environments (e.g. root in a container).
+  if (process.env.CSAGENT_BROWSER_NO_SANDBOX === "1") {
+    args.push("--no-sandbox", "--disable-setuid-sandbox");
+  }
+  if (process.env.CSAGENT_BROWSER_INSECURE_TLS === "1") {
+    args.push("--ignore-certificate-errors");
+  }
+  return args;
 }
 
 async function applyStealthPatches(target: Page): Promise<void> {

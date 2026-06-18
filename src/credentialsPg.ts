@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { acquirePgPool, pgConfigured, pgConnectionString, releasePgPool } from "./pg/pool.js";
 
 export const SECRETS_KEY_ENV = "CSAGENT_SECRETS_KEY";
 
@@ -24,22 +25,33 @@ const CREDENTIALS_HISTORY_MIGRATION = readFileSync(
 let pool: pg.Pool | null = null;
 
 export function pgSecretsEnabled(): boolean {
-  return Boolean(process.env.CSAGENT_DATABASE_URL?.trim() && secretsKey());
+  return pgConfigured() && Boolean(secretsKey());
 }
 
 export function secretsKey(): string {
   return (process.env[SECRETS_KEY_ENV] ?? "").trim();
 }
 
-function connectionString(): string {
-  const url = process.env.CSAGENT_DATABASE_URL?.trim();
-  if (!url) throw new Error("CSAGENT_DATABASE_URL is not set");
-  return url;
+/** Minimum acceptable length for the pgcrypto passphrase (brute-force floor). */
+export const SECRETS_KEY_MIN_LENGTH = 24;
+
+/**
+ * Returns a warning string when the configured key is too weak, else null.
+ * pgcrypto treats the key as a passphrase and derives it with a low-iteration
+ * s2k — a short key makes the ciphertext at rest cheaply brute-forceable.
+ */
+export function secretsKeyStrengthIssue(): string | null {
+  const key = secretsKey();
+  if (!key) return null;
+  if (key.length < SECRETS_KEY_MIN_LENGTH) {
+    return `${SECRETS_KEY_ENV} is only ${key.length} chars — use >= ${SECRETS_KEY_MIN_LENGTH} (e.g. openssl rand -base64 32)`;
+  }
+  return null;
 }
 
 function getPool(): pg.Pool {
   if (!pool) {
-    pool = new pg.Pool({ connectionString: connectionString(), max: 3 });
+    pool = acquirePgPool(pgConnectionString());
   }
   return pool;
 }
@@ -182,9 +194,12 @@ export async function probePgCredentialStore(
   }
 }
 
+/** Re-exported for back-compat; the implementation lives in pg/pool.ts (Arch-1). */
+export { probePgReachable } from "./pg/pool.js";
+
 export async function closePgCredentialPool(): Promise<void> {
   if (!pool) return;
-  await pool.end();
+  await releasePgPool(pgConnectionString());
   pool = null;
   migrated = false;
 }

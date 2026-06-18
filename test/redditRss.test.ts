@@ -76,3 +76,22 @@ test("fetchAllRedditFeeds uses fetchImpl mock", async () => {
   assert.equal(calls, REDDIT_FEED_DEFS.length);
   assert.equal(snapshot.totalPosts, REDDIT_FEED_DEFS.length);
 });
+
+test("parseRedditAtomFeed drops non-http(s) links", () => {
+  const xml = `<feed>
+    <entry><title>ok</title><link href="https://reddit.com/r/x/1"/><published>2024-01-01T00:00:00Z</published><content>a</content></entry>
+    <entry><title>evil</title><link href="javascript:alert(1)"/><published>2024-01-01T00:00:00Z</published><content>b</content></entry>
+    <entry><title>file</title><link href="file:///etc/passwd"/><published>2024-01-01T00:00:00Z</published><content>c</content></entry>
+  </feed>`;
+  const items = parseRedditAtomFeed(xml, "x");
+  assert.equal(items.length, 1);
+  assert.equal(items[0]!.link, "https://reddit.com/r/x/1");
+});
+
+test("parseRedditAtomFeed caps entry count", () => {
+  const entries = Array.from({ length: 250 }, (_, i) =>
+    `<entry><title>t${i}</title><link href="https://reddit.com/r/x/${i}"/><published>2024-01-01T00:00:00Z</published><content>c</content></entry>`
+  ).join("");
+  const items = parseRedditAtomFeed(`<feed>${entries}</feed>`, "x");
+  assert.ok(items.length <= 200);
+});

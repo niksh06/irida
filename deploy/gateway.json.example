@@ -4,7 +4,11 @@
   "telegram": {
     "tokenEnv": "TELEGRAM_BOT_TOKEN",
     "pollIntervalMs": 2000,
-    "messageFormat": "rich"
+    "messageFormat": "rich",
+    "_comment_groups": "For a GROUP chat id (negative), also list the human user ids allowed to drive the agent. Otherwise group members are ignored.",
+    "allowedSenderIds": [],
+    "_comment_channel": "Set true only to act on CHANNEL posts (no per-user sender; admins only).",
+    "allowChannelPosts": false
   },
   "allowedChatIds": ["YOUR_CHAT_ID"],
   "skills": ["memory-ops", "kb-ops", "tool-economy", "browser-ops", "obsidian-ops", "cron-ops", "profile-ops", "gateway-ops"]

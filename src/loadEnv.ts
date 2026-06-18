@@ -2,9 +2,21 @@
  * Load csagent env files before CLI/MCP startup (no dotenv dependency).
  * Does not override variables already set in the process environment.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+
+/** Warn when a secret-bearing env file is group/other-readable (POSIX only). */
+function warnIfWorldReadable(path: string): void {
+  try {
+    const fullMode = statSync(path).mode & 0o777;
+    if ((fullMode & 0o077) !== 0) {
+      console.error(`[env] ${path} is group/other-readable (mode ${fullMode.toString(8)}) — it holds secrets; run: chmod 600 ${path}`);
+    }
+  } catch {
+    /* non-POSIX / stat failure — best effort */
+  }
+}
 
 function stripQuotes(value: string): string {
   if (
@@ -31,6 +43,7 @@ export function parseEnvFile(content: string): Record<string, string> {
 
 function applyEnvFile(path: string): void {
   if (!existsSync(path)) return;
+  warnIfWorldReadable(path);
   let parsed: Record<string, string>;
   try {
     parsed = parseEnvFile(readFileSync(path, "utf8"));

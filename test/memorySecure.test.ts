@@ -91,10 +91,14 @@ test(
       assert.ok(listed);
       assert.equal(listed!.body, SECURE_BODY_PLACEHOLDER);
 
-      // search by name matches, body masked; body content does not match.
-      const byName = await store.searchNotes(name, 10);
-      assert.ok(byName.some((n) => n.name === name && n.body === SECURE_BODY_PLACEHOLDER));
-      const byBody = await store.searchNotes("super-secret-value-12345", 10);
+      // Secure wing is excluded from default search (I-73/I-75) — name must NOT surface it.
+      const byNameDefault = await store.searchNotes(name, 10);
+      assert.ok(!byNameDefault.some((n) => n.name === name));
+      // Opt into the secure wing explicitly → found by name, body still masked.
+      const byNameSecure = await store.searchNotes(name, 10, { wings: [SECURE_WING] });
+      assert.ok(byNameSecure.some((n) => n.name === name && n.body === SECURE_BODY_PLACEHOLDER));
+      // Body content never leaks via search, even when the secure wing is opted in.
+      const byBody = await store.searchNotes("super-secret-value-12345", 10, { wings: [SECURE_WING] });
       assert.ok(!byBody.some((n) => n.name === name));
 
       // Raw row: body empty, ciphertext present (verified via placeholder when key missing).

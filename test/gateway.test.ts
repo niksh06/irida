@@ -17,7 +17,7 @@ import {
 import { dispatchWebhookRequest, parseWebhookBody, webhookAuthOk } from "../src/gatewayWebhook.js";
 import { savePairingFile } from "../src/gatewayPairing.js";
 import { startGateway } from "../src/gateway_cmd.js";
-import { writeExampleGatewayConfig } from "../src/gateway_cmd.js";
+import { writeExampleGatewayConfig } from "./helpers/gatewayConfig.js";
 import { Store } from "../src/store.js";
 import type { SdkLike, SdkCreateLike, SdkResumeLike, RunLike, AgentLike } from "../src/host.js";
 
@@ -90,6 +90,26 @@ test("loadGatewayConfig and allowlist", async () => {
     assert.ok(isChatAllowed(cfg, "u1"));
     assert.ok(!isChatAllowed(cfg, "stranger"));
     assert.equal(gatewayWebhookSecret(cfg), "s");
+    assert.deepEqual(validateGatewayConfig(dir), []);
+  });
+});
+
+test("validateGatewayConfig warns on group/channel id without sender policy (I-107)", async () => {
+  await withEnv({ TELEGRAM_BOT_TOKEN: "t" }, async () => {
+    const dir = tmp();
+    // Negative id (group/channel), no allowedSenderIds / allowChannelPosts → warn.
+    writeExampleGatewayConfig(dir, { adapter: "telegram", allowedChatIds: ["-1001"] });
+    const issues = validateGatewayConfig(dir);
+    assert.equal(issues.length, 1);
+    assert.match(issues[0]!, /-1001/);
+    assert.match(issues[0]!, /sender policy/);
+
+    // With a sender policy → clean.
+    writeExampleGatewayConfig(dir, {
+      adapter: "telegram",
+      allowedChatIds: ["-1001"],
+      telegramAllowedSenderIds: ["7001"],
+    });
     assert.deepEqual(validateGatewayConfig(dir), []);
   });
 });
