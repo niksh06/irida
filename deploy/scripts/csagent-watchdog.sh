@@ -48,6 +48,23 @@ if [ -f "$CRON_STATE" ]; then
   fi
 fi
 
+# 5. Postgres reachability — Docker Desktop dies periodically on this host (long
+#    uptime without reboot), and every gateway turn needs the store (I-112).
+#    Only checked when a DB URL is configured (sqlite installs skip this).
+if [ -n "${CSAGENT_DATABASE_URL:-}" ] && command -v docker >/dev/null 2>&1; then
+  PG_SERVICE="${CSAGENT_PG_SERVICE:-csagent-postgres}"
+  if ! docker info >/dev/null 2>&1; then
+    PROBLEMS+=("docker daemon down — Postgres unreachable, gateway turns will fail (try: open -a Docker)")
+  else
+    PG_CID="$(docker ps -q -f "name=$PG_SERVICE" 2>/dev/null | head -1)"
+    if [ -z "$PG_CID" ]; then
+      PROBLEMS+=("$PG_SERVICE container not running (try: deploy/scripts/ensure-postgres.sh)")
+    elif ! docker exec "$PG_CID" pg_isready -U "${CSAGENT_POSTGRES_USER:-csagent}" >/dev/null 2>&1; then
+      PROBLEMS+=("$PG_SERVICE not accepting connections")
+    fi
+  fi
+fi
+
 if [ "${#PROBLEMS[@]}" -gt 0 ]; then
   echo "csagent watchdog: ${#PROBLEMS[@]} problem(s)"
   for p in "${PROBLEMS[@]}"; do echo "- $p"; done

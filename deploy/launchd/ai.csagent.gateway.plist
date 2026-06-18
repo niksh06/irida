@@ -7,11 +7,8 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>__NODE_BIN__</string>
-        <string>__CSAGENT_ROOT__/node_modules/.bin/tsx</string>
-        <string>__CSAGENT_ROOT__/src/cli.ts</string>
-        <string>gateway</string>
-        <string>run</string>
+        <string>/bin/bash</string>
+        <string>__CSAGENT_ROOT__/deploy/scripts/gateway-launch.sh</string>
         <string>--adapter</string>
         <string>telegram</string>
     </array>

@@ -12,7 +12,12 @@ Hermes-style home: **`~/.csagent`**. Code in **`~/.csagent/csagent`**, runtime i
   logs/                # launchd stdout/stderr
   .agent/              # credentials, gateway, cron, sqlite, memory
   csagent/             # install copy (synced from repo by setup-home.sh)
+    skills/            # bundled Markdown skills (canonical prod path)
+    agent.config.json
+    src/
 ```
+
+**Skills:** live under **`$CSAGENT_ROOT/skills`**, not `~/.csagent/skills`. `setup-home.sh` rsyncs `skills/` from the repo into the install copy. Gateway/cron resolve them via `CSAGENT_ROOT` when `CSAGENT_HOME` has no local `skills/` overlay. Verify: `csagent doctor` → `skills root: …/csagent/skills`.
 
 ## Prod health (personal ops)
 

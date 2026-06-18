@@ -29,6 +29,11 @@ run() {
   fi
 }
 
+# Ensure the store is up first — a down Docker/Postgres makes every other check
+# (doctor, gateway) fail for the wrong reason (I-112).
+if [[ -f "$ROOT/deploy/scripts/ensure-postgres.sh" ]]; then
+  run "postgres" bash "$ROOT/deploy/scripts/ensure-postgres.sh"
+fi
 run "doctor" "$RUN" doctor
 run "gateway status" "$RUN" gateway status
 if [[ -f "$ROOT/deploy/gateway-smoke.sh" ]]; then
