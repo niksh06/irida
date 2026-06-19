@@ -13,12 +13,29 @@ describe("petAssets", () => {
     assert.ok(dir?.endsWith("deploy/assets/pet"));
   });
 
-  it("resolvePetAssetPath prefers dist when present", () => {
-    const petDir = resolvePetDir(process.cwd());
-    assert.ok(petDir);
-    const path = resolvePetAssetPath(petDir!, "idle", "light");
-    assert.ok(path);
-    assert.match(path!, /dist\/light\/idle\.png$|source\/idle\.png$/);
+  it("resolvePetAssetPath prefers dist over source", () => {
+    // Hermetic fixture — the repo's dist/ and *.png are gitignored, so a clean
+    // checkout (CI) has neither; build a temp pet dir instead.
+    const petDir = join(tmpdir(), `csagent-pet-assets-${Date.now()}`);
+    mkdirSync(join(petDir, "dist", "light"), { recursive: true });
+    mkdirSync(join(petDir, "source"), { recursive: true });
+    writeFileSync(
+      join(petDir, "manifest.json"),
+      JSON.stringify({ version: 1, build: { outputLight: "dist/light" } }),
+      "utf8"
+    );
+
+    // Only source present → falls back to source.
+    writeFileSync(join(petDir, "source", "idle.png"), Buffer.from([0x89, 0x50]));
+    const fromSource = resolvePetAssetPath(petDir, "idle", "light");
+    assert.ok(fromSource);
+    assert.match(fromSource!, /source\/idle\.png$/);
+
+    // dist present → preferred over source.
+    writeFileSync(join(petDir, "dist", "light", "idle.png"), Buffer.from([0x89, 0x50]));
+    const fromDist = resolvePetAssetPath(petDir, "idle", "light");
+    assert.ok(fromDist);
+    assert.match(fromDist!, /dist\/light\/idle\.png$/);
   });
 });
 
