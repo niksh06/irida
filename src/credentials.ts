@@ -2,6 +2,15 @@
  * Local API key storage under <stateDir>/credentials.json (default .agent/).
  * With CSAGENT_DATABASE_URL + CSAGENT_SECRETS_KEY: secrets live in Postgres (pgcrypto).
  * Env vars win for CI overrides. Plaintext file is chmod 600; directory is gitignored.
+ *
+ * Arch-7 note: the `if (pgSecretsEnabled())` branches here are deliberately NOT
+ * collapsed into a single polymorphic SecretStore. The two backends differ in
+ * behavior, not just storage — the PG path manages an in-memory cache, strips
+ * the plaintext file copy, migrates on warm, and validates secret format, while
+ * the lenient `save*` file API skips validation (and is tested as such). Read
+ * resolution is already a precedence chain (env → pg cache → file), not a
+ * branch. These distinctions were hardened by the 2026-06 split-brain/self-heal
+ * postmortems; unify with care.
  */
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, chmodSync } from "node:fs";
 import { resolve } from "node:path";

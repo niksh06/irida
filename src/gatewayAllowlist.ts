@@ -1,5 +1,11 @@
 /**
  * Gateway allowlist resolution — Postgres (encrypted) or gateway.json (SQLite).
+ *
+ * Arch-7 note: this module is the single resolution layer for the allowlist;
+ * the `if (pgGatewayAllowlistEnabled())` branches stay internal to it (the cache
+ * warm, pg→file migration, and plaintext-strip differ per backend). Call sites
+ * route through resolveAllowedChatIds/warmGatewayAllowlistCache rather than
+ * re-deciding the backend. This containment is the split-brain fix — keep it.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
