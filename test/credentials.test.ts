@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
   resolveApiKey,
+  resolveAnthropicKey,
+  resolveClaudeOAuthToken,
   resolveTelegramBotToken,
   saveCredentials,
   saveTelegramBotToken,
@@ -12,6 +14,8 @@ import {
   credentialsPath,
   CREDENTIALS_FILE,
 } from "../src/credentials.js";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { loadConfig } from "../src/config.js";
 import { cmdAuth } from "../src/auth_cmd.js";
 import { cmdRun } from "../src/run.js";
 import type { SdkLike } from "../src/host.js";
@@ -36,6 +40,90 @@ test("resolveApiKey prefers environment over file", async () => {
     const dir = mkdtempSync(resolve(tmpdir(), "cred-env-"));
     saveCredentials("file-key", dir);
     assert.deepEqual(resolveApiKey(dir), { key: "env-key", source: "env" });
+  });
+});
+
+test("resolveAnthropicKey: env over file over none", async () => {
+  const prev = process.env.ANTHROPIC_API_KEY;
+  try {
+    const dir = mkdtempSync(resolve(tmpdir(), "anthropic-"));
+    delete process.env.ANTHROPIC_API_KEY;
+    assert.equal(resolveAnthropicKey(dir).source, "none");
+
+    // file field
+    const stateDir = resolve(dir, loadConfig(dir).stateDir);
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      resolve(stateDir, CREDENTIALS_FILE),
+      JSON.stringify({ version: 1, anthropic_api_key: "file-anthropic" })
+    );
+    assert.deepEqual(resolveAnthropicKey(dir), { key: "file-anthropic", source: "file" });
+
+    process.env.ANTHROPIC_API_KEY = "env-anthropic";
+    assert.deepEqual(resolveAnthropicKey(dir), { key: "env-anthropic", source: "env" });
+  } finally {
+    if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = prev;
+  }
+});
+
+test("resolveClaudeOAuthToken: env over file over none", async () => {
+  const prev = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  try {
+    const dir = mkdtempSync(resolve(tmpdir(), "oauth-"));
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    assert.equal(resolveClaudeOAuthToken(dir).source, "none");
+
+    const stateDir = resolve(dir, loadConfig(dir).stateDir);
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      resolve(stateDir, CREDENTIALS_FILE),
+      JSON.stringify({ version: 1, claude_code_oauth_token: "file-oauth" })
+    );
+    assert.deepEqual(resolveClaudeOAuthToken(dir), { key: "file-oauth", source: "file" });
+
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "env-oauth";
+    assert.deepEqual(resolveClaudeOAuthToken(dir), { key: "env-oauth", source: "env" });
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    else process.env.CLAUDE_CODE_OAUTH_TOKEN = prev;
+  }
+});
+
+test("cmdRun claude-agent account: uses CLAUDE_CODE_OAUTH_TOKEN; empty does not block", async () => {
+  const prevApi = process.env.ANTHROPIC_API_KEY;
+  const prevOauth = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  await withKey(undefined, async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), "engine-acct-"));
+    writeFileSync(
+      resolve(dir, "agent.config.json"),
+      JSON.stringify({ engine: { provider: "claude-agent", auth: "account" } })
+    );
+    try {
+      let seen: { apiKey?: string } = {};
+      const sdk: SdkLike = {
+        prompt: async (_m, opts) => {
+          seen = { apiKey: opts.apiKey };
+          return { status: "finished", result: "ok", id: "s", agentId: "s" };
+        },
+      };
+
+      // token present → passed through
+      delete process.env.ANTHROPIC_API_KEY;
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-tok";
+      assert.equal(await cmdRun("hi", { sdk, dir, barePrompt: true, persistRun: false, quiet: true }), 0);
+      assert.equal(seen.apiKey, "oauth-tok");
+
+      // no token → account mode still proceeds (SDK would use `claude login`)
+      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      assert.equal(await cmdRun("hi", { sdk, dir, barePrompt: true, persistRun: false, quiet: true }), 0);
+      assert.equal(seen.apiKey, "");
+    } finally {
+      if (prevApi === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = prevApi;
+      if (prevOauth === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      else process.env.CLAUDE_CODE_OAUTH_TOKEN = prevOauth;
+    }
   });
 });
 
@@ -70,6 +158,33 @@ test("cmdRun works with file-stored key", async () => {
       },
     };
     assert.equal(await cmdRun("hi", { sdk, dir }), 0);
+  });
+});
+
+test("cmdRun claude-agent engine: uses ANTHROPIC_API_KEY + claude default model", async () => {
+  const prev = process.env.ANTHROPIC_API_KEY;
+  await withKey(undefined, async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), "cred-engine-"));
+    writeFileSync(
+      resolve(dir, "agent.config.json"),
+      JSON.stringify({ engine: { provider: "claude-agent" } })
+    );
+    process.env.ANTHROPIC_API_KEY = "env-anthropic";
+    try {
+      let seen: { apiKey?: string; model?: string } = {};
+      const sdk: SdkLike = {
+        prompt: async (_msg, opts) => {
+          seen = { apiKey: opts.apiKey, model: opts.model.id };
+          return { status: "finished", result: "ok", id: "s1", agentId: "s1" };
+        },
+      };
+      assert.equal(await cmdRun("hi", { sdk, dir, barePrompt: true, persistRun: false, quiet: true }), 0);
+      assert.equal(seen.apiKey, "env-anthropic");
+      assert.equal(seen.model, "claude-opus-4-8");
+    } finally {
+      if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = prev;
+    }
   });
 });
 

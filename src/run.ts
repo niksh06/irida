@@ -3,7 +3,13 @@
  * Non-interactive: destructive prompts are denied (safety, issue 006).
  * Persists run + session metadata to SQLite (issue 007). Maps to exit codes.
  */
-import { loadConfig, ConfigError } from "./config.js";
+import {
+  loadConfig,
+  ConfigError,
+  DEFAULT_CLAUDE_AGENT_MODEL,
+  type EngineProvider,
+  type EngineAuth,
+} from "./config.js";
 import { runOneShot, StartupError, type SdkLike } from "./host.js";
 import { createStore } from "./store.js";
 import { SESSION_CHANNEL } from "./sessionChannel.js";
@@ -17,7 +23,13 @@ import { buildPreTurnBlocks } from "./preTurn.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
-import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
+import {
+  API_KEY_HELP,
+  ANTHROPIC_API_KEY_HELP,
+  resolveApiKey,
+  resolveAnthropicKey,
+  resolveClaudeOAuthToken,
+} from "./credentials.js";
 import { formatErrorDetail } from "./runErrorDetail.js";
 import { buildRunLogMeta } from "./runContext.js";
 import type { SessionChannel } from "./sessionChannel.js";
@@ -49,8 +61,16 @@ export interface RunResult {
   text: string;
 }
 
-async function resolveSdk(injected?: SdkLike): Promise<SdkLike> {
+async function resolveSdk(
+  provider: EngineProvider,
+  authMode: EngineAuth,
+  injected?: SdkLike
+): Promise<SdkLike> {
   if (injected) return injected;
+  if (provider === "claude-agent") {
+    const { createClaudeAgentSdk } = await import("./engines/claudeAgentSdk.js");
+    return createClaudeAgentSdk({ authMode });
+  }
   const mod = await import("@cursor/sdk");
   return mod.Agent as unknown as SdkLike;
 }
@@ -64,12 +84,6 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     if (!quiet) console.error('run: a prompt is required, e.g. cursor-agent run "summarize this repo"');
     return { exitCode: EXIT.usage, text: "" };
   }
-  const { key: apiKey } = resolveApiKey(dir);
-  if (!apiKey) {
-    if (!quiet) console.error(`run: ${API_KEY_HELP}`);
-    return { exitCode: EXIT.config, text: "" };
-  }
-
   let cfg;
   try {
     cfg = loadConfig(dir);
@@ -77,8 +91,33 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     if (!quiet) console.error("run: " + (e instanceof ConfigError ? e.message : String(e)));
     return { exitCode: EXIT.config, text: "" };
   }
+
+  const provider = cfg.engine.provider;
+  const authMode: EngineAuth = provider === "claude-agent" ? (cfg.engine.auth ?? "api-key") : "api-key";
+
+  let apiKey = "";
+  if (provider === "cursor") {
+    apiKey = resolveApiKey(dir).key;
+    if (!apiKey) {
+      if (!quiet) console.error(`run: ${API_KEY_HELP}`);
+      return { exitCode: EXIT.config, text: "" };
+    }
+  } else if (authMode === "account") {
+    // Account mode: an empty token is fine — the Agent SDK falls back to an existing
+    // `claude login` session (~/.claude/.credentials.json). Don't hard-fail here.
+    apiKey = resolveClaudeOAuthToken(dir).key;
+  } else {
+    apiKey = resolveAnthropicKey(dir).key;
+    if (!apiKey) {
+      if (!quiet) console.error(`run: ${ANTHROPIC_API_KEY_HELP}`);
+      return { exitCode: EXIT.config, text: "" };
+    }
+  }
+
   const agentCwd = opts.cwd ?? cfg.cwd;
-  const effectiveModel = opts.model?.trim() || cfg.model;
+  const effectiveModel =
+    opts.model?.trim() ||
+    (provider === "claude-agent" ? (cfg.engine.model ?? DEFAULT_CLAUDE_AGENT_MODEL) : cfg.model);
   if (cfg.runtime === "cloud" && !cfg.safety.allowCloud) {
     if (!quiet) console.error("run: cloud runtime requires safety.allowCloud=true (MVP is local-first)");
     return { exitCode: EXIT.config, text: "" };
@@ -140,8 +179,9 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
   });
 
   try {
-    const sdk = await resolveSdk(opts.sdk).catch((e) => {
-      throw new StartupError("cannot load @cursor/sdk: " + (e as Error).message);
+    const sdk = await resolveSdk(provider, authMode, opts.sdk).catch((e) => {
+      const pkg = provider === "claude-agent" ? "@anthropic-ai/claude-agent-sdk" : "@cursor/sdk";
+      throw new StartupError(`cannot load ${pkg}: ` + (e as Error).message);
     });
     const r = await runOneShot(sdk, {
       prompt: finalPrompt,

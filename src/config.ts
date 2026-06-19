@@ -104,9 +104,34 @@ export interface BrowserConfig {
   chromePath?: string;
 }
 
+/** Engine selection (Irida / I-100): which agent runtime executes the work. */
+export type EngineProvider = "cursor" | "claude-agent";
+
+/**
+ * Auth mode for the claude-agent engine:
+ *  - "api-key": Anthropic API key (ANTHROPIC_API_KEY) — Console billing.
+ *  - "account": Claude subscription via OAuth (CLAUDE_CODE_OAUTH_TOKEN from
+ *    `claude setup-token`, or an existing `claude login` session in ~/.claude).
+ * Ignored for the cursor engine.
+ */
+export type EngineAuth = "api-key" | "account";
+
+export interface EngineConfig {
+  /** Active runtime: Cursor SDK (default) or Anthropic Claude Agent SDK. */
+  provider: EngineProvider;
+  /** claude-agent auth mode (default "api-key"). */
+  auth?: EngineAuth;
+  /** Optional model override for the claude-agent engine (default claude-opus-4-8). */
+  model?: string;
+}
+
+/** Default model for the claude-agent engine when none is configured. */
+export const DEFAULT_CLAUDE_AGENT_MODEL = "claude-opus-4-8";
+
 export interface AgentConfig {
   model: string;
   runtime: "local" | "cloud";
+  engine: EngineConfig;
   cwd: string;
   skillsPath: string;
   stateDir: string;
@@ -164,6 +189,7 @@ export function defaults(dir: string): AgentConfig {
   return {
     model: "composer-2.5",
     runtime: "local",
+    engine: { provider: "cursor" },
     cwd: dir,
     skillsPath: "skills",
     stateDir: defaultStateDir(dir),
@@ -262,9 +288,16 @@ const hooksSchema = z.object({
 
 const skillPolicySchema = z.object({ allowUnsafe: trimmedStringArray.optional() });
 
+const engineSchema = z.object({
+  provider: z.enum(["cursor", "claude-agent"]).optional(),
+  auth: z.enum(["api-key", "account"]).optional(),
+  model: nonEmptyString.optional(),
+});
+
 const agentConfigSchema = z.object({
   model: z.string().refine((s) => s.trim().length > 0, "must be a non-empty string").optional(),
   runtime: z.enum(["local", "cloud"]).optional(),
+  engine: engineSchema.optional(),
   skillsPath: z.string().optional(),
   stateDir: z.string().optional(),
   mcpServers: z.record(z.unknown()).optional(),
@@ -306,6 +339,13 @@ function validate(obj: unknown, dir: string): AgentConfig {
   const cfg = defaults(dir);
   if (parsed.model !== undefined) cfg.model = parsed.model;
   if (parsed.runtime !== undefined) cfg.runtime = parsed.runtime;
+  if (parsed.engine !== undefined) {
+    cfg.engine = {
+      provider: parsed.engine.provider ?? "cursor",
+      ...(parsed.engine.auth !== undefined ? { auth: parsed.engine.auth } : {}),
+      ...(parsed.engine.model !== undefined ? { model: parsed.engine.model } : {}),
+    };
+  }
   if (parsed.skillsPath !== undefined) cfg.skillsPath = parsed.skillsPath;
   if (parsed.stateDir !== undefined) cfg.stateDir = parsed.stateDir;
   if (parsed.mcpServers !== undefined) cfg.mcpServers = parsed.mcpServers;

@@ -50,10 +50,18 @@ export interface CredentialsFile {
   storage?: "pg";
   cursor_api_key?: string;
   telegram_bot_token?: string;
+  anthropic_api_key?: string;
+  claude_code_oauth_token?: string;
 }
 
 export const API_KEY_HELP =
   "Set CURSOR_API_KEY in the environment or run: csagent auth login --stdin";
+
+export const ANTHROPIC_API_KEY_HELP =
+  "claude-agent engine (auth=api-key): set ANTHROPIC_API_KEY in the environment";
+
+export const CLAUDE_OAUTH_HELP =
+  "claude-agent engine (auth=account): connect your Claude account — run `claude setup-token` and set CLAUDE_CODE_OAUTH_TOKEN, or run `claude login` (the SDK reads ~/.claude/.credentials.json)";
 
 export const TELEGRAM_TOKEN_HELP =
   "Set TELEGRAM_BOT_TOKEN in the environment or run: csagent auth telegram login --stdin";
@@ -118,6 +126,12 @@ function readCredentialsFileFromDisk(dir: string = process.cwd()): CredentialsFi
     }
     if (typeof parsed.telegram_bot_token === "string" && parsed.telegram_bot_token.trim()) {
       out.telegram_bot_token = parsed.telegram_bot_token.trim();
+    }
+    if (typeof parsed.anthropic_api_key === "string" && parsed.anthropic_api_key.trim()) {
+      out.anthropic_api_key = parsed.anthropic_api_key.trim();
+    }
+    if (typeof parsed.claude_code_oauth_token === "string" && parsed.claude_code_oauth_token.trim()) {
+      out.claude_code_oauth_token = parsed.claude_code_oauth_token.trim();
     }
     return out;
   } catch {
@@ -258,6 +272,35 @@ export function resolveApiKey(dir: string = process.cwd()): ResolvedApiKey {
   const fromPg = pgCachedSecret("cursor_api_key");
   if (fromPg) return { key: fromPg, source: "pg" };
   const fromFile = readCredentialsFileFromDisk(dir).cursor_api_key ?? "";
+  if (fromFile) return { key: fromFile, source: "file" };
+  return { key: "", source: "none" };
+}
+
+/**
+ * Resolve the Anthropic API key for the claude-agent engine (I-100).
+ * Env `ANTHROPIC_API_KEY` overrides the plaintext credentials.json field.
+ * (pg-encrypted storage is intentionally not wired yet — env is the primary path,
+ * and the Claude Agent SDK reads `ANTHROPIC_API_KEY` from the environment.)
+ */
+export function resolveAnthropicKey(dir: string = process.cwd()): ResolvedApiKey {
+  const fromEnv = (process.env.ANTHROPIC_API_KEY ?? "").trim();
+  if (fromEnv) return { key: fromEnv, source: "env" };
+  const fromFile = readCredentialsFileFromDisk(dir).anthropic_api_key ?? "";
+  if (fromFile) return { key: fromFile, source: "file" };
+  return { key: "", source: "none" };
+}
+
+/**
+ * Resolve the Claude account OAuth token for the claude-agent engine (auth=account, I-100).
+ * Env `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) overrides the plaintext
+ * credentials.json field. May legitimately return "none": when no token is stored, the
+ * Agent SDK falls back to an existing `claude login` session (~/.claude/.credentials.json),
+ * so callers should NOT hard-fail on an empty token in account mode.
+ */
+export function resolveClaudeOAuthToken(dir: string = process.cwd()): ResolvedApiKey {
+  const fromEnv = (process.env.CLAUDE_CODE_OAUTH_TOKEN ?? "").trim();
+  if (fromEnv) return { key: fromEnv, source: "env" };
+  const fromFile = readCredentialsFileFromDisk(dir).claude_code_oauth_token ?? "";
   if (fromFile) return { key: fromFile, source: "file" };
   return { key: "", source: "none" };
 }

@@ -16,6 +16,30 @@ test("defaults when no config file", () => {
   assert.equal(c.runtime, "local");
   assert.equal(c.cwd, dir);
   assert.equal(c.safety.allowCloud, false);
+  assert.equal(c.engine.provider, "cursor");
+});
+
+test("engine: selects claude-agent with optional model override", () => {
+  const dir = tmp();
+  writeFileSync(
+    resolve(dir, "agent.config.json"),
+    JSON.stringify({ engine: { provider: "claude-agent", model: "claude-opus-4-8" } })
+  );
+  const c = loadConfig(dir);
+  assert.equal(c.engine.provider, "claude-agent");
+  assert.equal(c.engine.model, "claude-opus-4-8");
+});
+
+test("engine: provider defaults to cursor when only model given", () => {
+  const dir = tmp();
+  writeFileSync(resolve(dir, "agent.config.json"), JSON.stringify({ engine: { model: "x" } }));
+  assert.equal(loadConfig(dir).engine.provider, "cursor");
+});
+
+test("engine: rejects unknown provider", () => {
+  const dir = tmp();
+  writeFileSync(resolve(dir, "agent.config.json"), JSON.stringify({ engine: { provider: "gpt" } }));
+  assert.throws(() => loadConfig(dir), ConfigError);
 });
 
 test("rejects secrets in config", () => {
