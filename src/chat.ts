@@ -74,7 +74,7 @@ export async function cmdChat(opts: ChatOptions = {}): Promise<ExitCode> {
       }
       if (out.kind === "error") {
         console.error("chat: " + out.message);
-        if (out.fatal || out.message.includes("status=error")) exitCode = EXIT.software;
+        if (out.fatal || out.runFailed) exitCode = EXIT.software;
         if (out.fatal) break;
         continue;
       }

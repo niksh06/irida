@@ -90,7 +90,14 @@ export interface ChatSessionOptions {
 export type TurnOutcome =
   | { kind: "ok"; status: string; assistantText: string; stats: TurnStats }
   | { kind: "blocked"; reason: string }
-  | { kind: "error"; message: string; fatal: boolean; partialAssistantText?: string };
+  | {
+      kind: "error";
+      message: string;
+      fatal: boolean;
+      partialAssistantText?: string;
+      /** The SDK run itself failed (status=error), vs. a pre/post-run logic error. */
+      runFailed?: boolean;
+    };
 
 export interface TurnStats {
   durationMs: number;
@@ -543,6 +550,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
               message: failed.message,
               fatal: false,
               partialAssistantText: failed.partialAssistantText,
+              runFailed: true,
             };
           }
           log(`[chat] sendTurn ok status=${lastStatus} assistantChars=${turnText.length}`);
