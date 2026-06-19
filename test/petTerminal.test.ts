@@ -77,14 +77,17 @@ describe("classifyPetActivity", () => {
     assert.equal(petTerminalLabel("idle", "read"), "wisp · watching");
   });
 
-  it("working frame shows the activity glyph in the tail, stays 5 lines", () => {
+  it("working frame shows the activity glyph as a top thought, stays 5 lines", () => {
     const frame = petTerminalFrame("working", 0, "search");
     assert.equal(frame.length, 5);
+    const thought = frame[0]!.parts.map((p) => p.t).join("");
+    assert.match(thought, /⌕/);
+    // the tail keeps its energy pulse, not the activity glyph
     const tail = frame[frame.length - 1]!.parts.map((p) => p.t).join("");
-    assert.match(tail, /⌕/);
-    // generic "tool" keeps the baked-in ⚡/≋ pulse, no override
+    assert.doesNotMatch(tail, /⌕/);
+    // generic "tool" keeps the baked-in sparkle line, no thought override
     const generic = petTerminalFrame("working", 0, "tool");
-    const genTail = generic[generic.length - 1]!.parts.map((p) => p.t).join("");
-    assert.doesNotMatch(genTail, /⌕/);
+    const genTop = generic[0]!.parts.map((p) => p.t).join("");
+    assert.doesNotMatch(genTop, /⌕/);
   });
 });

@@ -173,16 +173,15 @@ const ACTIVITY_GLYPH: Record<PetActivityKind, string> = {
   tool: "⚡",
 };
 
-const BODY_WIDTH = 8;
-
-/** Tail-line parts with `glyph` centered inside the 8-col body, space-padded. */
-function activityTailParts(glyph: string): PetGlyph[] {
-  const pad = Math.max(0, BODY_WIDTH - glyph.length);
-  const left = Math.floor(pad / 2);
+/**
+ * The "thought" line above the pet — shows what it is busy with, flanked by
+ * muted dots, centered so the glyph sits over the eye.
+ */
+function activityThoughtParts(glyph: string): PetGlyph[] {
   return [
-    { t: " ".repeat(left), c: "muted" },
+    { t: " ·  ", c: "muted" },
     { t: glyph, c: "warn" },
-    { t: " ".repeat(pad - left), c: "muted" },
+    { t: " · ", c: "muted" },
   ];
 }
 
@@ -194,10 +193,10 @@ export function petTerminalFrame(
   const frames = PET_WISP_FRAMES[state];
   const idx = frames.length > 1 ? tick % frames.length : 0;
   const lines = frames[idx]!.map((line) => ({ parts: [...line.parts] }));
-  // Replace the tail with a tool-specific glyph; "tool" keeps the generic
-  // ⚡/≋ pulse already baked into the frames.
+  // Surface the active tool as a "thought" in the top line; the tail keeps its
+  // baked ⚡/≋ energy pulse. "tool" is generic, so leave the sparkles alone.
   if (state === "working" && activity && activity !== "tool" && lines.length > 0) {
-    lines[lines.length - 1] = { parts: activityTailParts(ACTIVITY_GLYPH[activity]) };
+    lines[0] = { parts: activityThoughtParts(ACTIVITY_GLYPH[activity]) };
   }
   return lines;
 }

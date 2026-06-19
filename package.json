@@ -23,6 +23,7 @@
     "run:agent": "tsx src/cli.ts run",
     "chat": "tsx src/cli.ts chat",
     "tui": "tsx src/cli.ts tui",
+    "pet": "tsx scripts/pet-preview.mts",
     "sessions": "tsx src/cli.ts sessions",
     "resume": "tsx src/cli.ts resume",
     "config": "tsx src/cli.ts config",
