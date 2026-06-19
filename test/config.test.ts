@@ -47,3 +47,56 @@ test("accepts valid overrides", () => {
   assert.equal(c.runtime, "cloud");
   assert.equal(c.safety.allowCloud, true);
 });
+
+function write(dir: string, cfg: unknown): void {
+  writeFileSync(resolve(dir, "agent.config.json"), JSON.stringify(cfg));
+}
+
+test("safety is lenient — non-true coerces to false (no throw)", () => {
+  const dir = tmp();
+  write(dir, { safety: { allowCloud: "yes", allowAutoPr: 1 } });
+  const c = loadConfig(dir);
+  assert.equal(c.safety.allowCloud, false);
+  assert.equal(c.safety.allowAutoPr, false);
+});
+
+test("string arrays are trimmed and empties dropped", () => {
+  const dir = tmp();
+  write(dir, { memory: { onStart: ["  a ", "", "  ", "b"] } });
+  assert.deepEqual(loadConfig(dir).memory.onStart, ["a", "b"]);
+});
+
+test("nested strings are stored trimmed", () => {
+  const dir = tmp();
+  write(dir, { memory: { embeddings: { url: "  http://x  " } } });
+  assert.equal(loadConfig(dir).memory.embeddings?.url, "http://x");
+});
+
+test("rejects numeric minimums", () => {
+  for (const cfg of [
+    { memory: { maxCharsPerTurn: 10 } },
+    { memory: { autoRag: { limit: 0 } } },
+    { memory: { search: { hybridWeights: { fts: 0 } } } },
+    { hooks: { preTurn: { command: "x", timeoutMs: 50 } } },
+  ]) {
+    const dir = tmp();
+    write(dir, cfg);
+    assert.throws(() => loadConfig(dir), ConfigError, JSON.stringify(cfg));
+  }
+});
+
+test("rejects a nested object given as an array", () => {
+  const dir = tmp();
+  write(dir, { memory: [] });
+  assert.throws(() => loadConfig(dir), ConfigError);
+});
+
+test("skillPolicy only materializes when allowUnsafe is present", () => {
+  const a = tmp();
+  write(a, { skillPolicy: {} });
+  assert.equal(loadConfig(a).skillPolicy, undefined);
+
+  const b = tmp();
+  write(b, { skillPolicy: { allowUnsafe: [" s ", ""] } });
+  assert.deepEqual(loadConfig(b).skillPolicy, { allowUnsafe: ["s"] });
+});
