@@ -368,12 +368,24 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         `[chat] sendTurn session=${sessionId} agent=${agent.agentId ?? "-"} userChars=${msg.length} composedChars=${sendMsg.length} replayPrefixChars=${replayPrefix.length}`
       );
 
-      /** Replace the SDK agent. Does not consume the per-turn retry budget. */
-      const rotateAgent = async (reason: string): Promise<boolean> => {
+      /**
+       * Replace the SDK agent. Does not consume the per-turn retry budget.
+       *
+       * `preserveOldOnFailure` (idle refresh): create the replacement BEFORE
+       * disposing the current agent, so a transient createSession failure leaves
+       * the live agent intact and the turn proceeds on it instead of being
+       * stranded on a disposed handle (I-111). Error/recover rotations dispose
+       * first — their old handle is already known-bad.
+       */
+      const rotateAgent = async (
+        reason: string,
+        rotateOpts: { preserveOldOnFailure?: boolean } = {}
+      ): Promise<boolean> => {
         const previousAgentId = agent.agentId ?? null;
+        const previousAgent = agent;
         log(`[chat] rotate start reason=${reason} oldAgent=${previousAgentId ?? "-"}`);
         opts.onAgentRotating?.({ reason });
-        await disposeAgent(agent);
+        if (!rotateOpts.preserveOldOnFailure) await disposeAgent(previousAgent);
         let next: AgentLike;
         try {
           next = await createSession(sdk, {
@@ -383,13 +395,19 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             mcpServers: mcpServers,
           });
         } catch (e) {
+          const m = e instanceof StartupError ? e.message : String(e);
+          if (rotateOpts.preserveOldOnFailure) {
+            // Old agent is still alive — keep it and let the turn run normally.
+            log(`[chat] idle refresh failed, keeping current agent reason=${reason} ${redact(m)}`);
+            return false;
+          }
           // The old agent is already disposed; remember that so the next turn
           // retries createSession instead of sending into a dead handle.
           agentBroken = true;
-          const m = e instanceof StartupError ? e.message : String(e);
           log(`[chat] rotate failed reason=${reason} ${redact(m)}`);
           return false;
         }
+        if (rotateOpts.preserveOldOnFailure) await disposeAgent(previousAgent);
         agentBroken = false;
         agent = next;
         lastAgentTouchAt = Date.now();
@@ -440,8 +458,10 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         log(
           `[chat] idle refresh due lastTouch=${lastAgentTouchAt} idleMs=${resolveAgentIdleMs()} agoMs=${Date.now() - lastAgentTouchAt}`
         );
-        // Proactive refresh — must not consume the error-retry budget for this turn.
-        await rotateAgent(`idle_ttl ${resolveAgentIdleMs()}ms`);
+        // Proactive, best-effort refresh: must not consume the error-retry budget
+        // and must not strand the turn if the SDK is briefly unreachable (I-111) —
+        // on failure the live agent is kept and the turn proceeds on it.
+        await rotateAgent(`idle_ttl ${resolveAgentIdleMs()}ms`, { preserveOldOnFailure: true });
       }
 
       for (;;) {

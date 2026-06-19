@@ -117,4 +117,52 @@ describe("proactive idle refresh", () => {
       });
     });
   });
+
+  it("keeps the live agent and serves the turn when an idle refresh fails (I-111)", async () => {
+    await withKey(async () => {
+      await withEnv({ CSAGENT_AGENT_IDLE_MS: "1" }, async () => {
+        const dir = mkdtempSync(resolve(tmpdir(), "idle-fail-"));
+        let createCount = 0;
+        let sendCount = 0;
+        let disposed = 0;
+
+        const sdk: SdkCreateLike = {
+          create: async () => {
+            createCount++;
+            // Every refresh attempt fails (SDK briefly unreachable). Only the
+            // original agent (create #1) exists and works.
+            if (createCount >= 2) throw new Error("sdk create down");
+            const agent: AgentLike = {
+              agentId: "agent-1",
+              send: async () => {
+                sendCount++;
+                return okRun("served by the original agent");
+              },
+              close: async () => {
+                disposed++;
+              },
+            };
+            return agent;
+          },
+        };
+
+        const opened = await openChatSession({ sdk, dir, interactive: false });
+        assert.equal(opened.ok, true);
+        if (!opened.ok) return;
+
+        await new Promise((r) => setTimeout(r, 5)); // exceed the 1ms idle TTL
+
+        const out = await opened.session.sendTurn("hello after idle");
+        // Idle refresh failed, but the original agent was never disposed, so the
+        // turn completes on it instead of erroring on a dead handle.
+        assert.equal(out.kind, "ok");
+        if (out.kind === "ok") assert.equal(out.assistantText, "served by the original agent");
+        assert.equal(createCount, 2); // one failed refresh attempt
+        assert.equal(sendCount, 1); // served once, by the original agent
+        assert.equal(disposed, 0); // original agent NOT disposed
+        assert.equal(opened.session.agentId, "agent-1");
+        await opened.session.close();
+      });
+    });
+  });
 });
