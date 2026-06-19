@@ -19,7 +19,17 @@ import { defaultServiceLogSink } from "./serviceLog.js";
 export { GATEWAY_PEERS_FILE, loadGatewayPeers, saveGatewayPeers, peerKey } from "./gatewayPeers.js";
 export type { GatewayPeersFile } from "./gatewayPeers.js";
 
-export class GatewayRouterError extends Error {}
+/** Why a router turn failed — lets adapters branch without matching messages. */
+export type GatewayRouterErrorCode = "busy" | "blocked" | "turn-error";
+
+export class GatewayRouterError extends Error {
+  readonly code: GatewayRouterErrorCode;
+  constructor(message: string, code: GatewayRouterErrorCode = "turn-error") {
+    super(message);
+    this.name = "GatewayRouterError";
+    this.code = code;
+  }
+}
 
 export interface GatewayRouterOptions {
   dir: string;
@@ -102,7 +112,7 @@ export class GatewaySessionRouter {
   ): Promise<{ reply: string }> {
     const key = peerKey(this.adapter, chatId);
     if (this.busy.has(key)) {
-      throw new GatewayRouterError("peer busy — previous turn still running");
+      throw new GatewayRouterError("peer busy — previous turn still running", "busy");
     }
     this.busy.add(key);
     try {
@@ -142,7 +152,7 @@ export class GatewaySessionRouter {
       }
       const out = await session.sendTurn(turnText, hooks);
       if (out.kind === "ok") return { reply: out.assistantText };
-      if (out.kind === "blocked") throw new GatewayRouterError(out.reason);
+      if (out.kind === "blocked") throw new GatewayRouterError(out.reason, "blocked");
       const partial = out.partialAssistantText?.trim();
       throw new GatewayRouterError(partial ? `${out.message}\n\n${partial}` : out.message);
     } finally {

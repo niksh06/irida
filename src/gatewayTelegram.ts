@@ -9,7 +9,7 @@ import {
   type TelegramMessageFormat,
 } from "./telegramFormat.js";
 import { drainOutbox, enqueueOutbox, resolveOutboxDeliveryFormat, sendOutboxParkAck } from "./gatewayOutbox.js";
-import { GatewaySessionRouter } from "./gatewayRouter.js";
+import { GatewaySessionRouter, GatewayRouterError } from "./gatewayRouter.js";
 import { tryRegisterPairing } from "./gatewayPairing.js";
 import { gatewayTelegramBotCommands, isGatewaySlashCommand } from "./gatewaySlash.js";
 import type { ActivityDetail } from "./host.js";
@@ -143,6 +143,27 @@ export function isStoreUnavailableError(message: string): boolean {
   return /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENOTFOUND|connection terminated|connect\b.*:\d+|the database system is (starting up|shutting down)|too many clients/i.test(
     message
   );
+}
+
+/** Why an inbound turn failed — adapters branch on this, never on raw messages. */
+export type GatewayFailureKind =
+  | "busy"
+  | "message-too-long"
+  | "chat-not-allowed"
+  | "store-unavailable"
+  | "internal";
+
+/**
+ * Map a thrown turn error to a stable failure kind. The router carries a typed
+ * `code` (busy/blocked); store outages are recognized from the driver message
+ * at this single boundary; everything else is an internal error.
+ */
+export function classifyGatewayFailure(e: unknown): GatewayFailureKind {
+  if (e instanceof GatewayRouterError && e.code === "busy") return "busy";
+  const message = e instanceof Error ? e.message : String(e);
+  if (message === "chat not allowed") return "chat-not-allowed";
+  if (isStoreUnavailableError(message)) return "store-unavailable";
+  return "internal";
 }
 
 export interface TelegramAllowedUpdatesAssessment {
@@ -522,7 +543,10 @@ export interface ProcessTelegramUpdateResult {
   handled: boolean;
   chatId?: string;
   reply?: string;
+  /** Human/log detail for the failure (never matched against — see errorKind). */
   error?: string;
+  /** Typed failure classification driving the user-facing reply. */
+  errorKind?: GatewayFailureKind;
   /** Silently dropped (no chat reply) — e.g. unauthorized group sender. Logged only. */
   ignored?: string;
 }
@@ -562,10 +586,10 @@ export async function processTelegramUpdate(
   }
   const text = msg.text.trim();
   if (text.length > cfg.maxMessageLength) {
-    return { handled: true, chatId, error: "message too long" };
+    return { handled: true, chatId, error: "message too long", errorKind: "message-too-long" };
   }
   if (router.isBusy(chatId)) {
-    return { handled: true, chatId, error: "busy" };
+    return { handled: true, chatId, error: "busy", errorKind: "busy" };
   }
 
   const token = opts.token;
@@ -651,7 +675,12 @@ export async function processTelegramUpdate(
     return { handled: true, chatId, reply };
   } catch (e) {
     await flushProgress();
-    return { handled: true, chatId, error: e instanceof Error ? e.message : String(e) };
+    return {
+      handled: true,
+      chatId,
+      error: e instanceof Error ? e.message : String(e),
+      errorKind: classifyGatewayFailure(e),
+    };
   } finally {
     typing?.stop();
   }
@@ -819,13 +848,14 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       await deliverWithRetry(result.chatId, result.reply, true);
     } else if (result.error) {
       logError(`[gateway] telegram chat=${result.chatId} error: ${result.error}`);
-      if (result.error === "busy" || result.error === "peer busy — previous turn still running") {
+      const kind = result.errorKind ?? "internal";
+      if (kind === "busy") {
         await deliverWithRetry(result.chatId, "Still working on your previous message…", false);
-      } else if (result.error === "chat not allowed") {
+      } else if (kind === "chat-not-allowed") {
         await deliverWithRetry(result.chatId, "This chat is not allowlisted.", false);
-      } else if (result.error === "message too long") {
+      } else if (kind === "message-too-long") {
         await deliverWithRetry(result.chatId, "Message too long — please shorten it.", false);
-      } else if (isStoreUnavailableError(result.error)) {
+      } else if (kind === "store-unavailable") {
         // Postgres/store down (postmortem 2026-06-18) — tell the user their
         // message was not processed instead of failing silently/generically.
         await deliverWithRetry(

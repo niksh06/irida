@@ -25,12 +25,13 @@ import {
   classifyTelegramChat,
   authorizeTelegramSender,
   isStoreUnavailableError,
+  classifyGatewayFailure,
   TELEGRAM_MESSAGE_MAX,
   TELEGRAM_RICH_MESSAGE_MAX,
 } from "../src/gatewayTelegram.js";
 import type { GatewayConfig } from "../src/gatewayConfig.js";
 import { writeExampleGatewayConfig } from "./helpers/gatewayConfig.js";
-import { GatewaySessionRouter } from "../src/gatewayRouter.js";
+import { GatewaySessionRouter, GatewayRouterError } from "../src/gatewayRouter.js";
 import { GATEWAY_SLASH_COMMANDS } from "../src/gatewaySlash.js";
 import type { SdkLike, SdkCreateLike, SdkResumeLike, RunLike, AgentLike } from "../src/host.js";
 
@@ -667,6 +668,22 @@ test("isStoreUnavailableError detects connection/store outages", () => {
   // Not a store outage:
   assert.equal(isStoreUnavailableError("skill 'memory-ops' not found"), false);
   assert.equal(isStoreUnavailableError("blocked: destructive action"), false);
+});
+
+test("classifyGatewayFailure maps errors to typed kinds", () => {
+  // Router busy is carried by a typed code, not the message text.
+  assert.equal(
+    classifyGatewayFailure(new GatewayRouterError("peer busy — previous turn still running", "busy")),
+    "busy"
+  );
+  // A blocked turn is not "busy" — falls through to internal.
+  assert.equal(classifyGatewayFailure(new GatewayRouterError("blocked: rm -rf", "blocked")), "internal");
+  assert.equal(
+    classifyGatewayFailure(new Error("connect ECONNREFUSED 127.0.0.1:5435")),
+    "store-unavailable"
+  );
+  assert.equal(classifyGatewayFailure(new Error("chat not allowed")), "chat-not-allowed");
+  assert.equal(classifyGatewayFailure(new Error("kaboom")), "internal");
 });
 
 test("summarizeTelegramUpdateTypes counts batch types", () => {
