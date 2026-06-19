@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { redact } from "./redact.js";
+import { csagentActionLog } from "./env.js";
 import type { CronJob } from "./cronJobs.js";
 
 export const ACTION_TRANSCRIPT_FILE = "action.transcript.jsonl";
@@ -22,7 +23,7 @@ export interface ActionTranscriptEntry {
 }
 
 export function actionTranscriptEnabled(): boolean {
-  return (process.env.CSAGENT_ACTION_LOG ?? "").trim() !== "0";
+  return csagentActionLog() !== "0";
 }
 
 export function actionTranscriptPath(dir: string): string {

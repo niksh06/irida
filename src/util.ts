@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { csagentHome } from "./env.js";
+import { csagentHome, csagentAllowProdStateWrite } from "./env.js";
 
 /** True when running under the test runner (npm test / --test). */
 export function isTestRun(): boolean {
@@ -21,7 +21,7 @@ export function isTestRun(): boolean {
 export function guardProdStateWrite(stateRoot: string, label = "state"): void {
   const home = csagentHome();
   if (!home || !isTestRun()) return;
-  if (process.env.CSAGENT_ALLOW_PROD_STATE_WRITE === "1") return;
+  if (csagentAllowProdStateWrite() === "1") return;
   if (resolve(stateRoot) === resolve(home, ".agent")) {
     throw new Error(
       `refusing to write ${label} under CSAGENT_HOME/.agent during npm test — use a temp directory`

@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { csagentEnvFile } from "./env.js";
 
 /** Warn when a secret-bearing env file is group/other-readable (POSIX only). */
 function warnIfWorldReadable(path: string): void {
@@ -59,7 +60,7 @@ function applyEnvFile(path: string): void {
 export function loadCsagentEnv(cwd: string = process.cwd()): string[] {
   const loaded: string[] = [];
   const candidates: string[] = [];
-  const explicit = process.env.CSAGENT_ENV?.trim();
+  const explicit = csagentEnvFile();
   if (explicit) candidates.push(explicit);
   candidates.push(resolve(homedir(), ".csagent/csagent.env"));
   candidates.push(resolve(cwd, ".env"));

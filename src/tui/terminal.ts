@@ -7,9 +7,10 @@
  * Default mode: full transcript in scrollback → native trackpad scroll.
  * Alt screen: DEC 1007 maps wheel to arrow keys for Ink virtual viewport.
  */
+import { csagentTuiAlt } from "../env.js";
 
 export function useAltScreen(): boolean {
-  return (process.env.CSAGENT_TUI_ALT ?? "").trim() === "1";
+  return csagentTuiAlt() === "1";
 }
 
 export function enterTuiTerminal(): void {

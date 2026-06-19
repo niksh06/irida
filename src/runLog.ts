@@ -6,6 +6,7 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { RunRecord } from "./store.js";
+import { csagentRunLog } from "./env.js";
 
 export const RUN_LOG_FILE = "logs/runs.jsonl";
 const ROTATE_BYTES = 5 * 1024 * 1024;
@@ -34,7 +35,7 @@ export function runLogPath(dir: string, stateDir: string): string {
 }
 
 export function runLogEnabled(): boolean {
-  return (process.env.CSAGENT_RUN_LOG ?? "").trim() !== "0";
+  return csagentRunLog() !== "0";
 }
 
 export function runRecordToLogEntry(r: RunRecord): RunLogEntry {

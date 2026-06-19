@@ -19,6 +19,7 @@ import {
   DEFAULT_VIEWPORT_WIDTH,
 } from "./defaults.js";
 import { ensureBrowserDirs, loadCookies, saveCookies } from "./session.js";
+import { csagentBrowserNoSandbox, csagentBrowserInsecureTls, csagentChromePath } from "../env.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -61,10 +62,10 @@ function launchArgs(viewportW: number, viewportH: number): string[] {
   // Disabling the Chromium sandbox and TLS verification is dangerous when
   // visiting arbitrary (agent-steerable) web content. Keep both OFF by default;
   // only opt in via env for constrained environments (e.g. root in a container).
-  if (process.env.CSAGENT_BROWSER_NO_SANDBOX === "1") {
+  if (csagentBrowserNoSandbox() === "1") {
     args.push("--no-sandbox", "--disable-setuid-sandbox");
   }
-  if (process.env.CSAGENT_BROWSER_INSECURE_TLS === "1") {
+  if (csagentBrowserInsecureTls() === "1") {
     args.push("--ignore-certificate-errors");
   }
   return args;
@@ -143,7 +144,7 @@ export async function ensureBrowser(opts: BrowserLaunchOptions): Promise<Page> {
   const launched = await puppeteer.launch({
     headless: opts.headless,
     protocolTimeout: DEFAULT_PROTOCOL_TIMEOUT_MS,
-    executablePath: opts.chromePath?.trim() || process.env.CSAGENT_CHROME_PATH?.trim() || undefined,
+    executablePath: opts.chromePath?.trim() || csagentChromePath() || undefined,
     userDataDir,
     args: launchArgs(DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT),
     defaultViewport: {

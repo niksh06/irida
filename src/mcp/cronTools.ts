@@ -4,7 +4,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveMemoryRoot } from "../config.js";
-import { csagentMemoryDir, csagentStateDir } from "../env.js";
+import {
+  csagentMemoryDir,
+  csagentStateDir,
+  csagentGatewayChatId,
+  csagentGatewayAdapter,
+} from "../env.js";
 import {
   listCronJobsText,
   proposeUserCronJob,
@@ -21,8 +26,8 @@ export interface CronMcpContext {
 export function resolveCronMcpContext(): CronMcpContext {
   const dir = csagentMemoryDir() ?? process.cwd();
   const stateDir = csagentStateDir() ?? resolveMemoryRoot(dir);
-  const gatewayChatId = process.env.CSAGENT_GATEWAY_CHAT_ID?.trim() || undefined;
-  const gatewayAdapter = process.env.CSAGENT_GATEWAY_ADAPTER?.trim() || "telegram";
+  const gatewayChatId = csagentGatewayChatId();
+  const gatewayAdapter = csagentGatewayAdapter() || "telegram";
   return { dir, stateDir, gatewayChatId, gatewayAdapter };
 }
 

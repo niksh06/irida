@@ -48,3 +48,76 @@ export function csagentKbRoot(): string | undefined {
 export function backgroundPauseEnv(): string | undefined {
   return readTrimmed("CSAGENT_PAUSE_BACKGROUND");
 }
+
+// --- diagnostics / logging toggles (callers interpret "0"/"1") ---
+
+/** Action transcript logging — enabled unless set to "0". */
+export function csagentActionLog(): string | undefined {
+  return readTrimmed("CSAGENT_ACTION_LOG");
+}
+
+/** Run logging — enabled unless set to "0". */
+export function csagentRunLog(): string | undefined {
+  return readTrimmed("CSAGENT_RUN_LOG");
+}
+
+/** Idle-refresh interval in ms ("0" disables); caller parses the number. */
+export function csagentAgentIdleMs(): string | undefined {
+  return readTrimmed("CSAGENT_AGENT_IDLE_MS");
+}
+
+/** Explicit env-file path, highest precedence in loadCsagentEnv. */
+export function csagentEnvFile(): string | undefined {
+  return readTrimmed("CSAGENT_ENV");
+}
+
+/** Use the alternate TUI screen buffer when "1". */
+export function csagentTuiAlt(): string | undefined {
+  return readTrimmed("CSAGENT_TUI_ALT");
+}
+
+/** Comma-separated model picker override; caller splits. */
+export function csagentModels(): string | undefined {
+  return readTrimmed("CSAGENT_MODELS");
+}
+
+/** Escape hatch to allow writes under CSAGENT_HOME/.agent during tests. */
+export function csagentAllowProdStateWrite(): string | undefined {
+  return readTrimmed("CSAGENT_ALLOW_PROD_STATE_WRITE");
+}
+
+// --- gateway child-process context (passed to MCP tool subprocesses) ---
+
+export function csagentGatewayChatId(): string | undefined {
+  return readTrimmed("CSAGENT_GATEWAY_CHAT_ID");
+}
+
+export function csagentGatewayAdapter(): string | undefined {
+  return readTrimmed("CSAGENT_GATEWAY_ADAPTER");
+}
+
+// --- browser MCP / chromium launch ---
+
+export function csagentBrowserRoot(): string | undefined {
+  return readTrimmed("CSAGENT_BROWSER_ROOT");
+}
+
+export function csagentBrowserProfile(): string | undefined {
+  return readTrimmed("CSAGENT_BROWSER_PROFILE");
+}
+
+export function csagentBrowserHeadless(): string | undefined {
+  return readTrimmed("CSAGENT_BROWSER_HEADLESS");
+}
+
+export function csagentBrowserNoSandbox(): string | undefined {
+  return readTrimmed("CSAGENT_BROWSER_NO_SANDBOX");
+}
+
+export function csagentBrowserInsecureTls(): string | undefined {
+  return readTrimmed("CSAGENT_BROWSER_INSECURE_TLS");
+}
+
+export function csagentChromePath(): string | undefined {
+  return readTrimmed("CSAGENT_CHROME_PATH");
+}
