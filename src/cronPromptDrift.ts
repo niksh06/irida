@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { loadCronJobs, type CronJob } from "./cronJobs.js";
 import { resolveCronPromptFilePath } from "./cronPrompt.js";
+import { csagentRoot } from "./env.js";
 
 function fileHash12(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex").slice(0, 12);
@@ -19,7 +20,7 @@ function canonicalDeployPromptPath(job: CronJob, configDir: string): string | nu
     rel.startsWith("deploy/prompts/") ? rel : `deploy/prompts/${name}`,
   ];
   const roots = [
-    process.env.CSAGENT_ROOT?.trim(),
+    csagentRoot(),
     configDir,
     resolve(configDir, ".."),
   ].filter(Boolean) as string[];

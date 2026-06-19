@@ -4,6 +4,7 @@
 import { isAbsolute, resolve } from "node:path";
 import { stdin as input } from "node:process";
 import { loadConfig, ConfigError } from "./config.js";
+import { csagentKbRoot } from "./env.js";
 import { importHappyinKb } from "./importHappyinKb.js";
 import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from "./memory.js";
 import { alignMemorySilos } from "./memorySiloOps.js";
@@ -302,7 +303,7 @@ export async function cmdMemoryImportMd(
   opts: MemoryCmdOptions = {}
 ): Promise<ExitCode> {
   let memoryDir = opts.dir ?? process.cwd();
-  let kbRoot = process.env.CSAGENT_KB_ROOT?.trim() ?? "";
+  let kbRoot = csagentKbRoot() ?? "";
   let dryRun = false;
   const domains: string[] = [];
   for (let i = 0; i < argv.length; i++) {

@@ -18,6 +18,29 @@ export function csagentHome(): string | undefined {
 }
 
 /**
+ * Install root of the agent (e.g. ~/.csagent/csagent) — the second candidate
+ * for resolving skills/prompts/scripts when launched outside the project dir.
+ */
+export function csagentRoot(): string | undefined {
+  return readTrimmed("CSAGENT_ROOT");
+}
+
+/** Override for the project dir MCP child tools resolve memory/cron against. */
+export function csagentMemoryDir(): string | undefined {
+  return readTrimmed("CSAGENT_MEMORY_DIR");
+}
+
+/** Override for the state dir (.agent) MCP child tools resolve against. */
+export function csagentStateDir(): string | undefined {
+  return readTrimmed("CSAGENT_STATE_DIR");
+}
+
+/** Knowledge-base root for `memory kb` import/export. */
+export function csagentKbRoot(): string | undefined {
+  return readTrimmed("CSAGENT_KB_ROOT");
+}
+
+/**
  * Hard override that pauses all background/cron activity (truthy = paused).
  * Wins over the on-disk pause flag, so launchd jobs can be neutered via env
  * even before a deploy carries the file-based toggle. See backgroundPause.ts.

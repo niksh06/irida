@@ -8,6 +8,7 @@ import { isAbsolute, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { CronJob } from "./cronJobs.js";
 import { CronJobsError } from "./cronJobs.js";
+import { csagentRoot } from "./env.js";
 
 export const CRON_GATE_TIMEOUT_MS = 30_000;
 export const CRON_SCRIPT_TIMEOUT_MS = 5 * 60_000;
@@ -21,7 +22,7 @@ export function resolveCronScriptPath(job: CronJob, configDir: string, rel: stri
   const candidates: string[] = [];
   if (job.cwd?.trim()) candidates.push(resolve(job.cwd.trim(), trimmed));
   candidates.push(resolve(configDir, trimmed));
-  const root = process.env.CSAGENT_ROOT?.trim();
+  const root = csagentRoot();
   if (root) candidates.push(resolve(root, trimmed));
 
   for (const path of candidates) {

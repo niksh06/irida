@@ -4,7 +4,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { csagentHome } from "./env.js";
+import { csagentHome, csagentRoot } from "./env.js";
 import { DEFAULT_BROWSER_PROFILE } from "./browser/defaults.js";
 import type { AgentConfig } from "./config.js";
 import { resolveBrowserRoot } from "./mcp/browserContext.js";
@@ -24,7 +24,7 @@ const CODE_ROOT = dirname(fileURLToPath(import.meta.url));
 
 function memoryServerEntry(projectDir: string): { command: string; args: string[] } {
   const roots = [
-    process.env.CSAGENT_ROOT?.trim(),
+    csagentRoot(),
     projectDir,
     join(CODE_ROOT, ".."),
   ].filter(Boolean) as string[];
@@ -47,7 +47,7 @@ function memoryServerEntry(projectDir: string): { command: string; args: string[
 
 function browserServerEntry(projectDir: string): { command: string; args: string[] } {
   const roots = [
-    process.env.CSAGENT_ROOT?.trim(),
+    csagentRoot(),
     projectDir,
     join(CODE_ROOT, ".."),
   ].filter(Boolean) as string[];
@@ -78,7 +78,7 @@ export function browserMcpEnabled(cfg: AgentConfig): boolean {
 
 function cronServerEntry(projectDir: string): { command: string; args: string[] } {
   const roots = [
-    process.env.CSAGENT_ROOT?.trim(),
+    csagentRoot(),
     projectDir,
     join(CODE_ROOT, ".."),
   ].filter(Boolean) as string[];

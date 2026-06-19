@@ -4,6 +4,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveMemoryRoot, loadConfig } from "../config.js";
+import { csagentMemoryDir, csagentStateDir } from "../env.js";
 import { saveMemory } from "../memory.js";
 import { createMemoryStore, SECURE_WING } from "../memoryStore.js";
 import { MemoryFactValidationError } from "../memoryFactValidate.js";
@@ -26,8 +27,8 @@ export const MEMORY_MCP_TOOL_NAMES = [
 ] as const;
 
 export function resolveMemoryMcpContext(): MemoryMcpContext {
-  const dir = process.env.CSAGENT_MEMORY_DIR?.trim() || process.cwd();
-  const stateDir = process.env.CSAGENT_STATE_DIR?.trim() || resolveMemoryRoot(dir);
+  const dir = csagentMemoryDir() ?? process.cwd();
+  const stateDir = csagentStateDir() ?? resolveMemoryRoot(dir);
   return { dir, stateDir };
 }
 

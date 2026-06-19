@@ -3,6 +3,7 @@
  */
 import { resolve } from "node:path";
 import { loadConfig, resolveMemoryRoot } from "../config.js";
+import { csagentMemoryDir } from "../env.js";
 import { DEFAULT_BROWSER_PROFILE, DEFAULT_USER_AGENT } from "../browser/defaults.js";
 
 export interface BrowserMcpContext {
@@ -20,7 +21,7 @@ export function resolveBrowserRoot(projectDir: string): string {
 }
 
 export function resolveBrowserMcpContext(projectDir?: string): BrowserMcpContext {
-  const dir = projectDir || process.env.CSAGENT_MEMORY_DIR?.trim() || process.cwd();
+  const dir = projectDir || csagentMemoryDir() || process.cwd();
   const cfg = loadConfig(dir);
   const browserRoot = resolveBrowserRoot(dir);
   const profile =
