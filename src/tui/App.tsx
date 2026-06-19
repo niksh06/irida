@@ -72,7 +72,7 @@ import {
   tabCycleIndex,
   visibleTabSessions,
 } from "./sessionTabs.js";
-import { deriveTuiPetState } from "../petTerminal.js";
+import { classifyPetActivity, deriveTuiPetState, type PetActivityKind } from "../petTerminal.js";
 import type { PetState } from "../petState.js";
 
 let msgSeq = 0;
@@ -254,6 +254,17 @@ export function App(props: TuiOptions) {
       }),
     [busy, activityLog, lastTurnOk, lastTurnError, petClock]
   );
+
+  const petActivity: PetActivityKind | undefined = useMemo(() => {
+    if (petState !== "working") return undefined;
+    for (let i = activityLog.length - 1; i >= 0; i--) {
+      const e = activityLog[i]!;
+      if (e.phase === "call" && e.status === "running") {
+        return classifyPetActivity(e.toolName, e.kind);
+      }
+    }
+    return undefined;
+  }, [petState, activityLog]);
 
   useEffect(() => {
     const ms = busy ? 400 : 1000;
@@ -928,7 +939,7 @@ export function App(props: TuiOptions) {
           <Text color={theme.primary}>{banner.trimEnd()}</Text>
           <SessionTabBar sessions={tabBarSessions} activeId={meta?.sessionId ?? null} width={cols} />
         </Box>
-        <PetCorner state={petState} animTick={petClock} />
+        <PetCorner state={petState} animTick={petClock} activity={petActivity} />
       </Box>
 
       <Box

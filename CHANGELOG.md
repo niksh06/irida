@@ -42,6 +42,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Changed
 
+- **Wisp pet polish (I-97)** — all states now animate (idle blink, sleep breathing/zZz, sad teardrop, happy sparkle-pop) on uniform 5-line frames (no vertical jump); single-eye image enforced across every state; `working` reflects the active tool in both label and tail glyph (reading `▤` / writing `✎` / searching `⌕` / running `›_` / connecting `⇄`); `scripts/pet-preview.mts` to eyeball frames standalone
 - **Packaging (I-32)** — `npm run pack:check`; README test count; OPS develop checklist
 - **Episodic search exclude (I-73)** — wing `episodic` omitted from default FTS/semantic; CLI `--include-episodic`; MCP `includeEpisodic`
 - **TParser digest dedup** — stop writing `seen_post` memory facts (~15–20k/week); window-only dedup in prompts; removed cron `memoryFactsSubject` preamble; `csagent memory fact purge-seen-post` to drop legacy rows

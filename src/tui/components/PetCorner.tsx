@@ -4,6 +4,7 @@ import { theme } from "../theme.js";
 import {
   petTerminalFrame,
   petTerminalLabel,
+  type PetActivityKind,
   type PetColorRole,
   type PetGlyph,
 } from "../../petTerminal.js";
@@ -43,15 +44,19 @@ function GlyphLine(props: { parts: readonly PetGlyph[]; state: PetState }) {
   );
 }
 
-export function PetCorner(props: { state: PetState; animTick: number }) {
-  const lines = petTerminalFrame(props.state, props.animTick);
+export function PetCorner(props: {
+  state: PetState;
+  animTick: number;
+  activity?: PetActivityKind;
+}) {
+  const lines = petTerminalFrame(props.state, props.animTick, props.activity);
 
   return (
     <Box flexDirection="column" alignItems="flex-end" marginLeft={1}>
       {lines.map((line, i) => (
         <GlyphLine key={i} parts={line.parts} state={props.state} />
       ))}
-      <Text dimColor>{petTerminalLabel(props.state)}</Text>
+      <Text dimColor>{petTerminalLabel(props.state, props.activity)}</Text>
     </Box>
   );
 }
