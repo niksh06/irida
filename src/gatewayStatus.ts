@@ -26,19 +26,21 @@ export interface GatewayStatusLine {
   detail: string;
 }
 
-const GATEWAY_LABEL = "ai.csagent.gateway";
-const CRON_LABEL = "ai.csagent.cron-tick";
+// Accept both the new ai.irida.* labels and legacy ai.csagent.* (rename shim) so
+// status works whether prod has relabeled launchd yet (see deploy/IRIDA-MIGRATION.md).
+const GATEWAY_LABELS = ["ai.irida.gateway", "ai.csagent.gateway"];
+const CRON_LABELS = ["ai.irida.cron-tick", "ai.csagent.cron-tick"];
 
-function launchdRunning(label: string): { ok: boolean; detail: string } {
+function launchdRunning(labels: string[], isCron = false): { ok: boolean; detail: string } {
   try {
     const out = execSync("launchctl list", { encoding: "utf8", timeout: 5000 });
     for (const line of out.split("\n")) {
       const parts = line.trim().split(/\s+/);
-      if (parts.length >= 3 && parts[parts.length - 1] === label) {
+      if (parts.length >= 3 && labels.includes(parts[parts.length - 1]!)) {
         const pid = parts[0];
         const code = parts[1];
         if (pid === "-" || pid === "0") {
-          if (label === CRON_LABEL && code === "0") {
+          if (isCron && code === "0") {
             return { ok: true, detail: "interval job idle (last exit 0)" };
           }
           return { ok: false, detail: `loaded but not running (last exit ${code})` };
@@ -101,10 +103,10 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
       : "active — cron runs due jobs",
   });
 
-  const gwLaunch = launchdRunning(GATEWAY_LABEL);
+  const gwLaunch = launchdRunning(GATEWAY_LABELS);
   rows.push({ name: "launchd gateway", ok: gwLaunch.ok, detail: gwLaunch.detail });
 
-  const cronLaunch = launchdRunning(CRON_LABEL);
+  const cronLaunch = launchdRunning(CRON_LABELS, true);
   rows.push({ name: "launchd cron-tick", ok: cronLaunch.ok, detail: cronLaunch.detail });
 
   const infoLog = resolve(logDir, "gateway.log");
