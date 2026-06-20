@@ -15,7 +15,7 @@ export const REDDIT_FEED_DEFS: RedditFeedDef[] = [
   { sub: "Rag", rssUrl: "https://www.reddit.com/r/Rag/new.rss" },
 ];
 
-export const REDDIT_RSS_USER_AGENT = "irida/0.2 reddit-rss-fetch (personal digest; +https://github.com/niksh06/csagent)";
+export const REDDIT_RSS_USER_AGENT = "irida/0.2 reddit-rss-fetch (personal digest; +https://github.com/niksh06/irida)";
 
 export interface RedditRssItem {
   sub: string;

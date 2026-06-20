@@ -165,6 +165,6 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 - Requires Node.js ≥ 20 and a Cursor API key
 - Cloud runtime (`runtime: cloud`) is gated but not implemented yet (issue 016)
 
-[0.2.0]: https://github.com/niksh06/csagent/releases/tag/v0.2.0
-[0.1.1]: https://github.com/niksh06/csagent/releases/tag/v0.1.1
-[0.1.0]: https://github.com/niksh06/csagent/releases/tag/v0.1.0
+[0.2.0]: https://github.com/niksh06/irida/releases/tag/v0.2.0
+[0.1.1]: https://github.com/niksh06/irida/releases/tag/v0.1.1
+[0.1.0]: https://github.com/niksh06/irida/releases/tag/v0.1.0
