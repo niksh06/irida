@@ -7,6 +7,10 @@ import {
   resolveApiKey,
   resolveAnthropicKey,
   resolveClaudeOAuthToken,
+  saveAnthropicApiKey,
+  saveClaudeOAuthToken,
+  clearAnthropicApiKey,
+  clearClaudeOAuthToken,
   resolveTelegramBotToken,
   saveCredentials,
   saveTelegramBotToken,
@@ -125,6 +129,32 @@ test("cmdRun claude-agent account: uses CLAUDE_CODE_OAUTH_TOKEN; empty does not 
       else process.env.CLAUDE_CODE_OAUTH_TOKEN = prevOauth;
     }
   });
+});
+
+test("anthropic + claude oauth: save round-trips and clears independently", () => {
+  const prevA = process.env.ANTHROPIC_API_KEY;
+  const prevO = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  try {
+    const dir = mkdtempSync(resolve(tmpdir(), "cred-claude-"));
+    saveAnthropicApiKey("sk-ant-file", dir);
+    saveClaudeOAuthToken("oauth-file", dir);
+    assert.deepEqual(resolveAnthropicKey(dir), { key: "sk-ant-file", source: "file" });
+    assert.deepEqual(resolveClaudeOAuthToken(dir), { key: "oauth-file", source: "file" });
+
+    assert.ok(clearAnthropicApiKey(dir));
+    assert.equal(resolveAnthropicKey(dir).source, "none");
+    // clearing one preserves the other
+    assert.equal(resolveClaudeOAuthToken(dir).key, "oauth-file");
+    assert.ok(clearClaudeOAuthToken(dir));
+    assert.equal(resolveClaudeOAuthToken(dir).source, "none");
+  } finally {
+    if (prevA === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = prevA;
+    if (prevO === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    else process.env.CLAUDE_CODE_OAUTH_TOKEN = prevO;
+  }
 });
 
 test("saveCredentials writes mode 600 json", () => {

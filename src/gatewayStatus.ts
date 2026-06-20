@@ -161,6 +161,14 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   rows.push({ name: "outbox", ok: outbox.ok, detail: outbox.detail });
 
   const cfg = loadConfig(dir);
+  rows.push({
+    name: "engine",
+    ok: true,
+    detail:
+      cfg.engine.provider === "claude-agent"
+        ? `claude-agent (auth=${cfg.engine.auth ?? "api-key"}, model=${cfg.engine.model ?? "claude-opus-4-8"})`
+        : `cursor (model=${cfg.model})`,
+  });
   try {
     const metrics = loadRunMetrics(dir, cfg.stateDir, 24, { prodOnly: true });
     rows.push({

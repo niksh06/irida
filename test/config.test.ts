@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { loadConfig, ConfigError } from "../src/config.js";
+import { loadConfig, ConfigError, applyEngineOverride } from "../src/config.js";
 
 function tmp(): string {
   return mkdtempSync(resolve(tmpdir(), "cfg-"));
@@ -40,6 +40,17 @@ test("engine: rejects unknown provider", () => {
   const dir = tmp();
   writeFileSync(resolve(dir, "agent.config.json"), JSON.stringify({ engine: { provider: "gpt" } }));
   assert.throws(() => loadConfig(dir), ConfigError);
+});
+
+test("applyEngineOverride: sets provider+auth, validates, no mutation, no-op", () => {
+  const base = loadConfig(tmp());
+  const o = applyEngineOverride(base, "claude-agent", "account");
+  assert.equal(o.engine.provider, "claude-agent");
+  assert.equal(o.engine.auth, "account");
+  assert.equal(base.engine.provider, "cursor"); // original untouched
+  assert.equal(applyEngineOverride(base).engine.provider, "cursor"); // no-op when no flags
+  assert.throws(() => applyEngineOverride(base, "gpt"), ConfigError);
+  assert.throws(() => applyEngineOverride(base, undefined, "oauth"), ConfigError);
 });
 
 test("rejects secrets in config", () => {

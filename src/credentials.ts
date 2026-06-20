@@ -159,8 +159,16 @@ function writeCredentialsFile(dir: string, data: CredentialsFile): void {
   if (data.storage === "pg") body.storage = "pg";
   if (data.cursor_api_key?.trim()) body.cursor_api_key = data.cursor_api_key.trim();
   if (data.telegram_bot_token?.trim()) body.telegram_bot_token = data.telegram_bot_token.trim();
+  if (data.anthropic_api_key?.trim()) body.anthropic_api_key = data.anthropic_api_key.trim();
+  if (data.claude_code_oauth_token?.trim()) body.claude_code_oauth_token = data.claude_code_oauth_token.trim();
 
-  if (!body.cursor_api_key && !body.telegram_bot_token && body.storage !== "pg") {
+  if (
+    !body.cursor_api_key &&
+    !body.telegram_bot_token &&
+    !body.anthropic_api_key &&
+    !body.claude_code_oauth_token &&
+    body.storage !== "pg"
+  ) {
     if (existsSync(path)) unlinkSync(path);
     return;
   }
@@ -350,6 +358,40 @@ export function saveCredentials(apiKey: string, dir: string = process.cwd()): vo
 
 export async function persistCursorApiKey(apiKey: string, dir: string = process.cwd()): Promise<void> {
   await persistSecret("cursor_api_key", apiKey, dir);
+}
+
+/** Persist the Anthropic API key (claude-agent engine, file storage). Preserves other secrets. */
+export function saveAnthropicApiKey(key: string, dir: string = process.cwd()): void {
+  const v = key.trim();
+  if (!v) throw new Error("Anthropic API key must be a non-empty string");
+  const existing = readCredentialsFileFromDisk(dir);
+  writeCredentialsFile(dir, { ...existing, anthropic_api_key: v });
+}
+
+export function clearAnthropicApiKey(dir: string = process.cwd()): boolean {
+  const existing = readCredentialsFileFromDisk(dir);
+  if (!existing.anthropic_api_key) return false;
+  const next = { ...existing };
+  delete next.anthropic_api_key;
+  writeCredentialsFile(dir, next);
+  return true;
+}
+
+/** Persist the Claude account OAuth token (claude-agent engine, file storage). Preserves other secrets. */
+export function saveClaudeOAuthToken(token: string, dir: string = process.cwd()): void {
+  const v = token.trim();
+  if (!v) throw new Error("Claude OAuth token must be a non-empty string");
+  const existing = readCredentialsFileFromDisk(dir);
+  writeCredentialsFile(dir, { ...existing, claude_code_oauth_token: v });
+}
+
+export function clearClaudeOAuthToken(dir: string = process.cwd()): boolean {
+  const existing = readCredentialsFileFromDisk(dir);
+  if (!existing.claude_code_oauth_token) return false;
+  const next = { ...existing };
+  delete next.claude_code_oauth_token;
+  writeCredentialsFile(dir, next);
+  return true;
 }
 
 /** Persist Telegram bot token; preserves other secrets. */

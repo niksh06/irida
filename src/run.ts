@@ -6,6 +6,7 @@
 import {
   loadConfig,
   ConfigError,
+  applyEngineOverride,
   DEFAULT_CLAUDE_AGENT_MODEL,
   type EngineProvider,
   type EngineAuth,
@@ -53,6 +54,10 @@ export interface RunOptions {
   channel?: SessionChannel;
   /** Cron job id for run log when invoked from cron (I-68). */
   cronJob?: string;
+  /** Override engine.provider for this invocation (--engine). */
+  engine?: string;
+  /** Override engine.auth for this invocation (--auth). */
+  auth?: string;
 }
 
 export interface RunResult {
@@ -87,6 +92,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
   let cfg;
   try {
     cfg = loadConfig(dir);
+    cfg = applyEngineOverride(cfg, opts.engine, opts.auth);
   } catch (e) {
     if (!quiet) console.error("run: " + (e instanceof ConfigError ? e.message : String(e)));
     return { exitCode: EXIT.config, text: "" };

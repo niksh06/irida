@@ -40,8 +40,14 @@ Usage:
   csagent resume <id> "<p>"   continue a stored session (Agent.resume)
   csagent config              print non-secret config
   csagent auth login --stdin  save API key to .agent/credentials.json (600)
+  csagent auth anthropic login --stdin  Anthropic API key (claude-agent engine)
+  csagent auth claude token --stdin     Claude account OAuth token (claude-agent, auth=account)
   csagent auth telegram login --stdin  save Telegram bot token to credentials.json
   csagent auth status         keys configured? (never prints secrets)
+
+Engine (I-100): pick the runtime per command with --engine cursor|claude-agent
+  and the claude-agent auth with --auth api-key|account (overrides agent.config.json).
+  e.g.  csagent run "..." --engine claude-agent --auth account
   csagent memory list         durable notes (.agent/memory/)
   csagent cron list           scheduled jobs (.agent/cron.jobs.json)
   csagent background pause    pause autonomous cron (only my-side initiation)
@@ -56,17 +62,27 @@ Use \`csagent\`, \`npm run doctor\`, or \`npm run dev -- …\` for this project.
 Secrets: \`csagent auth login --stdin\` (local file) or CURSOR_API_KEY in the environment (CI override). Never in agent.config.json.
 `;
 
-/** Pull `--skill <name>` (repeatable) and `--yes-i-understand` flags; return the rest. */
-function extractFlags(args: string[]): { skills: string[]; yes: boolean; rest: string[] } {
+/** Pull `--skill <name>` (repeatable), `--yes-i-understand`, `--engine <p>`, `--auth <m>`; return the rest. */
+function extractFlags(args: string[]): {
+  skills: string[];
+  yes: boolean;
+  engine?: string;
+  auth?: string;
+  rest: string[];
+} {
   const skills: string[] = [];
   const rest: string[] = [];
   let yes = false;
+  let engine: string | undefined;
+  let auth: string | undefined;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--skill" && i + 1 < args.length) skills.push(args[++i]);
     else if (args[i] === "--yes-i-understand") yes = true;
+    else if (args[i] === "--engine" && i + 1 < args.length) engine = args[++i];
+    else if (args[i] === "--auth" && i + 1 < args.length) auth = args[++i];
     else rest.push(args[i]);
   }
-  return { skills, yes, rest };
+  return { skills, yes, engine, auth, rest };
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -79,12 +95,12 @@ async function main(argv: string[]): Promise<number> {
       return await cmdDoctor();
     }
     case "run": {
-      const { skills, yes, rest: r } = extractFlags(rest);
-      return cmdRun(r.join(" "), { skills, yesIUnderstand: yes });
+      const { skills, yes, engine, auth, rest: r } = extractFlags(rest);
+      return cmdRun(r.join(" "), { skills, yesIUnderstand: yes, engine, auth });
     }
     case "chat": {
-      const { skills, yes } = extractFlags(rest);
-      return cmdChat({ skills, yesIUnderstand: yes });
+      const { skills, yes, engine, auth } = extractFlags(rest);
+      return cmdChat({ skills, yesIUnderstand: yes, engine, auth });
     }
     case "tui": {
       const { skills, yes } = extractFlags(rest);
@@ -97,9 +113,9 @@ async function main(argv: string[]): Promise<number> {
     case "skills":
       return cmdSkills(rest);
     case "resume": {
-      const { yes, rest: r } = extractFlags(rest);
+      const { yes, engine, auth, rest: r } = extractFlags(rest);
       const [sid, ...p] = r;
-      return cmdResume(sid ?? "", p.join(" "), { yesIUnderstand: yes });
+      return cmdResume(sid ?? "", p.join(" "), { yesIUnderstand: yes, engine, auth });
     }
     case "config": {
       try {

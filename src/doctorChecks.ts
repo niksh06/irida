@@ -12,6 +12,8 @@ import {
   hasPlaintextCredentialsOnDisk,
   pgSecretsEnabled,
   resolveApiKey,
+  resolveAnthropicKey,
+  resolveClaudeOAuthToken,
   resolveTelegramBotToken,
   telegramTokenSourceLabel,
   validateCursorApiKeyFormat,
@@ -62,13 +64,47 @@ export interface DoctorCheck {
 export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   const checks: DoctorCheck[] = [];
 
-  const resolved = resolveApiKey(dir);
+  // Engine selection (I-100): which runtime + credential the active config uses.
+  let engineProvider = "cursor";
+  let engineAuth = "api-key";
+  try {
+    const c0 = loadConfig(dir);
+    engineProvider = c0.engine.provider;
+    engineAuth = c0.engine.auth ?? "api-key";
+  } catch {
+    /* config errors surface in the config check below */
+  }
   checks.push({
-    name: "CURSOR_API_KEY",
-    ok: resolved.key.length > 0,
-    detail: apiKeySourceLabel(resolved.source, dir),
-    fix: 'printf %s "cursor_..." | csagent auth login --stdin',
+    name: "engine",
+    ok: true,
+    detail: engineProvider === "claude-agent" ? `claude-agent (auth=${engineAuth})` : "cursor",
   });
+
+  if (engineProvider === "claude-agent" && engineAuth === "account") {
+    const t = resolveClaudeOAuthToken(dir);
+    checks.push({
+      name: "CLAUDE_CODE_OAUTH_TOKEN",
+      ok: true, // empty is fine — account mode falls back to a `claude login` session
+      detail: t.source === "none" ? "not set — using `claude login` session if present" : `set (${t.source})`,
+      fix: "claude setup-token   # then: csagent auth claude token --stdin",
+    });
+  } else if (engineProvider === "claude-agent") {
+    const a = resolveAnthropicKey(dir);
+    checks.push({
+      name: "ANTHROPIC_API_KEY",
+      ok: a.key.length > 0,
+      detail: a.source === "none" ? "missing" : `set (${a.source})`,
+      fix: 'printf %s "sk-ant-..." | csagent auth anthropic login --stdin',
+    });
+  } else {
+    const resolved = resolveApiKey(dir);
+    checks.push({
+      name: "CURSOR_API_KEY",
+      ok: resolved.key.length > 0,
+      detail: apiKeySourceLabel(resolved.source, dir),
+      fix: 'printf %s "cursor_..." | csagent auth login --stdin',
+    });
+  }
 
   const major = Number(process.versions.node.split(".")[0]);
   checks.push({ name: "node >= 20", ok: major >= 20, detail: `v${process.versions.node}` });

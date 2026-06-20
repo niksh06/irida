@@ -7,6 +7,12 @@ import {
   API_KEY_HELP,
   TELEGRAM_TOKEN_HELP,
   apiKeySourceLabel,
+  clearAnthropicApiKey,
+  clearClaudeOAuthToken,
+  resolveAnthropicKey,
+  resolveClaudeOAuthToken,
+  saveAnthropicApiKey,
+  saveClaudeOAuthToken,
   clearAllStoredCredentials,
   clearStoredTelegramToken,
   credentialsPath,
@@ -33,6 +39,10 @@ const AUTH_HELP = `csagent auth — local secrets storage (.agent/credentials.js
 Usage:
   csagent auth login --stdin              Cursor API key (stdin or prompt)
   csagent auth login --from-env           copy CURSOR_API_KEY from environment to file
+  csagent auth anthropic login --stdin    Anthropic API key (claude-agent engine, auth=api-key)
+  csagent auth anthropic logout           remove stored Anthropic API key
+  csagent auth claude token --stdin       Claude OAuth token from \`claude setup-token\` (auth=account)
+  csagent auth claude logout              remove stored Claude OAuth token
   csagent auth telegram login --stdin     Telegram bot token
   csagent auth telegram login --from-env  copy TELEGRAM_BOT_TOKEN from environment
   csagent auth logout                     remove stored secrets
@@ -66,6 +76,97 @@ async function promptLine(question: string): Promise<string> {
     });
   } finally {
     rl.close();
+  }
+}
+
+/** Read a secret from --from-env / --stdin / inline arg. */
+async function readSecretArg(
+  rest: string[],
+  envName: string,
+  label: string
+): Promise<{ value: string } | { error: ExitCode }> {
+  const fromEnv = rest.includes("--from-env");
+  const useStdin = rest.includes("--stdin") || (!fromEnv && rest.length === 0);
+  const inline = rest.find((a) => !a.startsWith("--"));
+  let value = "";
+  if (fromEnv) {
+    value = (process.env[envName] ?? "").trim();
+    if (!value) {
+      console.error(`${label}: ${envName} is not set in the environment`);
+      return { error: EXIT.config };
+    }
+  } else if (useStdin && !inline) {
+    value = input.isTTY ? await promptLine(`${label}: `) : await readStdinLine();
+  } else if (inline) {
+    value = inline.trim();
+  } else {
+    console.error(`${label}: provide --stdin, --from-env, or a value argument`);
+    return { error: EXIT.usage };
+  }
+  if (!value) {
+    console.error(`${label}: empty value`);
+    return { error: EXIT.usage };
+  }
+  return { value };
+}
+
+/** `csagent auth anthropic …` — Anthropic API key for the claude-agent engine (auth=api-key). */
+async function cmdAuthAnthropic(args: string[], dir: string): Promise<ExitCode> {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case "login": {
+      const r = await readSecretArg(rest, "ANTHROPIC_API_KEY", "auth anthropic login");
+      if ("error" in r) return r.error;
+      saveAnthropicApiKey(r.value, dir);
+      console.log(`auth: anthropic API key saved to ${credentialsPath(dir)} (mode 600)`);
+      return EXIT.ok;
+    }
+    case "logout":
+      console.log(
+        clearAnthropicApiKey(dir) ? "auth: anthropic API key removed" : "auth: no stored anthropic API key"
+      );
+      return EXIT.ok;
+    case undefined:
+    case "-h":
+    case "--help":
+    case "help":
+      console.log(AUTH_HELP);
+      return EXIT.ok;
+    default:
+      console.error(`auth anthropic: unknown subcommand '${sub}'\n\n${AUTH_HELP}`);
+      return EXIT.usage;
+  }
+}
+
+/** `csagent auth claude …` — Claude account OAuth token for the claude-agent engine (auth=account). */
+async function cmdAuthClaude(args: string[], dir: string): Promise<ExitCode> {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case "token": {
+      const r = await readSecretArg(rest, "CLAUDE_CODE_OAUTH_TOKEN", "auth claude token");
+      if ("error" in r) return r.error;
+      saveClaudeOAuthToken(r.value, dir);
+      console.log(`auth: claude OAuth token saved to ${credentialsPath(dir)} (mode 600)`);
+      return EXIT.ok;
+    }
+    case "logout":
+      console.log(
+        clearClaudeOAuthToken(dir) ? "auth: claude OAuth token removed" : "auth: no stored claude OAuth token"
+      );
+      return EXIT.ok;
+    case undefined:
+    case "-h":
+    case "--help":
+    case "help":
+      console.log(
+        "To connect your Claude account: run `claude setup-token` then `csagent auth claude token --stdin`,\n" +
+          "or run `claude login` (the Agent SDK reads the keychain / ~/.claude/.credentials.json).\n\n" +
+          AUTH_HELP
+      );
+      return EXIT.ok;
+    default:
+      console.error(`auth claude: unknown subcommand '${sub}'\n\n${AUTH_HELP}`);
+      return EXIT.usage;
   }
 }
 
@@ -136,6 +237,12 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
   if (args[0] === "telegram") {
     return cmdAuthTelegram(args.slice(1), dir);
   }
+  if (args[0] === "anthropic") {
+    return cmdAuthAnthropic(args.slice(1), dir);
+  }
+  if (args[0] === "claude") {
+    return cmdAuthClaude(args.slice(1), dir);
+  }
   const [sub, ...rest] = args;
   switch (sub) {
     case "login": {
@@ -194,6 +301,14 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
         `auth: CURSOR_API_KEY — ${api.source === "none" ? "not configured" : apiKeySourceLabel(api.source, dir)}`
       );
       console.log(`auth: TELEGRAM_BOT_TOKEN — ${telegramTokenSourceLabel(tg.source, dir)}`);
+      const ant = resolveAnthropicKey(dir);
+      const oauth = resolveClaudeOAuthToken(dir);
+      console.log(
+        `auth: ANTHROPIC_API_KEY — ${ant.source === "none" ? "not configured" : `set (${ant.source})`} [claude-agent engine, auth=api-key]`
+      );
+      console.log(
+        `auth: CLAUDE_CODE_OAUTH_TOKEN — ${oauth.source === "none" ? "not configured (account mode may still use a `claude login` session)" : `set (${oauth.source})`} [claude-agent engine, auth=account]`
+      );
       if (hasStoredCredentials(dir) && !pgSecretsEnabled()) {
         console.log(`auth: file ${credentialsPath(dir)}`);
       }

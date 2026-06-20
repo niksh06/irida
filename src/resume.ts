@@ -14,6 +14,7 @@
 import {
   loadConfig,
   ConfigError,
+  applyEngineOverride,
   DEFAULT_CLAUDE_AGENT_MODEL,
   type AgentConfig,
   type EngineProvider,
@@ -50,6 +51,10 @@ export interface ResumeOptions {
   write?: (s: string) => void;
   yesIUnderstand?: boolean;
   skills?: string[];
+  /** Override engine.provider for this invocation (--engine). */
+  engine?: string;
+  /** Override engine.auth for this invocation (--auth). */
+  auth?: string;
 }
 
 async function resolveSdk(
@@ -85,6 +90,7 @@ export async function cmdResume(
   let cfg: AgentConfig;
   try {
     cfg = loadConfig(dir);
+    cfg = applyEngineOverride(cfg, opts.engine, opts.auth);
   } catch (e) {
     console.error("resume: " + (e instanceof ConfigError ? e.message : String(e)));
     return EXIT.config;

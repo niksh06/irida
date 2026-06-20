@@ -185,6 +185,25 @@ export function resolveMemoryRoot(projectDir: string = process.cwd()): string {
   return resolve(projectDir, stateDir);
 }
 
+/** Apply CLI `--engine` / `--auth` overrides onto a loaded config (I-100). Throws ConfigError on bad values. */
+export function applyEngineOverride(cfg: AgentConfig, provider?: string, auth?: string): AgentConfig {
+  if (!provider && !auth) return cfg;
+  const engine: EngineConfig = { ...cfg.engine };
+  if (provider) {
+    if (provider !== "cursor" && provider !== "claude-agent") {
+      throw new ConfigError(`--engine must be 'cursor' or 'claude-agent' (got '${provider}')`);
+    }
+    engine.provider = provider;
+  }
+  if (auth) {
+    if (auth !== "api-key" && auth !== "account") {
+      throw new ConfigError(`--auth must be 'api-key' or 'account' (got '${auth}')`);
+    }
+    engine.auth = auth;
+  }
+  return { ...cfg, engine };
+}
+
 export function defaults(dir: string): AgentConfig {
   return {
     model: "composer-2.5",

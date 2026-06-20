@@ -5,6 +5,7 @@
 import {
   loadConfig,
   ConfigError,
+  applyEngineOverride,
   DEFAULT_CLAUDE_AGENT_MODEL,
   type AgentConfig,
   type EngineProvider,
@@ -80,6 +81,10 @@ export interface ChatSessionOptions {
   interactive?: boolean;
   /** Override config model for this session. */
   model?: string;
+  /** Override engine.provider for this session (--engine). */
+  engine?: string;
+  /** Override engine.auth for this session (--auth). */
+  auth?: string;
   /** Continue an existing stored session (live resume or transcript replay). */
   resumeSessionId?: string;
   /** Owning channel (telegram, tui, cli, …) — isolates gateway from TUI. */
@@ -170,6 +175,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   let cfg: AgentConfig;
   try {
     cfg = loadConfig(dir);
+    cfg = applyEngineOverride(cfg, opts.engine, opts.auth);
   } catch (e) {
     return {
       ok: false,
