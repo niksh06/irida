@@ -25,6 +25,8 @@ export interface SessionRecord {
   mcp_server_names: string;
   /** Entry channel: telegram, tui, cli, … — empty = legacy. */
   channel: string;
+  /** Engine that created the session: cursor | claude-agent (I-100). Empty/absent = legacy cursor. */
+  engine?: string;
 }
 
 export interface ListSessionsOptions {
@@ -71,6 +73,8 @@ export interface IStore {
     selected_skills?: string;
     mcp_server_names?: string;
     channel?: string;
+    /** Engine that owns the session (I-100). Empty preserves the existing value. */
+    engine?: string;
   }): Promise<void>;
   recordRun(r: RunRecord): Promise<void>;
   listSessions(limit?: number, opts?: ListSessionsOptions): Promise<SessionRecord[]>;
@@ -90,6 +94,10 @@ const SESSIONS_CHANNEL_MIGRATION = readFileSync(
 );
 const RUNS_ERROR_DETAIL_MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/005_runs_error_detail.sql"),
+  "utf8"
+);
+const SESSIONS_ENGINE_MIGRATION = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/006_sessions_engine.sql"),
   "utf8"
 );
 
@@ -209,6 +217,11 @@ export class SqliteStore implements IStore {
     } catch {
       /* column exists */
     }
+    try {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN engine TEXT NOT NULL DEFAULT 'cursor'`);
+    } catch {
+      /* column exists */
+    }
   }
 
   async upsertSession(s: Parameters<IStore["upsertSession"]>[0]): Promise<void> {
@@ -216,13 +229,14 @@ export class SqliteStore implements IStore {
     const title = redact(s.title);
     this.db
       .prepare(
-        `INSERT INTO sessions (id,title,cwd,runtime,sdk_agent_id,created_at,updated_at,last_status,selected_skills,mcp_server_names,channel)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        `INSERT INTO sessions (id,title,cwd,runtime,sdk_agent_id,created_at,updated_at,last_status,selected_skills,mcp_server_names,channel,engine)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(id) DO UPDATE SET
            title=excluded.title, cwd=excluded.cwd, runtime=excluded.runtime,
            sdk_agent_id=COALESCE(excluded.sdk_agent_id, sessions.sdk_agent_id),
            updated_at=excluded.updated_at, last_status=excluded.last_status,
-           channel=CASE WHEN excluded.channel != '' THEN excluded.channel ELSE sessions.channel END`
+           channel=CASE WHEN excluded.channel != '' THEN excluded.channel ELSE sessions.channel END,
+           engine=CASE WHEN excluded.engine != '' THEN excluded.engine ELSE sessions.engine END`
       )
       .run(
         s.id,
@@ -235,7 +249,8 @@ export class SqliteStore implements IStore {
         s.last_status ?? "",
         s.selected_skills ?? "",
         s.mcp_server_names ?? "",
-        s.channel ?? ""
+        s.channel ?? "",
+        s.engine ?? ""
       );
   }
 
@@ -291,6 +306,7 @@ export class SqliteStore implements IStore {
       selected_skills: row.selected_skills,
       mcp_server_names: row.mcp_server_names,
       channel: row.channel ?? "",
+      engine: row.engine ?? "",
     });
     return true;
   }
@@ -326,6 +342,7 @@ export class PostgresStore implements IStore {
     await this.pool.query(SESSIONS_RUNS_MIGRATION);
     await this.pool.query(SESSIONS_CHANNEL_MIGRATION);
     await this.pool.query(RUNS_ERROR_DETAIL_MIGRATION);
+    await this.pool.query(SESSIONS_ENGINE_MIGRATION);
     this.migrated = true;
   }
 
@@ -334,13 +351,14 @@ export class PostgresStore implements IStore {
     const now = nowIso();
     const title = redact(s.title);
     await this.pool.query(
-      `INSERT INTO sessions (id,title,cwd,runtime,sdk_agent_id,created_at,updated_at,last_status,selected_skills,mcp_server_names,channel)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `INSERT INTO sessions (id,title,cwd,runtime,sdk_agent_id,created_at,updated_at,last_status,selected_skills,mcp_server_names,channel,engine)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT(id) DO UPDATE SET
          title=EXCLUDED.title, cwd=EXCLUDED.cwd, runtime=EXCLUDED.runtime,
          sdk_agent_id=COALESCE(EXCLUDED.sdk_agent_id, sessions.sdk_agent_id),
          updated_at=EXCLUDED.updated_at, last_status=EXCLUDED.last_status,
-         channel=CASE WHEN EXCLUDED.channel != '' THEN EXCLUDED.channel ELSE sessions.channel END`,
+         channel=CASE WHEN EXCLUDED.channel != '' THEN EXCLUDED.channel ELSE sessions.channel END,
+         engine=CASE WHEN EXCLUDED.engine != '' THEN EXCLUDED.engine ELSE sessions.engine END`,
       [
         s.id,
         title,
@@ -353,6 +371,7 @@ export class PostgresStore implements IStore {
         s.selected_skills ?? "",
         s.mcp_server_names ?? "",
         s.channel ?? "",
+        s.engine ?? "",
       ]
     );
   }
@@ -414,6 +433,7 @@ export class PostgresStore implements IStore {
       selected_skills: row.selected_skills,
       mcp_server_names: row.mcp_server_names,
       channel: row.channel ?? "",
+      engine: row.engine ?? "",
     });
     return true;
   }

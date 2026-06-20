@@ -11,7 +11,14 @@
  * One-shot follow-up for MVP. Destructive prompts denied unless
  * --yes-i-understand. Skills may be injected.
  */
-import { loadConfig, ConfigError, type AgentConfig } from "./config.js";
+import {
+  loadConfig,
+  ConfigError,
+  DEFAULT_CLAUDE_AGENT_MODEL,
+  type AgentConfig,
+  type EngineProvider,
+  type EngineAuth,
+} from "./config.js";
 import { disposeAgent, eventText, sendAgentTurn, StartupError, type RunLike, type SdkResumeLike, type SdkCreateLike } from "./host.js";
 import { createStore } from "./store.js";
 import { safetyGate } from "./safety.js";
@@ -27,7 +34,13 @@ import { pickRunErrorDetail } from "./runErrors.js";
 import { formatErrorDetail } from "./runErrorDetail.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import { connectAgentForSession } from "./sessionConnect.js";
-import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
+import {
+  API_KEY_HELP,
+  ANTHROPIC_API_KEY_HELP,
+  resolveApiKey,
+  resolveAnthropicKey,
+  resolveClaudeOAuthToken,
+} from "./credentials.js";
 
 type ResumeSdk = SdkResumeLike & SdkCreateLike;
 
@@ -39,8 +52,16 @@ export interface ResumeOptions {
   skills?: string[];
 }
 
-async function resolveSdk(injected?: ResumeSdk): Promise<ResumeSdk> {
+async function resolveSdk(
+  provider: EngineProvider,
+  authMode: EngineAuth,
+  injected?: ResumeSdk
+): Promise<ResumeSdk> {
   if (injected) return injected;
+  if (provider === "claude-agent") {
+    const { createClaudeAgentSdk } = await import("./engines/claudeAgentSdk.js");
+    return createClaudeAgentSdk({ authMode }) as unknown as ResumeSdk;
+  }
   const mod = await import("@cursor/sdk");
   return mod.Agent as unknown as ResumeSdk;
 }
@@ -61,12 +82,6 @@ export async function cmdResume(
     console.error('resume: a prompt is required, e.g. cursor-agent resume <id> "continue"');
     return EXIT.usage;
   }
-  const { key: apiKey } = resolveApiKey(dir);
-  if (!apiKey) {
-    console.error(`resume: ${API_KEY_HELP}`);
-    return EXIT.config;
-  }
-
   let cfg: AgentConfig;
   try {
     cfg = loadConfig(dir);
@@ -75,11 +90,42 @@ export async function cmdResume(
     return EXIT.config;
   }
 
+  const provider = cfg.engine.provider;
+  const authMode: EngineAuth = provider === "claude-agent" ? (cfg.engine.auth ?? "api-key") : "api-key";
+
+  let apiKey = "";
+  if (provider === "cursor") {
+    apiKey = resolveApiKey(dir).key;
+    if (!apiKey) {
+      console.error(`resume: ${API_KEY_HELP}`);
+      return EXIT.config;
+    }
+  } else if (authMode === "account") {
+    apiKey = resolveClaudeOAuthToken(dir).key; // empty ok → `claude login` session
+  } else {
+    apiKey = resolveAnthropicKey(dir).key;
+    if (!apiKey) {
+      console.error(`resume: ${ANTHROPIC_API_KEY_HELP}`);
+      return EXIT.config;
+    }
+  }
+
+  const effectiveModel =
+    provider === "claude-agent" ? (cfg.engine.model ?? DEFAULT_CLAUDE_AGENT_MODEL) : cfg.model;
+  cfg = { ...cfg, model: effectiveModel };
+
   const store = createStore(dir, cfg.stateDir);
   try {
     const session = await store.getSession(sessionId);
     if (!session) {
       console.error(`resume: session '${sessionId}' not found (see \`cursor-agent sessions\`)`);
+      return EXIT.usage;
+    }
+    const sessionEngine = (session.engine ?? "").trim() || "cursor";
+    if (sessionEngine !== provider) {
+      console.error(
+        `resume: session '${sessionId}' was created with engine '${sessionEngine}', but the active engine is '${provider}'. Set engine.provider to '${sessionEngine}' or start a new session.`
+      );
       return EXIT.usage;
     }
 
@@ -122,9 +168,10 @@ export async function cmdResume(
 
     let sdk: ResumeSdk;
     try {
-      sdk = await resolveSdk(opts.sdk);
+      sdk = await resolveSdk(provider, authMode, opts.sdk);
     } catch (e) {
-      console.error("resume: cannot load @cursor/sdk: " + redact((e as Error).message));
+      const pkg = provider === "claude-agent" ? "@anthropic-ai/claude-agent-sdk" : "@cursor/sdk";
+      console.error(`resume: cannot load ${pkg}: ` + redact((e as Error).message));
       return EXIT.software;
     }
 
@@ -183,6 +230,7 @@ export async function cmdResume(
         sdk_agent_id: newAgentId,
         last_status: status,
         channel: session.channel ?? "",
+        engine: session.engine ?? "",
       });
       return status === "error" ? EXIT.software : EXIT.ok;
     } finally {

@@ -2,7 +2,14 @@
  * Shared interactive chat session for readline CLI and Ink TUI.
  * Agent.create + send per turn, streaming, SQLite persistence, safety gate.
  */
-import { loadConfig, ConfigError, type AgentConfig } from "./config.js";
+import {
+  loadConfig,
+  ConfigError,
+  DEFAULT_CLAUDE_AGENT_MODEL,
+  type AgentConfig,
+  type EngineProvider,
+  type EngineAuth,
+} from "./config.js";
 import {
   createSession,
   disposeAgent,
@@ -39,7 +46,13 @@ import { newId, preview, resultPreview, nowIso } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import type { ActivityDetail } from "./host.js";
 import { consumeRunStream, formatSdkError, isAgentRotatableError } from "./sdkErrors.js";
-import { API_KEY_HELP, resolveApiKey } from "./credentials.js";
+import {
+  API_KEY_HELP,
+  ANTHROPIC_API_KEY_HELP,
+  resolveApiKey,
+  resolveAnthropicKey,
+  resolveClaudeOAuthToken,
+} from "./credentials.js";
 import { formatRunErrorMessage, pickRunErrorDetail } from "./runErrors.js";
 import { formatErrorDetail } from "./runErrorDetail.js";
 import { agentLogVerbose, resolveAgentLogger } from "./agentLog.js";
@@ -124,8 +137,16 @@ export interface ChatSession {
   close(): Promise<void>;
 }
 
-async function resolveSdk(injected?: ChatSdk): Promise<ChatSdk> {
+async function resolveSdk(
+  provider: EngineProvider,
+  authMode: EngineAuth,
+  injected?: ChatSdk
+): Promise<ChatSdk> {
   if (injected) return injected;
+  if (provider === "claude-agent") {
+    const { createClaudeAgentSdk } = await import("./engines/claudeAgentSdk.js");
+    return createClaudeAgentSdk({ authMode }) as unknown as ChatSdk;
+  }
   const mod = await import("@cursor/sdk");
   return mod.Agent as unknown as ChatSdk;
 }
@@ -146,11 +167,6 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   const interactive = opts.interactive ?? true;
   const log = resolveAgentLogger({ component: "chat", onLog: opts.onLog });
 
-  const { key: apiKey } = resolveApiKey(dir);
-  if (!apiKey) {
-    return { ok: false, code: EXIT.config, message: API_KEY_HELP };
-  }
-
   let cfg: AgentConfig;
   try {
     cfg = loadConfig(dir);
@@ -165,7 +181,24 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     return { ok: false, code: EXIT.config, message: "cloud runtime requires safety.allowCloud=true (MVP is local-first)" };
   }
 
-  const activeModel = (opts.model ?? cfg.model).trim();
+  const provider = cfg.engine.provider;
+  const authMode: EngineAuth = provider === "claude-agent" ? (cfg.engine.auth ?? "api-key") : "api-key";
+
+  let apiKey = "";
+  if (provider === "cursor") {
+    apiKey = resolveApiKey(dir).key;
+    if (!apiKey) return { ok: false, code: EXIT.config, message: API_KEY_HELP };
+  } else if (authMode === "account") {
+    // Account mode tolerates an empty token (falls back to the `claude login` session).
+    apiKey = resolveClaudeOAuthToken(dir).key;
+  } else {
+    apiKey = resolveAnthropicKey(dir).key;
+    if (!apiKey) return { ok: false, code: EXIT.config, message: ANTHROPIC_API_KEY_HELP };
+  }
+
+  const defaultModel =
+    provider === "claude-agent" ? (cfg.engine.model ?? DEFAULT_CLAUDE_AGENT_MODEL) : cfg.model;
+  const activeModel = (opts.model ?? defaultModel).trim();
   if (!activeModel) {
     return { ok: false, code: EXIT.config, message: "model must be a non-empty string" };
   }
@@ -196,10 +229,11 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
   let sdk: ChatSdk;
   try {
-    sdk = await resolveSdk(opts.sdk);
+    sdk = await resolveSdk(provider, authMode, opts.sdk);
   } catch (e) {
     await store.close();
-    return { ok: false, code: EXIT.software, message: "cannot load @cursor/sdk: " + redact((e as Error).message) };
+    const pkg = provider === "claude-agent" ? "@anthropic-ai/claude-agent-sdk" : "@cursor/sdk";
+    return { ok: false, code: EXIT.software, message: `cannot load ${pkg}: ` + redact((e as Error).message) };
   }
 
   let agent: AgentLike;
@@ -227,6 +261,15 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         ok: false,
         code: EXIT.usage,
         message: sessionChannelConflictMessage(existing),
+      };
+    }
+    const sessionEngine = (existing.engine ?? "").trim() || "cursor";
+    if (sessionEngine !== provider) {
+      await store.close();
+      return {
+        ok: false,
+        code: EXIT.usage,
+        message: `session '${opts.resumeSessionId}' was created with engine '${sessionEngine}', but the active engine is '${provider}'. Set engine.provider to '${sessionEngine}' or start a new session.`,
       };
     }
     sessionId = existing.id;
@@ -272,6 +315,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     sdk_agent_id: agent.agentId ?? null,
     last_status: connectMode === "fresh" ? "created" : "resumed",
     channel: sessionChannel,
+    engine: provider,
   });
 
   // Live resume keeps SDK context — skip skills/onStart reinjection (gateway restart post-mortem 2026-06-13).

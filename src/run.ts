@@ -207,6 +207,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       sdk_agent_id: r.agentId,
       last_status: r.status,
       channel: runChannel,
+      engine: provider,
     });
     await store.recordRun({
       id: runId,
@@ -246,6 +247,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
         sdk_agent_id: null,
         last_status: "startup_error",
         channel: runChannel,
+        engine: provider,
       });
       await store.recordRun({
         id: runId,

@@ -1,23 +1,37 @@
 /**
  * Claude Agent SDK engine adapter (Irida / I-100).
  *
- * Wraps `@anthropic-ai/claude-agent-sdk` behind the same `SdkLike` interface the
- * Cursor SDK satisfies, so `run`/cron share one execution path. The Agent SDK is
- * a full agent runtime (its own loop, tools, MCP) — selecting it is the second
- * engine, not a completion fallback.
+ * Wraps `@anthropic-ai/claude-agent-sdk` behind the same interfaces the Cursor
+ * SDK satisfies (SdkLike for one-shot `run`; SdkCreateLike + SdkResumeLike +
+ * AgentLike for interactive `chat`/`resume`), so all surfaces share one path.
+ * The Agent SDK is a full agent runtime (its own loop, tools, MCP) — selecting
+ * it is the second engine, not a completion fallback.
  *
  * Auth (two modes, per engine.auth):
  *  - "api-key": Anthropic API key via env ANTHROPIC_API_KEY.
  *  - "account": Claude subscription via env CLAUDE_CODE_OAUTH_TOKEN (from
  *    `claude setup-token`), or — when no token is supplied — an existing
- *    `claude login` session the bundled binary reads from ~/.claude/.credentials.json.
- * The two credentials must not both be set for one call: API key would override
- * account auth. `applyEngineAuthEnv` sets one and clears the other for the call.
+ *    `claude login` session the bundled binary reads from the OS keychain /
+ *    ~/.claude/.credentials.json.
+ * `applyEngineAuthEnv` sets one credential and clears the other for the call.
  *
- * MVP scope: one-shot `prompt()` (SdkLike). Interactive create/resume come later.
+ * Session identity: the Agent SDK's `session_id` is our `agentId`. We persist it
+ * across turns (closure) and pass it as `resume` on the next `query()`.
  */
-import type { SdkLike, SdkPromptResult, McpServers } from "../host.js";
+import type {
+  SdkLike,
+  SdkPromptResult,
+  SdkCreateLike,
+  SdkResumeLike,
+  AgentLike,
+  RunLike,
+  McpServers,
+  AgentSendOptions,
+} from "../host.js";
 import type { EngineAuth } from "../config.js";
+import { DEFAULT_CLAUDE_AGENT_MODEL } from "../config.js";
+
+export type ClaudeAgentSdk = SdkLike & SdkCreateLike & SdkResumeLike;
 
 function restoreEnv(name: string, prev: string | undefined): void {
   if (prev === undefined) delete process.env[name];
@@ -27,7 +41,7 @@ function restoreEnv(name: string, prev: string | undefined): void {
 /**
  * Point the Agent SDK at exactly one credential for the duration of a call, then
  * restore. `secret` may be empty in account mode → rely on the `claude login`
- * session in ~/.claude. Returns a restore thunk; always call it in `finally`.
+ * session. Returns a restore thunk; always call it in `finally`.
  */
 export function applyEngineAuthEnv(authMode: EngineAuth, secret: string): () => void {
   const prevApiKey = process.env.ANTHROPIC_API_KEY;
@@ -61,57 +75,142 @@ function toAgentMcpServers(mcp?: McpServers): Record<string, unknown> | undefine
         ...(o.env && typeof o.env === "object" ? { env: o.env } : {}),
       };
     } else if (typeof o?.url === "string" && o.url.trim()) {
-      out[name] = {
-        type: "http",
-        url: o.url,
-        ...(o.headers && typeof o.headers === "object" ? { headers: o.headers } : {}),
-      };
+      out[name] = { type: "http", url: o.url, ...(o.headers && typeof o.headers === "object" ? { headers: o.headers } : {}) };
     }
-    // Entries that match neither shape are dropped (logged by the caller's MCP validation).
+    // Entries matching neither shape are dropped (logged by the caller's MCP validation).
   }
   return Object.keys(out).length ? out : undefined;
 }
 
-export function createClaudeAgentSdk(opts?: { authMode?: EngineAuth }): SdkLike {
+type QueryOptions = {
+  model: string;
+  cwd: string;
+  permissionMode: string;
+  mcpServers?: Record<string, unknown>;
+  resume?: string;
+};
+
+async function startQuery(message: string, options: QueryOptions): Promise<AsyncIterable<Record<string, unknown>>> {
+  const { query } = await import("@anthropic-ai/claude-agent-sdk");
+  return query({ prompt: message, options } as Parameters<typeof query>[0]) as AsyncIterable<Record<string, unknown>>;
+}
+
+/** Drain an Agent SDK message stream into the SdkLike one-shot result shape. */
+async function collectOneShot(q: AsyncIterable<Record<string, unknown>>): Promise<SdkPromptResult> {
+  let resultText = "";
+  let sessionId: string | undefined;
+  let isError = false;
+  for await (const m of q) {
+    if (typeof m.session_id === "string") sessionId = m.session_id;
+    if (m.type === "result") {
+      isError = Boolean(m.is_error);
+      if (typeof m.result === "string") resultText = m.result;
+    }
+  }
+  return { status: isError ? "error" : "finished", result: resultText, id: sessionId, agentId: sessionId };
+}
+
+export function createClaudeAgentSdk(opts?: { authMode?: EngineAuth }): ClaudeAgentSdk {
   const authMode: EngineAuth = opts?.authMode ?? "api-key";
+
+  /** Interactive agent handle: one Agent SDK session, resumed per turn. */
+  function makeAgent(init: {
+    model: string;
+    cwd: string;
+    apiKey: string;
+    mcpServers?: Record<string, unknown>;
+    sessionId?: string;
+  }): AgentLike {
+    let sessionId = init.sessionId;
+    const agent: AgentLike = {
+      agentId: sessionId,
+      async send(message: string, sendOpts?: AgentSendOptions): Promise<RunLike> {
+        const model = sendOpts?.model?.id?.trim() || init.model;
+        const restore = applyEngineAuthEnv(authMode, init.apiKey);
+        let q: AsyncIterable<Record<string, unknown>>;
+        try {
+          q = await startQuery(message, {
+            model,
+            cwd: init.cwd,
+            permissionMode: "bypassPermissions",
+            ...(init.mcpServers ? { mcpServers: init.mcpServers } : {}),
+            ...(sessionId ? { resume: sessionId } : {}),
+          });
+        } catch (e) {
+          restore();
+          throw e;
+        }
+
+        let status = "finished";
+        let sid = sessionId;
+        let finished = false;
+        let resolveWait: () => void = () => {};
+        const waitP = new Promise<void>((r) => (resolveWait = r));
+
+        const run: RunLike = {
+          async *stream() {
+            try {
+              for await (const m of q) {
+                if (typeof m.session_id === "string") {
+                  sid = m.session_id;
+                  agent.agentId = sid;
+                }
+                if (m.type === "result") status = Boolean(m.is_error) ? "error" : "finished";
+                yield m;
+              }
+            } finally {
+              sessionId = sid; // persist for the next turn's resume
+              finished = true;
+              resolveWait();
+              restore();
+            }
+          },
+          async wait() {
+            if (!finished) await waitP;
+            return { status, id: sid };
+          },
+        };
+        return run;
+      },
+    };
+    return agent;
+  }
+
   return {
     async prompt(message, sdkOpts): Promise<SdkPromptResult> {
       const restore = applyEngineAuthEnv(authMode, sdkOpts.apiKey ?? "");
       try {
-        const { query } = await import("@anthropic-ai/claude-agent-sdk");
-        const mcpServers = toAgentMcpServers(sdkOpts.mcpServers);
-        const q = query({
-          prompt: message,
-          options: {
-            model: sdkOpts.model.id,
-            cwd: sdkOpts.local.cwd,
-            // Non-interactive run: the model's tool calls must not block on prompts.
-            // Parity with the Cursor `run` path, which is also non-interactive and
-            // relies on the prompt-level safetyGate upstream.
-            permissionMode: "bypassPermissions",
-            ...(mcpServers ? { mcpServers } : {}),
-          },
-        } as Parameters<typeof query>[0]);
-
-        let resultText = "";
-        let sessionId: string | undefined;
-        let isError = false;
-        for await (const m of q as AsyncIterable<Record<string, unknown>>) {
-          if (m?.type === "result") {
-            sessionId = typeof m.session_id === "string" ? m.session_id : sessionId;
-            isError = Boolean(m.is_error);
-            if (typeof m.result === "string") resultText = m.result;
-          }
-        }
-        return {
-          status: isError ? "error" : "finished",
-          result: resultText,
-          id: sessionId,
-          agentId: sessionId,
-        };
+        const q = await startQuery(message, {
+          model: sdkOpts.model.id,
+          cwd: sdkOpts.local.cwd,
+          permissionMode: "bypassPermissions",
+          ...(toAgentMcpServers(sdkOpts.mcpServers) ? { mcpServers: toAgentMcpServers(sdkOpts.mcpServers) } : {}),
+        });
+        return await collectOneShot(q);
       } finally {
         restore();
       }
+    },
+
+    create(o) {
+      return makeAgent({
+        model: o.model.id,
+        cwd: o.local.cwd,
+        apiKey: o.apiKey,
+        mcpServers: toAgentMcpServers(o.mcpServers),
+      });
+    },
+
+    resume(agentId, o) {
+      // host.ts's resume opts carry no cwd; default to the process cwd. The Agent
+      // SDK re-establishes context from `resume`, but tools run in this cwd.
+      return makeAgent({
+        model: o.model?.id?.trim() || DEFAULT_CLAUDE_AGENT_MODEL,
+        cwd: process.cwd(),
+        apiKey: o.apiKey,
+        mcpServers: toAgentMcpServers(o.mcpServers),
+        sessionId: agentId,
+      });
     },
   };
 }
