@@ -26,40 +26,40 @@ import { cmdBackground } from "./background_cmd.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { EXIT } from "./exit.js";
 
-const HELP = `csagent — local Cursor SDK agent
+const HELP = `irida — local-first personal agent (Cursor SDK + Claude Agent SDK)
 
 Usage:
-  csagent doctor              environment checks
-  csagent doctor morning-alert   cron jobs health + Telegram alert on FAIL (launchd 08:05)
-  csagent run "<prompt>"      one-shot local task (Agent.prompt, local cwd)
-  csagent chat                interactive multi-turn session (Agent.create)
-  csagent tui                 Hermes-style Ink TUI for chat
-  csagent sessions            list stored sessions
-  csagent sessions search <q> filter by id/title/cwd
-  csagent store migrate       copy sqlite sessions/runs → postgres (CSAGENT_DATABASE_URL)
-  csagent resume <id> "<p>"   continue a stored session (Agent.resume)
-  csagent config              print non-secret config
-  csagent auth login --stdin  save API key to .agent/credentials.json (600)
-  csagent auth anthropic login --stdin  Anthropic API key (claude-agent engine)
-  csagent auth claude token --stdin     Claude account OAuth token (claude-agent, auth=account)
-  csagent auth telegram login --stdin  save Telegram bot token to credentials.json
-  csagent auth status         keys configured? (never prints secrets)
+  irida doctor              environment checks
+  irida doctor morning-alert   cron jobs health + Telegram alert on FAIL (launchd 08:05)
+  irida run "<prompt>"      one-shot local task (Agent.prompt, local cwd)
+  irida chat                interactive multi-turn session (Agent.create)
+  irida tui                 Hermes-style Ink TUI for chat
+  irida sessions            list stored sessions
+  irida sessions search <q> filter by id/title/cwd
+  irida store migrate       copy sqlite sessions/runs → postgres (IRIDA_DATABASE_URL)
+  irida resume <id> "<p>"   continue a stored session (Agent.resume)
+  irida config              print non-secret config
+  irida auth login --stdin  save Cursor API key to .agent/credentials.json (600)
+  irida auth anthropic login --stdin  Anthropic API key (claude-agent engine)
+  irida auth claude token --stdin     Claude account OAuth token (claude-agent, auth=account)
+  irida auth telegram login --stdin   save Telegram bot token to credentials.json
+  irida auth status         keys configured? (never prints secrets)
+  irida memory list         durable notes (.agent/memory/)
+  irida cron list           scheduled jobs (.agent/cron.jobs.json)
+  irida background pause    pause autonomous cron (only my-side initiation)
+  irida gateway run         messaging bridge (webhook → chat)
+  irida skills list         list local Markdown skills
+  irida skills search <q>   search skills by name/description/tags
+  irida pet status          pet snapshot (debug; mascot is in tui)
 
-Engine (I-100): pick the runtime per command with --engine cursor|claude-agent
-  and the claude-agent auth with --auth api-key|account (overrides agent.config.json).
-  e.g.  csagent run "..." --engine claude-agent --auth account
-  csagent memory list         durable notes (.agent/memory/)
-  csagent cron list           scheduled jobs (.agent/cron.jobs.json)
-  csagent background pause    pause autonomous cron (only my-side initiation)
-  csagent gateway run         messaging bridge (webhook → chat)
-  csagent skills list         list local Markdown skills
-  csagent skills search <q>   search skills by name/description/tags
-  csagent pet status          pet snapshot (debug; mascot is in tui)
+Engine: pick the runtime per command with --engine cursor|claude-agent and the
+  claude-agent auth with --auth api-key|account (overrides agent.config.json).
+  e.g.  irida run "..." --engine claude-agent --auth account
 
-Note: bare \`cursor-agent\` in PATH is Cursor's official CLI (different tool).
-Use \`csagent\`, \`npm run doctor\`, or \`npm run dev -- …\` for this project.
+Note: \`csagent\` is the deprecated alias for \`irida\`. Bare \`cursor-agent\` in PATH
+  is Cursor's official CLI (a different tool).
 
-Secrets: \`csagent auth login --stdin\` (local file) or CURSOR_API_KEY in the environment (CI override). Never in agent.config.json.
+Secrets: \`irida auth login --stdin\` (local file) or CURSOR_API_KEY in the environment (CI override). Never in agent.config.json.
 `;
 
 /** Pull `--skill <name>` (repeatable), `--yes-i-understand`, `--engine <p>`, `--auth <m>`; return the rest. */

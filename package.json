@@ -1,13 +1,15 @@
 {
-  "name": "cursor-agent",
+  "name": "irida",
   "version": "0.2.0",
-  "description": "Local-first personal agent powered by Cursor SDK (Hermes-inspired).",
+  "description": "Irida — local-first personal agent: one interface, two engines (Cursor SDK + Claude Agent SDK).",
   "type": "module",
   "bin": {
+    "irida": "scripts/irida.mjs",
     "csagent": "scripts/csagent.mjs"
   },
   "files": [
     "dist",
+    "scripts/irida.mjs",
     "scripts/csagent.mjs",
     "OPS.md",
     "REFERENCE.md",
