@@ -60,7 +60,7 @@ FAIL tg links: 0 t.me link(s)
 
 ## Morning re-check (08:00)
 
-launchd `ai.csagent.digest-qa-morning` — повторный `cron qa --morning --alert`.
+launchd `ai.irida.digest-qa-morning` — повторный `cron qa --morning --alert`.
 
 Alert prefix: `🌅 morning QA FAIL` (отличается от ночного `⚠️ QA FAIL`).
 

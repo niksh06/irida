@@ -3,12 +3,13 @@
 # Usage: bash deploy/gateway-smoke.sh
 set -euo pipefail
 
-HOME_DIR="${CSAGENT_HOME:-$HOME/.csagent}"
-ROOT="${CSAGENT_ROOT:-$HOME_DIR/csagent}"
+HOME_DIR="${IRIDA_HOME:-${CSAGENT_HOME:-$HOME/.irida}}"
+ROOT="${IRIDA_ROOT:-${CSAGENT_ROOT:-$HOME_DIR/irida}}"
 RUN="$ROOT/scripts/csagent-run.sh"
 LOG_DIR="$HOME_DIR/logs"
 GW_LOG="$LOG_DIR/gateway.log"
-LABEL="ai.csagent.gateway"
+LABEL="ai.irida.gateway"
+LEGACY_LABEL="ai.csagent.gateway"
 MAX_LOG_AGE_SEC="${GATEWAY_SMOKE_MAX_LOG_AGE_SEC:-900}"
 
 if [[ ! -x "$RUN" ]]; then
@@ -17,8 +18,8 @@ if [[ ! -x "$RUN" ]]; then
 fi
 
 # shellcheck source=/dev/null
-[[ -f "$HOME_DIR/csagent.env" ]] && source "$HOME_DIR/csagent.env"
-export CSAGENT_HOME="$HOME_DIR"
+[[ -f "$HOME_DIR/irida.env" ]] && source "$HOME_DIR/irida.env"
+export IRIDA_HOME="$HOME_DIR"
 export CSAGENT_ROOT="$ROOT"
 
 fail() {
@@ -27,7 +28,7 @@ fail() {
 }
 
 echo "== launchd gateway =="
-if ! launchctl list 2>/dev/null | awk -v lbl="$LABEL" '$NF == lbl && $1 != "-" { found=1 } END { exit !found }'; then
+if ! launchctl list 2>/dev/null | awk -v lbl="$LABEL" -v leg="$LEGACY_LABEL" '($NF == lbl || $NF == leg) && $1 != "-" { found=1 } END { exit !found }'; then
   fail "$LABEL not running (launchctl list)"
 fi
 echo "ok    launchd $LABEL running"

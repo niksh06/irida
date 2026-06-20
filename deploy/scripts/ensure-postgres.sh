@@ -13,14 +13,15 @@
 # Safe to run repeatedly (fast path exits immediately when already healthy).
 set -uo pipefail
 
-HOME_DIR="${CSAGENT_HOME:-$HOME/.csagent}"
-ROOT="${CSAGENT_ROOT:-$HOME_DIR/csagent}"
-COMPOSE_FILE="${CSAGENT_PG_COMPOSE:-$ROOT/deploy/docker-compose.csagent-postgres.yml}"
-SERVICE="${CSAGENT_PG_SERVICE:-csagent-postgres}"
-PG_PORT="${CSAGENT_POSTGRES_HOST_PORT:-5435}"
-PG_USER="${CSAGENT_POSTGRES_USER:-csagent}"
-PG_DB="${CSAGENT_POSTGRES_DB:-csagent}"
-WAIT_SECS="${CSAGENT_PG_WAIT_SECS:-60}"
+HOME_DIR="${IRIDA_HOME:-${CSAGENT_HOME:-$HOME/.irida}}"
+ROOT="${IRIDA_ROOT:-${CSAGENT_ROOT:-$HOME_DIR/irida}}"
+# PG container/user/db keep the persisted `csagent` identifiers (the live store is named so).
+COMPOSE_FILE="${IRIDA_PG_COMPOSE:-${CSAGENT_PG_COMPOSE:-$ROOT/deploy/docker-compose.csagent-postgres.yml}}"
+SERVICE="${IRIDA_PG_SERVICE:-${CSAGENT_PG_SERVICE:-csagent-postgres}}"
+PG_PORT="${IRIDA_POSTGRES_HOST_PORT:-${CSAGENT_POSTGRES_HOST_PORT:-5435}}"
+PG_USER="${IRIDA_POSTGRES_USER:-${CSAGENT_POSTGRES_USER:-csagent}}"
+PG_DB="${IRIDA_POSTGRES_DB:-${CSAGENT_POSTGRES_DB:-csagent}}"
+WAIT_SECS="${IRIDA_PG_WAIT_SECS:-${CSAGENT_PG_WAIT_SECS:-60}}"
 
 log() { echo "[ensure-postgres] $*"; }
 

@@ -3,23 +3,23 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>ai.csagent.backup-weekly</string>
+    <string>ai.irida.backup-weekly</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>__CSAGENT_ROOT__/deploy/backup-personal.sh</string>
+        <string>__IRIDA_ROOT__/deploy/backup-personal.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>__CSAGENT_ROOT__</string>
+    <string>__IRIDA_ROOT__</string>
 
     <key>EnvironmentVariables</key>
     <dict>
-        <key>CSAGENT_HOME</key>
-        <string>__CSAGENT_HOME__</string>
-        <key>CSAGENT_ROOT</key>
-        <string>__CSAGENT_ROOT__</string>
+        <key>IRIDA_HOME</key>
+        <string>__IRIDA_HOME__</string>
+        <key>IRIDA_ROOT</key>
+        <string>__IRIDA_ROOT__</string>
         <key>PATH</key>
         <string>__PATH_SNAPSHOT__</string>
     </dict>
@@ -35,9 +35,9 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>__CSAGENT_LOG_DIR__/backup-weekly.log</string>
+    <string>__IRIDA_LOG_DIR__/backup-weekly.log</string>
 
     <key>StandardErrorPath</key>
-    <string>__CSAGENT_LOG_DIR__/backup-weekly.error.log</string>
+    <string>__IRIDA_LOG_DIR__/backup-weekly.error.log</string>
 </dict>
 </plist>

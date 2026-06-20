@@ -8,8 +8,8 @@
 |-----|-------|-----|
 | TParser daily digest | `59 23 * * *` | `~/.irida/.agent/cron.jobs.json` → `tparser-daily-digest` |
 | Reddit daily digest | `58 23` fetch · `59 23` SDK | `reddit-rss-fetch` → `reddit-digest-daily`; note `reddit-digest-YYYY-MM-DD` wing `reddit` |
-| cron-tick | каждые 300s | launchd `ai.csagent.cron-tick` |
-| gateway | always | launchd `ai.csagent.gateway` |
+| cron-tick | каждые 300s | launchd `ai.irida.cron-tick` |
+| gateway | always | launchd `ai.irida.gateway` |
 | session-ingest | `5 0 * * *` | builtin → episodic memory notes (Wave B) |
 | cursor-mine | `15 0 * * *` | builtin → wing `cursor-ide` (all IDE transcripts; mtime refresh) |
 | cursor-lesson | `0 7 * * 1` | queue builtin + SDK distill → wing `cursor-lesson` (disabled by default) |
@@ -86,7 +86,7 @@ Skill: `cron-ops` в `gateway.json` (см. `deploy/gateway.json.example`).
 
 ### Утренний re-check (08:00)
 
-launchd `ai.csagent.digest-qa-morning` → `cron qa --morning --alert`.
+launchd `ai.irida.digest-qa-morning` → `cron qa --morning --alert`.
 
 Если ночной digest не прошёл QA (или не было run) — **🌅 morning QA FAIL** в Telegram.
 
@@ -96,7 +96,7 @@ bash ~/.irida/csagent/deploy/digest-qa-morning.sh   # ручной прогон
 
 ### Утренний cron health (08:05)
 
-launchd `ai.csagent.prod-check-morning` → `doctor morning-alert`.
+launchd `ai.irida.prod-check-morning` → `doctor morning-alert`.
 
 Если `cron.jobs.json` missing/invalid — **🌅 morning cron health FAIL** в Telegram (с `fix:` из doctor).
 
@@ -134,7 +134,7 @@ Tech reference KB: skill **`kb-ops`**, path `~/.irida/knowledge-space` (`git pul
 
 ## Backup
 
-**Авто:** launchd `ai.csagent.backup-weekly` — воскресенье **05:00** (после memory-curator 04:00).
+**Авто:** launchd `ai.irida.backup-weekly` — воскресенье **05:00** (после memory-curator 04:00).
 
 Переустановка после обновления кода:
 
@@ -172,7 +172,7 @@ Reference: `deploy/agent.config.example.json` (conservative: `limit: 2`, `semant
 ```bash
 cd "/path/to/csagent-clone"
 npm test && npm run build && bash deploy/setup-home.sh
-launchctl kickstart -k gui/$(id -u)/ai.csagent.gateway
+launchctl kickstart -k gui/$(id -u)/ai.irida.gateway
 ```
 
 5. `doctor` — row `autoRag` should show `enabled · limit=2 · wings=default`.

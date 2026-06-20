@@ -164,7 +164,7 @@ docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-pos
   pg_dump -U irida -Fc irida > ~/backups/csagent-$(date +%Y%m%d).dump
 ```
 
-Weekly launchd backup: `ai.csagent.backup-weekly` (Sun 05:00) via `deploy/backup-personal.sh`.
+Weekly launchd backup: `ai.irida.backup-weekly` (Sun 05:00) via `deploy/backup-personal.sh`.
 
 ---
 
@@ -180,9 +180,9 @@ After changing store: `bash deploy/setup-home.sh` and `install-launchd.sh` if yo
 
 | Service | Role | Schedule |
 |---------|------|----------|
-| `ai.csagent.gateway` | Telegram long-poll | always (KeepAlive; gateway exits non-zero on `uncaughtException` → restart) |
-| `ai.csagent.cron-tick` | `irida cron tick` | every 300s |
-| `ai.csagent.backup-weekly` | `backup-personal.sh` | Sun 05:00 |
+| `ai.irida.gateway` | Telegram long-poll | always (KeepAlive; gateway exits non-zero on `uncaughtException` → restart) |
+| `ai.irida.cron-tick` | `irida cron tick` | every 300s |
+| `ai.irida.backup-weekly` | `backup-personal.sh` | Sun 05:00 |
 
 Env injected into plists from `~/.irida/irida.env` by `install-launchd.sh`: `IRIDA_DATABASE_URL`, `IRIDA_SECRETS_KEY`, optional `OBSIDIAN_VAULT_PATH`.
 

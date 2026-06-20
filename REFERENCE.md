@@ -335,7 +335,7 @@ Simple inline job (no delegates):
 irida cron list
 irida cron run tparser-daily-digest
 irida cron qa                    # digest QA (after first nightly run)
-irida cron tick    # launchd ai.csagent.cron-tick every 5 min, or system crontab
+irida cron tick    # launchd ai.irida.cron-tick every 5 min, or system crontab
 ```
 
 Job extras:

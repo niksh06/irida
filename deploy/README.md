@@ -59,11 +59,11 @@ bash ~/.irida/csagent/deploy/install-launchd.sh
 
 | Label | Role | Interval |
 |-------|------|----------|
-| `ai.csagent.gateway` | Telegram long-poll | always (KeepAlive) |
-| `ai.csagent.cron-tick` | `irida cron tick` | every 300s |
-| `ai.csagent.backup-weekly` | `backup-personal.sh` | Sun 05:00 |
-| `ai.csagent.digest-qa-morning` | `digest-qa-morning.sh` | daily 08:00 |
-| `ai.csagent.prod-check-morning` | `prod-check-morning.sh` | daily 08:05 |
+| `ai.irida.gateway` | Telegram long-poll | always (KeepAlive) |
+| `ai.irida.cron-tick` | `irida cron tick` | every 300s |
+| `ai.irida.backup-weekly` | `backup-personal.sh` | Sun 05:00 |
+| `ai.irida.digest-qa-morning` | `digest-qa-morning.sh` | daily 08:00 |
+| `ai.irida.prod-check-morning` | `prod-check-morning.sh` | daily 08:05 |
 
 Logs: `~/.irida/logs/{gateway,cron-tick}.{log,error.log}`
 

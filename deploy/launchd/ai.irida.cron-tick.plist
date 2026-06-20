@@ -3,30 +3,30 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>ai.csagent.cron-tick</string>
+    <string>ai.irida.cron-tick</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>__NODE_BIN__</string>
-        <string>__CSAGENT_ROOT__/node_modules/.bin/tsx</string>
-        <string>__CSAGENT_ROOT__/src/cli.ts</string>
+        <string>__IRIDA_ROOT__/node_modules/.bin/tsx</string>
+        <string>__IRIDA_ROOT__/src/cli.ts</string>
         <string>cron</string>
         <string>tick</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>__CSAGENT_ROOT__</string>
+    <string>__IRIDA_ROOT__</string>
 
     <key>EnvironmentVariables</key>
     <dict>
-        <key>CSAGENT_HOME</key>
-        <string>__CSAGENT_HOME__</string>
-        <key>CSAGENT_ROOT</key>
-        <string>__CSAGENT_ROOT__</string>
-        <key>CSAGENT_DATABASE_URL</key>
-        <string>__CSAGENT_DATABASE_URL__</string>
-        <key>CSAGENT_SECRETS_KEY</key>
-        <string>__CSAGENT_SECRETS_KEY__</string>
+        <key>IRIDA_HOME</key>
+        <string>__IRIDA_HOME__</string>
+        <key>IRIDA_ROOT</key>
+        <string>__IRIDA_ROOT__</string>
+        <key>IRIDA_DATABASE_URL</key>
+        <string>__IRIDA_DATABASE_URL__</string>
+        <key>IRIDA_SECRETS_KEY</key>
+        <string>__IRIDA_SECRETS_KEY__</string>
         <key>OBSIDIAN_VAULT_PATH</key>
         <string>__OBSIDIAN_VAULT_PATH__</string>
         <key>PATH</key>
@@ -40,9 +40,9 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>__CSAGENT_LOG_DIR__/cron-tick.log</string>
+    <string>__IRIDA_LOG_DIR__/cron-tick.log</string>
 
     <key>StandardErrorPath</key>
-    <string>__CSAGENT_LOG_DIR__/cron-tick.error.log</string>
+    <string>__IRIDA_LOG_DIR__/cron-tick.error.log</string>
 </dict>
 </plist>
