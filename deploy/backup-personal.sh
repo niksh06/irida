@@ -3,15 +3,15 @@
 # Usage: bash deploy/backup-personal.sh [backup-dir]
 set -euo pipefail
 
-HOME_DIR="${CSAGENT_HOME:-$HOME/.csagent}"
-ROOT="${CSAGENT_ROOT:-$HOME_DIR/csagent}"
+HOME_DIR="${IRIDA_HOME:-${CSAGENT_HOME:-$HOME/.irida}}"
+ROOT="${IRIDA_ROOT:-${CSAGENT_ROOT:-$HOME_DIR/irida}}"
 STAMP="$(date +%Y%m%d-%H%M)"
 DEST="${1:-$HOME/backups/csagent-$STAMP}"
 
 mkdir -p "$DEST"
 
 # shellcheck source=/dev/null
-[[ -f "$HOME_DIR/csagent.env" ]] && source "$HOME_DIR/csagent.env"
+[[ -f "$HOME_DIR/irida.env" ]] && source "$HOME_DIR/irida.env"
 
 echo "backup-personal: dest=$DEST"
 

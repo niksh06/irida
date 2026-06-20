@@ -2,13 +2,13 @@
 # Run csagent from CSAGENT_ROOT; runtime state in CSAGENT_HOME/.agent (launchd friendly).
 set -euo pipefail
 
-ENV_FILE="${CSAGENT_ENV:-$HOME/.csagent/csagent.env}"
+ENV_FILE="${IRIDA_ENV:-${CSAGENT_ENV:-$HOME/.irida/irida.env}}"
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_FILE"
 fi
 
-CSAGENT_HOME="${CSAGENT_HOME:-$HOME/.csagent}"
+CSAGENT_HOME="${IRIDA_HOME:-${CSAGENT_HOME:-$HOME/.irida}}"
 CSAGENT_ROOT="${CSAGENT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 export CSAGENT_HOME CSAGENT_ROOT
 

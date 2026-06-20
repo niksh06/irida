@@ -3,8 +3,8 @@
 # Usage: bash deploy/prod-check-morning.sh
 set -euo pipefail
 
-HOME_DIR="${CSAGENT_HOME:-$HOME/.csagent}"
-ROOT="${CSAGENT_ROOT:-$HOME_DIR/csagent}"
+HOME_DIR="${IRIDA_HOME:-${CSAGENT_HOME:-$HOME/.irida}}"
+ROOT="${IRIDA_ROOT:-${CSAGENT_ROOT:-$HOME_DIR/irida}}"
 RUN="$ROOT/scripts/csagent-run.sh"
 
 if [[ ! -x "$RUN" ]]; then
@@ -13,9 +13,9 @@ if [[ ! -x "$RUN" ]]; then
 fi
 
 # shellcheck source=/dev/null
-[[ -f "$HOME_DIR/csagent.env" ]] && source "$HOME_DIR/csagent.env"
+[[ -f "$HOME_DIR/irida.env" ]] && source "$HOME_DIR/irida.env"
 
-export CSAGENT_HOME="$HOME_DIR"
+export IRIDA_HOME="$HOME_DIR"
 export CSAGENT_ROOT="$ROOT"
 
 exec "$RUN" doctor morning-alert
