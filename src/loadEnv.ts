@@ -62,6 +62,8 @@ export function loadCsagentEnv(cwd: string = process.cwd()): string[] {
   const candidates: string[] = [];
   const explicit = csagentEnvFile();
   if (explicit) candidates.push(explicit);
+  // Prefer the new ~/.irida/irida.env; fall back to legacy ~/.csagent/csagent.env (rename shim).
+  candidates.push(resolve(homedir(), ".irida/irida.env"));
   candidates.push(resolve(homedir(), ".csagent/csagent.env"));
   candidates.push(resolve(cwd, ".env"));
 

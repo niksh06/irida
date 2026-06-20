@@ -7,8 +7,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { acquirePgPool, pgConfigured, pgConnectionString, releasePgPool } from "./pg/pool.js";
+import { dualEnv } from "./env.js";
 
-export const SECRETS_KEY_ENV = "CSAGENT_SECRETS_KEY";
+/** Canonical secrets-key env var. The legacy CSAGENT_SECRETS_KEY is still read via dualEnv. */
+export const SECRETS_KEY_ENV = "IRIDA_SECRETS_KEY";
 
 export const CREDENTIAL_SECRET_NAMES = ["cursor_api_key", "telegram_bot_token"] as const;
 export type CredentialSecretName = (typeof CREDENTIAL_SECRET_NAMES)[number];
@@ -29,7 +31,7 @@ export function pgSecretsEnabled(): boolean {
 }
 
 export function secretsKey(): string {
-  return (process.env[SECRETS_KEY_ENV] ?? "").trim();
+  return dualEnv("SECRETS_KEY") ?? ""; // IRIDA_SECRETS_KEY, legacy CSAGENT_SECRETS_KEY
 }
 
 /** Minimum acceptable length for the pgcrypto passphrase (brute-force floor). */

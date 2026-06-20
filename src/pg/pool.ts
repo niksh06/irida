@@ -15,6 +15,7 @@
  */
 import pg from "pg";
 import { redact } from "../redact.js";
+import { dualEnv } from "../env.js";
 
 /** Default pool size. All PG modules talk to the same small local DB. */
 export const DEFAULT_PG_MAX = 5;
@@ -24,8 +25,7 @@ export const DEFAULT_PG_MAX = 5;
  * — i.e. sqlite mode. Single read point for CSAGENT_DATABASE_URL (Arch-4).
  */
 export function pgUrl(): string | undefined {
-  const url = process.env.CSAGENT_DATABASE_URL?.trim();
-  return url ? url : undefined;
+  return dualEnv("DATABASE_URL"); // IRIDA_DATABASE_URL, legacy CSAGENT_DATABASE_URL
 }
 
 /** True when a Postgres connection string is configured. */

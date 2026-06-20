@@ -6,6 +6,8 @@ import {
   csagentMemoryDir,
   csagentStateDir,
   csagentKbRoot,
+  dualEnv,
+  iridaHome,
 } from "../src/env.js";
 
 function withHome<T>(value: string | undefined, fn: () => T): T {
@@ -26,6 +28,30 @@ test("csagentHome trims and normalizes unset/empty to undefined", () => {
   assert.equal(withHome("   ", csagentHome), undefined);
   assert.equal(withHome("/Users/x/.csagent", csagentHome), "/Users/x/.csagent");
   assert.equal(withHome("  /trim/me  ", csagentHome), "/trim/me");
+});
+
+test("rename shim: IRIDA_* preferred, legacy CSAGENT_* fallback", () => {
+  const prevI = process.env.IRIDA_HOME;
+  const prevC = process.env.CSAGENT_HOME;
+  try {
+    delete process.env.IRIDA_HOME;
+    delete process.env.CSAGENT_HOME;
+    assert.equal(iridaHome(), undefined);
+    assert.equal(dualEnv("HOME"), undefined);
+
+    process.env.CSAGENT_HOME = "/legacy"; // legacy still works
+    assert.equal(iridaHome(), "/legacy");
+    assert.equal(csagentHome(), "/legacy"); // alias agrees
+
+    process.env.IRIDA_HOME = "/new"; // new prefix wins
+    assert.equal(iridaHome(), "/new");
+    assert.equal(dualEnv("HOME"), "/new");
+  } finally {
+    if (prevI === undefined) delete process.env.IRIDA_HOME;
+    else process.env.IRIDA_HOME = prevI;
+    if (prevC === undefined) delete process.env.CSAGENT_HOME;
+    else process.env.CSAGENT_HOME = prevC;
+  }
 });
 
 function withVar<T>(name: string, value: string | undefined, fn: () => T): T {
