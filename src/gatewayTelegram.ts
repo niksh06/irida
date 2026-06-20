@@ -707,7 +707,7 @@ const TELEGRAM_COMMAND_SCOPES = [
   { type: "all_group_chats" },
 ] as const;
 
-/** Push csagent slash catalog to Telegram «/» menu (replaces Hermes leftovers). */
+/** Push irida slash catalog to Telegram «/» menu (replaces Hermes leftovers). */
 export async function syncTelegramBotCommands(
   token: string,
   fetchFn: TelegramFetch = fetch
@@ -744,7 +744,7 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   const tokenFmt = validateTelegramBotTokenFormat(token);
   if (!tokenFmt.ok) {
     throw new Error(
-      `telegram bot token is invalid (${tokenFmt.detail}) — re-save: csagent auth telegram login --stdin (or auth history / auth restore)`
+      `telegram bot token is invalid (${tokenFmt.detail}) — re-save: irida auth telegram login --stdin (or auth history / auth restore)`
     );
   }
   const fetchFn = opts.fetchFn ?? fetch;

@@ -4,7 +4,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { csagentHome, csagentRoot } from "./env.js";
+import { iridaHome, iridaRoot } from "./env.js";
 import { DEFAULT_BROWSER_PROFILE } from "./browser/defaults.js";
 import type { AgentConfig } from "./config.js";
 import { resolveBrowserRoot } from "./mcp/browserContext.js";
@@ -24,7 +24,7 @@ const CODE_ROOT = dirname(fileURLToPath(import.meta.url));
 
 function memoryServerEntry(projectDir: string): { command: string; args: string[] } {
   const roots = [
-    csagentRoot(),
+    iridaRoot(),
     projectDir,
     join(CODE_ROOT, ".."),
   ].filter(Boolean) as string[];
@@ -47,7 +47,7 @@ function memoryServerEntry(projectDir: string): { command: string; args: string[
 
 function browserServerEntry(projectDir: string): { command: string; args: string[] } {
   const roots = [
-    csagentRoot(),
+    iridaRoot(),
     projectDir,
     join(CODE_ROOT, ".."),
   ].filter(Boolean) as string[];
@@ -78,7 +78,7 @@ export function browserMcpEnabled(cfg: AgentConfig): boolean {
 
 function cronServerEntry(projectDir: string): { command: string; args: string[] } {
   const roots = [
-    csagentRoot(),
+    iridaRoot(),
     projectDir,
     join(CODE_ROOT, ".."),
   ].filter(Boolean) as string[];
@@ -113,7 +113,7 @@ export function resolveMcpServers(
   const stateDir = resolve(projectDir, cfg.stateDir);
   // Env forwarded to child MCP servers when set.
   const dbUrl = pgUrl();
-  const home = csagentHome();
+  const home = iridaHome();
   const withDbUrl = dbUrl ? { CSAGENT_DATABASE_URL: dbUrl } : {};
   const withHome = home ? { CSAGENT_HOME: home } : {};
 

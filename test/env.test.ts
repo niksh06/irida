@@ -1,13 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  csagentHome,
-  csagentRoot,
-  csagentMemoryDir,
-  csagentStateDir,
-  csagentKbRoot,
-  dualEnv,
   iridaHome,
+  iridaRoot,
+  iridaMemoryDir,
+  iridaStateDir,
+  iridaKbRoot,
+  dualEnv,
 } from "../src/env.js";
 
 function withHome<T>(value: string | undefined, fn: () => T): T {
@@ -22,12 +21,12 @@ function withHome<T>(value: string | undefined, fn: () => T): T {
   }
 }
 
-test("csagentHome trims and normalizes unset/empty to undefined", () => {
-  assert.equal(withHome(undefined, csagentHome), undefined);
-  assert.equal(withHome("", csagentHome), undefined);
-  assert.equal(withHome("   ", csagentHome), undefined);
-  assert.equal(withHome("/Users/x/.csagent", csagentHome), "/Users/x/.csagent");
-  assert.equal(withHome("  /trim/me  ", csagentHome), "/trim/me");
+test("iridaHome trims and normalizes unset/empty to undefined", () => {
+  assert.equal(withHome(undefined, iridaHome), undefined);
+  assert.equal(withHome("", iridaHome), undefined);
+  assert.equal(withHome("   ", iridaHome), undefined);
+  assert.equal(withHome("/Users/x/.csagent", iridaHome), "/Users/x/.csagent");
+  assert.equal(withHome("  /trim/me  ", iridaHome), "/trim/me");
 });
 
 test("rename shim: IRIDA_* preferred, legacy CSAGENT_* fallback", () => {
@@ -41,7 +40,7 @@ test("rename shim: IRIDA_* preferred, legacy CSAGENT_* fallback", () => {
 
     process.env.CSAGENT_HOME = "/legacy"; // legacy still works
     assert.equal(iridaHome(), "/legacy");
-    assert.equal(csagentHome(), "/legacy"); // alias agrees
+    assert.equal(iridaHome(), "/legacy"); // alias agrees
 
     process.env.IRIDA_HOME = "/new"; // new prefix wins
     assert.equal(iridaHome(), "/new");
@@ -68,10 +67,10 @@ function withVar<T>(name: string, value: string | undefined, fn: () => T): T {
 
 test("path-root accessors trim and normalize empty to undefined", () => {
   for (const [name, fn] of [
-    ["CSAGENT_ROOT", csagentRoot],
-    ["CSAGENT_MEMORY_DIR", csagentMemoryDir],
-    ["CSAGENT_STATE_DIR", csagentStateDir],
-    ["CSAGENT_KB_ROOT", csagentKbRoot],
+    ["CSAGENT_ROOT", iridaRoot],
+    ["CSAGENT_MEMORY_DIR", iridaMemoryDir],
+    ["CSAGENT_STATE_DIR", iridaStateDir],
+    ["CSAGENT_KB_ROOT", iridaKbRoot],
   ] as const) {
     assert.equal(withVar(name, undefined, fn), undefined, `${name} unset`);
     assert.equal(withVar(name, "  ", fn), undefined, `${name} blank`);

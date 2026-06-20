@@ -1,5 +1,5 @@
 /**
- * `cursor-agent run "<prompt>"` — one-shot local task via Cursor SDK (issue 008).
+ * `irida run "<prompt>"` — one-shot local task via Cursor SDK (issue 008).
  * Non-interactive: destructive prompts are denied (safety, issue 006).
  * Persists run + session metadata to SQLite (issue 007). Maps to exit codes.
  */
@@ -86,7 +86,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
   const quiet = opts.quiet === true;
 
   if (!prompt || !prompt.trim()) {
-    if (!quiet) console.error('run: a prompt is required, e.g. cursor-agent run "summarize this repo"');
+    if (!quiet) console.error('run: a prompt is required, e.g. irida run "summarize this repo"');
     return { exitCode: EXIT.usage, text: "" };
   }
   let cfg;
@@ -168,7 +168,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
   // refs must hit the same denylist as the raw message.
   const gate = await safetyGate({ prompt: finalPrompt, interactive: false, override: opts.yesIUnderstand });
   if (!gate.allowed) {
-    if (!quiet) console.error(`run: blocked — ${gate.reason}. Use 'cursor-agent chat' or --yes-i-understand.`);
+    if (!quiet) console.error(`run: blocked — ${gate.reason}. Use 'irida chat' or --yes-i-understand.`);
     return { exitCode: EXIT.noperm, text: "" };
   }
 

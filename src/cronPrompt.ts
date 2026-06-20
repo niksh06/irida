@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import type { CronJob } from "./cronJobs.js";
 import { CronJobsError } from "./cronJobs.js";
-import { csagentRoot } from "./env.js";
+import { iridaRoot } from "./env.js";
 
 export function resolveCronPromptFilePath(job: CronJob, configDir: string): string {
   const rel = job.promptFile?.trim();
@@ -15,7 +15,7 @@ export function resolveCronPromptFilePath(job: CronJob, configDir: string): stri
   const candidates: string[] = [];
   if (job.cwd?.trim()) candidates.push(resolve(job.cwd.trim(), rel));
   candidates.push(resolve(configDir, rel));
-  const root = csagentRoot();
+  const root = iridaRoot();
   if (root) candidates.push(resolve(root, rel));
 
   for (const path of candidates) {

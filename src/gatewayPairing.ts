@@ -41,7 +41,7 @@ export function tryRegisterPairing(
     return {
       registered: true,
       message:
-        `csagent: чат не в allowlist.\nКод pairing: **${existing.code}**\nАдмин в разрешённом чате: /approve ${existing.code}`,
+        `irida: чат не в allowlist.\nКод pairing: **${existing.code}**\nАдмин в разрешённом чате: /approve ${existing.code}`,
     };
   }
   const code = newCode();
@@ -60,7 +60,7 @@ export function tryRegisterPairing(
   return {
     registered: true,
     message:
-      `csagent: чат не в allowlist.\nКод pairing: **${code}**\nАдмин: /approve ${code}`,
+      `irida: чат не в allowlist.\nКод pairing: **${code}**\nАдмин: /approve ${code}`,
   };
 }
 

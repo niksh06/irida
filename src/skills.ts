@@ -7,7 +7,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, basename } from "node:path";
 
 import { scanThreatPatterns } from "./promptThreatScan.js";
-import { csagentRoot } from "./env.js";
+import { iridaRoot } from "./env.js";
 
 export interface Skill {
   name: string;
@@ -59,7 +59,7 @@ function parseTags(val: string): string[] {
 /** Same candidate order as cron promptFile: config dir → CSAGENT_ROOT → cwd. */
 export function resolveSkillsRoot(dir: string, skillsPath: string): string {
   const candidates: string[] = [resolve(dir, skillsPath)];
-  const agentRoot = csagentRoot();
+  const agentRoot = iridaRoot();
   if (agentRoot) candidates.push(resolve(agentRoot, skillsPath));
   const cwd = process.cwd();
   if (cwd !== dir && cwd !== agentRoot) candidates.push(resolve(cwd, skillsPath));

@@ -3,7 +3,7 @@
  */
 import { accessSync, constants, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { csagentHome } from "./env.js";
+import { iridaHome } from "./env.js";
 import { CONFIG_FILE, ConfigError, loadConfig, resolveMemoryRoot, validateMcpServers } from "./config.js";
 import { browserMcpEnabled, resolveMcpServers } from "./mcpServers.js";
 import { resolveBrowserRoot } from "./mcp/browserContext.js";
@@ -86,7 +86,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
       name: "CLAUDE_CODE_OAUTH_TOKEN",
       ok: true, // empty is fine — account mode falls back to a `claude login` session
       detail: t.source === "none" ? "not set — using `claude login` session if present" : `set (${t.source})`,
-      fix: "claude setup-token   # then: csagent auth claude token --stdin",
+      fix: "claude setup-token   # then: irida auth claude token --stdin",
     });
   } else if (engineProvider === "claude-agent") {
     const a = resolveAnthropicKey(dir);
@@ -94,7 +94,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
       name: "ANTHROPIC_API_KEY",
       ok: a.key.length > 0,
       detail: a.source === "none" ? "missing" : `set (${a.source})`,
-      fix: 'printf %s "sk-ant-..." | csagent auth anthropic login --stdin',
+      fix: 'printf %s "sk-ant-..." | irida auth anthropic login --stdin',
     });
   } else {
     const resolved = resolveApiKey(dir);
@@ -102,14 +102,14 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
       name: "CURSOR_API_KEY",
       ok: resolved.key.length > 0,
       detail: apiKeySourceLabel(resolved.source, dir),
-      fix: 'printf %s "cursor_..." | csagent auth login --stdin',
+      fix: 'printf %s "cursor_..." | irida auth login --stdin',
     });
   }
 
   const major = Number(process.versions.node.split(".")[0]);
   checks.push({ name: "node >= 20", ok: major >= 20, detail: `v${process.versions.node}` });
   checks.push({ name: "cwd", ok: true, detail: dir });
-  const home = csagentHome();
+  const home = iridaHome();
   if (home) {
     checks.push({ name: "CSAGENT_HOME", ok: true, detail: home });
   }
@@ -169,7 +169,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
   if (existsSync(cronPath)) {
     const cronErrs = validateCronJobsFile(dir);
     const bak = cronErrs.length ? findLatestCronJobsBackup(dir) : null;
-    const fixBase = "compare with deploy/cron.jobs.example.json, then: csagent cron list";
+    const fixBase = "compare with deploy/cron.jobs.example.json, then: irida cron list";
     checks.push({
       name: "cron jobs",
       ok: cronErrs.length === 0,
@@ -199,7 +199,7 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
       name: "gateway",
       ok: gwErrs.length === 0,
       detail: gwErrs.length ? gwErrs.join("; ") : "gateway.json valid",
-      fix: "cp deploy/gateway.json.example .agent/gateway.json  # then set allowedChatIds + token: csagent auth telegram login --stdin",
+      fix: "cp deploy/gateway.json.example .agent/gateway.json  # then set allowedChatIds + token: irida auth telegram login --stdin",
     });
   }
 
@@ -276,7 +276,7 @@ function gatherCredentialsEnvChecks(dir: string): DoctorCheck[] {
       detail: plain
         ? "credentials.json still has plaintext — run auth login to migrate"
         : "no plaintext secrets on disk",
-      fix: 'printf %s "cursor_..." | csagent auth login --stdin  # re-save migrates to pgcrypto',
+      fix: 'printf %s "cursor_..." | irida auth login --stdin  # re-save migrates to pgcrypto',
     });
     const weak = secretsKeyStrengthIssue();
     checks.push({
@@ -319,7 +319,7 @@ function gatherBrowserEnvChecks(dir: string): DoctorCheck[] {
 function gatherMemoryEnvChecks(dir: string): DoctorCheck[] {
   const checks: DoctorCheck[] = [];
   const pg = pgUrl();
-  const home = csagentHome();
+  const home = iridaHome();
   const canonical = resolveMemoryRoot(dir);
 
   checks.push({
@@ -344,8 +344,8 @@ function gatherMemoryEnvChecks(dir: string): DoctorCheck[] {
       ok: aligned,
       detail: aligned
         ? `${silo.path} aligned with ${memoryDir}`
-        : `${silo.count} note(s) in ${silo.path} — run: csagent memory align-silo`,
-      fix: "csagent memory align-silo",
+        : `${silo.count} note(s) in ${silo.path} — run: irida memory align-silo`,
+      fix: "irida memory align-silo",
     });
   }
 
@@ -463,7 +463,7 @@ export async function gatherDoctorStoreChecks(dir: string = process.cwd()): Prom
         name: "gateway allowlist plaintext",
         ok: false,
         detail: "allowedChatIds still in gateway.json — should migrate to postgres",
-        fix: "csagent gateway run  # auto-migrates, or clear allowedChatIds and set allowedChatIdsStorage: pg",
+        fix: "irida gateway run  # auto-migrates, or clear allowedChatIds and set allowedChatIdsStorage: pg",
       });
     }
     try {
@@ -482,7 +482,7 @@ export async function gatherDoctorStoreChecks(dir: string = process.cwd()): Prom
           name: "gateway allowlist sanity",
           ok: false,
           detail: "postgres allowlist empty",
-          fix: "csagent gateway peers add <chatId> or restore gateway.json then gateway run",
+          fix: "irida gateway peers add <chatId> or restore gateway.json then gateway run",
         });
       } else if (resolved.length > 0) {
         checks.push({
@@ -506,7 +506,7 @@ export async function gatherDoctorStoreChecks(dir: string = process.cwd()): Prom
         malformed === 0
           ? "no malformed --* fact fields"
           : `${malformed} fact(s) with subject/predicate starting with "--"`,
-      fix: "csagent memory fact purge-malformed-subjects",
+      fix: "irida memory fact purge-malformed-subjects",
     });
   } catch (e) {
     checks.push({

@@ -54,7 +54,7 @@ type PetFrame = readonly PetGlyphLine[];
 type PetAnim = readonly PetFrame[];
 
 /**
- * Wisp — floating eye-spirit (◆ csagent companion).
+ * Wisp — floating eye-spirit (◆ irida companion).
  *
  * Every frame is 5 lines tall (aura · top · eye · base · tail) so the corner
  * never jumps vertically when the state changes, and decorations are padded to

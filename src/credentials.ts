@@ -55,7 +55,7 @@ export interface CredentialsFile {
 }
 
 export const API_KEY_HELP =
-  "Set CURSOR_API_KEY in the environment or run: csagent auth login --stdin";
+  "Set CURSOR_API_KEY in the environment or run: irida auth login --stdin";
 
 export const ANTHROPIC_API_KEY_HELP =
   "claude-agent engine (auth=api-key): set ANTHROPIC_API_KEY in the environment";
@@ -64,7 +64,7 @@ export const CLAUDE_OAUTH_HELP =
   "claude-agent engine (auth=account): connect your Claude account — run `claude setup-token` and set CLAUDE_CODE_OAUTH_TOKEN, or run `claude login` (the SDK reads ~/.claude/.credentials.json)";
 
 export const TELEGRAM_TOKEN_HELP =
-  "Set TELEGRAM_BOT_TOKEN in the environment or run: csagent auth telegram login --stdin";
+  "Set TELEGRAM_BOT_TOKEN in the environment or run: irida auth telegram login --stdin";
 
 export interface SecretFormatCheck {
   ok: boolean;
@@ -229,7 +229,7 @@ export async function warmCredentialsCache(dir: string = process.cwd()): Promise
             : validateTelegramBotTokenFormat(file[name]!);
         if (!fmt.ok && fileFmt.ok) {
           console.error(
-            `[credentials] ${name} in postgres is corrupt (${fmt.detail}); using valid file value — re-save with: csagent auth ${name === "cursor_api_key" ? "login" : "telegram login"} --stdin`
+            `[credentials] ${name} in postgres is corrupt (${fmt.detail}); using valid file value — re-save with: irida auth ${name === "cursor_api_key" ? "login" : "telegram login"} --stdin`
           );
           loaded[name] = file[name];
         }
@@ -495,7 +495,7 @@ export function apiKeySourceLabel(source: SecretSource, dir: string = process.cw
     case "file":
       return `set (${loadConfig(dir).stateDir}/${CREDENTIALS_FILE})`;
     case "none":
-      return `missing — export CURSOR_API_KEY or run csagent auth login --stdin`;
+      return `missing — export CURSOR_API_KEY or run irida auth login --stdin`;
   }
 }
 
@@ -512,6 +512,6 @@ export function telegramTokenSourceLabel(
     case "file":
       return `set (${loadConfig(dir).stateDir}/${CREDENTIALS_FILE})`;
     case "none":
-      return `missing — export ${envName} or run csagent auth telegram login --stdin`;
+      return `missing — export ${envName} or run irida auth telegram login --stdin`;
   }
 }

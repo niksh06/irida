@@ -9,7 +9,7 @@ export function formatTranscriptMarkdown(
   messages: ChatMessage[],
   meta?: Pick<SessionMeta, "sessionId" | "model" | "cwd">
 ): string {
-  const lines: string[] = ["# csagent transcript", ""];
+  const lines: string[] = ["# irida transcript", ""];
   if (meta) {
     lines.push(`- **session:** \`${meta.sessionId}\``);
     lines.push(`- **model:** \`${meta.model}\``);

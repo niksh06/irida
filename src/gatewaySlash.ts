@@ -1,6 +1,6 @@
 /**
- * csagent gateway slash commands (I-22) — Telegram/webhook, no LLM.
- * Branded csagent catalog; not Hermes COMMAND_REGISTRY.
+ * irida gateway slash commands (I-22) — Telegram/webhook, no LLM.
+ * Branded irida catalog; not Hermes COMMAND_REGISTRY.
  */
 import { gatherDoctorChecks, doctorAllOk } from "./doctorChecks.js";
 import { gatherGatewayStatus } from "./gatewayStatus.js";
@@ -35,7 +35,7 @@ import {
 
 export type GatewaySlashCommand = ReturnType<typeof gatewaySlashCommands>[number];
 
-/** csagent commands available in messaging gateways (from unified registry). */
+/** irida commands available in messaging gateways (from unified registry). */
 export const GATEWAY_SLASH_COMMANDS = gatewaySlashCommands();
 
 /** Telegram Bot API menu entries (setMyCommands) — same catalog as /help. */
@@ -46,7 +46,7 @@ export function gatewayTelegramBotCommands(): Array<{ command: string; descripti
 export function gatewaySlashHelpText(): string {
   const lines = gatewaySlashHelpLines();
   return [
-    "**csagent** — команды бота:",
+    "**irida** — команды бота:",
     "",
     ...lines,
     "",
@@ -101,14 +101,14 @@ export async function handleGatewaySlash(
     case "status": {
       const rows = gatherGatewayStatus(ctx.dir);
       const lines = rows.map((r) => `${r.ok ? "OK" : "FAIL"} ${r.name}: ${r.detail}`);
-      return ["csagent gateway status", ...lines].join("\n");
+      return ["irida gateway status", ...lines].join("\n");
     }
 
     case "doctor": {
       const checks = gatherDoctorChecks(ctx.dir);
       const lines = checks.map((c) => `${c.ok ? "OK" : "FAIL"} ${c.name}: ${c.detail}`);
       const all = doctorAllOk(checks);
-      return [`csagent doctor (${all ? "pass" : "fail"})`, ...lines].join("\n");
+      return [`irida doctor (${all ? "pass" : "fail"})`, ...lines].join("\n");
     }
 
     case "memory": {
@@ -121,12 +121,12 @@ export async function handleGatewaySlash(
           if (notes.length === 0) return "Память пуста.";
           const head = notes.slice(0, 15).map((n) => `• ${n.name} [${n.wing}] ${n.title}`);
           const tail = notes.length > 15 ? `\n…ещё ${notes.length - 15}` : "";
-          return ["csagent memory:", ...head].join("\n") + tail;
+          return ["irida memory:", ...head].join("\n") + tail;
         }
         const hits = await store.searchNotes(q, 10);
         if (hits.length === 0) return `Нет совпадений по «${q}».`;
         return [
-          `csagent memory search: «${q}»`,
+          `irida memory search: «${q}»`,
           ...hits.map(
             (n) =>
               `• ${n.name}: ${n.body.replace(/\s+/g, " ").trim().slice(0, 120)}`
@@ -153,7 +153,7 @@ export async function handleGatewaySlash(
         );
         const cur = sessionId ? `\nТекущая: ${sessionId}` : "";
         if (lines.length === 0) return `Нет сессий.${cur}`;
-        return [`csagent sessions:`, ...lines, cur].join("\n");
+        return [`irida sessions:`, ...lines, cur].join("\n");
       } finally {
         await store.close();
       }
@@ -162,12 +162,12 @@ export async function handleGatewaySlash(
     case "skills": {
       const configured = ctx.skills.length ? ctx.skills : ctx.cfg.skills;
       if (configured.length) {
-        return `csagent skills (gateway): ${configured.join(", ")}`;
+        return `irida skills (gateway): ${configured.join(", ")}`;
       }
       const cfg = loadConfig(ctx.dir);
       const all = listSkills(ctx.dir, cfg.skillsPath).slice(0, 12);
       if (all.length === 0) return "Нет skills в каталоге skills/.";
-      return ["csagent skills:", ...all.map((s) => `• ${s.name}: ${s.description.slice(0, 60)}`)].join(
+      return ["irida skills:", ...all.map((s) => `• ${s.name}: ${s.description.slice(0, 60)}`)].join(
         "\n"
       );
     }

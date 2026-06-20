@@ -1,6 +1,6 @@
-/** Hermes-inspired palette for csagent TUI. */
+/** Hermes-inspired palette for irida TUI. */
 export const theme = {
-  brand: "csagent",
+  brand: "Irida",
   icon: "◆",
   primary: "#56B6C2",
   accent: "#C678DD",
@@ -21,5 +21,5 @@ export const theme = {
 
 export const banner = `
  ╭──────────────────────────────────────╮
- │  ◆ csagent  ·  Cursor SDK agent      │
+ │  ◆ irida  ·  Cursor SDK agent      │
  ╰──────────────────────────────────────╯`;

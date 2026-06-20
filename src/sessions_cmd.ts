@@ -1,5 +1,5 @@
 /**
- * `cursor-agent sessions` — list stored sessions (issue 010), newest first.
+ * `irida sessions` — list stored sessions (issue 010), newest first.
  */
 import { loadConfig, ConfigError } from "./config.js";
 import { createStore } from "./store.js";
@@ -52,7 +52,7 @@ export async function cmdSessions(argv: string[] = [], dir: string = process.cwd
   try {
     const rows = await store.listSessions();
     if (rows.length === 0) {
-      console.log("No sessions yet. Run `cursor-agent run \"...\"` or `cursor-agent chat`.");
+      console.log("No sessions yet. Run `irida run \"...\"` or `irida chat`.");
       return EXIT.ok;
     }
     for (const s of rows) {

@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { csagentHome } from "./env.js";
+import { iridaHome } from "./env.js";
 
 export const CONFIG_FILE = "agent.config.json";
 
@@ -167,17 +167,17 @@ const SECRET_KEYS = ["CURSOR_API_KEY", "cursorApiKey", "apiKey", "api_key"];
 
 /** Runtime home (~/.csagent): credentials, gateway, sqlite, memory. Defined in
  * the env leaf (Arch-4); re-exported for existing `from "./config.js"` imports. */
-export { csagentHome };
+export { iridaHome };
 
 export function defaultStateDir(_dir: string): string {
-  const home = csagentHome();
+  const home = iridaHome();
   if (home) return resolve(home, ".agent");
   return ".agent";
 }
 
 /** Canonical `.agent` directory for memory, credentials, cron state. */
 export function resolveMemoryRoot(projectDir: string = process.cwd()): string {
-  const home = csagentHome();
+  const home = iridaHome();
   if (home) return resolve(home, ".agent");
   const cfg = loadConfig(projectDir);
   const stateDir = cfg.stateDir;

@@ -1,11 +1,11 @@
 /**
- * Open Knowledge Format (OKF) v0.1 helpers for csagent memory notes.
+ * Open Knowledge Format (OKF) v0.1 helpers for irida memory notes.
  * @see https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
  */
 
 export const OKF_VERSION = "0.1";
 
-/** csagent wing → OKF concept type (SPEC §4.1). */
+/** irida wing → OKF concept type (SPEC §4.1). */
 export const OKF_TYPE_BY_WING: Readonly<Record<string, string>> = {
   "cursor-lesson": "Playbook",
   "cursor-ide": "Archive",
@@ -22,7 +22,7 @@ export interface OkfFrontmatter {
   tags?: string[];
   timestamp?: string;
   okf_version?: string;
-  /** csagent extensions (not in OKF spec; preserved on round-trip). */
+  /** irida extensions (not in OKF spec; preserved on round-trip). */
   wing?: string;
   status?: string;
   source?: string;

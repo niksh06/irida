@@ -3,7 +3,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { csagentHome } from "./env.js";
+import { iridaHome } from "./env.js";
 import { loadConfig, resolveMemoryRoot } from "./config.js";
 import { loadCronJobs } from "./cronJobs.js";
 import { redact } from "./redact.js";
@@ -17,7 +17,7 @@ export interface MemorySilo {
 export function gatherMemorySilos(dir: string): { canonical: string; silos: MemorySilo[] } {
   const canonical = resolve(resolveMemoryRoot(dir), "memory");
   const silos: MemorySilo[] = [];
-  const home = csagentHome();
+  const home = iridaHome();
 
   const repoMemory = resolve(dir, ".agent", "memory");
   if (home && canonical !== resolve(dir, ".agent") && existsSync(repoMemory)) {

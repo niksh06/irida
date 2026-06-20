@@ -8,9 +8,9 @@ import {
   GATEWAY_SLASH_COMMANDS,
 } from "../src/gatewaySlash.js";
 
-test("gatewaySlashHelpText is csagent branded", () => {
+test("gatewaySlashHelpText is irida branded", () => {
   const help = gatewaySlashHelpText();
-  assert.match(help, /csagent/);
+  assert.match(help, /irida/);
   assert.match(help, /\/help/);
   assert.match(help, /\/doctor/);
   assert.match(help, /\/delegate/);
@@ -32,7 +32,7 @@ test("gatewayTelegramBotCommands matches slash catalog size", () => {
   const cmds = gatewayTelegramBotCommands();
   assert.equal(cmds.length, GATEWAY_SLASH_COMMANDS.filter((c) => c.telegram !== false).length);
   assert.ok(cmds.every((c) => /^[a-z0-9_]{1,32}$/.test(c.command)));
-  assert.ok(cmds.some((c) => c.command === "help" && c.description.includes("csagent")));
+  assert.ok(cmds.some((c) => c.command === "help" && c.description.includes("irida")));
 });
 
 test("isGatewaySlashCommand recognizes catalog + /mem alias", () => {

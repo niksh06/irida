@@ -10,7 +10,7 @@ export function HelpPanel(props: { onClose: () => void }) {
   });
 
   return (
-    <OverlayPanel title="csagent tui — commands" footer="Esc or Enter to close">
+    <OverlayPanel title="irida tui — commands" footer="Esc or Enter to close">
       <Text color={theme.muted}>{SLASH_HELP}</Text>
     </OverlayPanel>
   );

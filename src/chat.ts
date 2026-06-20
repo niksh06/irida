@@ -1,6 +1,6 @@
 /**
- * `csagent chat` — readline interactive session (issue 009).
- * Ink TUI: `csagent tui` (see tui/entry.tsx).
+ * `irida chat` — readline interactive session (issue 009).
+ * Ink TUI: `irida tui` (see tui/entry.tsx).
  */
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";

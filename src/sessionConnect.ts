@@ -1,6 +1,6 @@
 /**
  * Connect an SDK agent to a stored session (live resume or transcript replay).
- * Shared by `csagent resume` and TUI session picker.
+ * Shared by `irida resume` and TUI session picker.
  */
 import {
   createSession,

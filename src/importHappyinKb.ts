@@ -29,7 +29,7 @@ function sanitizeSlug(slug: string): string {
 export interface ImportHappyinOptions {
   /** Root of agent_tutorial / knowledge-space docs mirror. */
   kbRoot: string;
-  /** csagent project dir for store resolution (not kb path). */
+  /** irida project dir for store resolution (not kb path). */
   memoryDir?: string;
   stateDir?: string;
   /** Import only these top-level domain folders (e.g. kafka, python). */

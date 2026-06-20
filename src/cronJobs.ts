@@ -3,7 +3,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { csagentHome, csagentAllowProdStateWrite } from "./env.js";
+import { iridaHome, iridaAllowProdStateWrite } from "./env.js";
 import { loadConfig } from "./config.js";
 import { writeFileAtomic } from "./util.js";
 import { validateContextFromGraph } from "./cronContextFrom.js";
@@ -343,9 +343,9 @@ function isTestRun(): boolean {
 
 /** Block writes to CSAGENT_HOME/.agent during npm test (I-38). */
 function guardProdStateWrite(stateRoot: string): void {
-  const home = csagentHome();
+  const home = iridaHome();
   if (!home || !isTestRun()) return;
-  if (csagentAllowProdStateWrite() === "1") return;
+  if (iridaAllowProdStateWrite() === "1") return;
   const prodAgent = resolve(home, ".agent");
   if (resolve(stateRoot) === resolve(prodAgent)) {
     throw new CronJobsError(

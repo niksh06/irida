@@ -1,5 +1,5 @@
 /**
- * `csagent background pause|resume|status` — toggle autonomous cron activity.
+ * `irida background pause|resume|status` — toggle autonomous cron activity.
  * Pausing leaves user-initiated paths (TUI, gateway replies, `cron run`) intact.
  */
 import { EXIT, type ExitCode } from "./exit.js";
@@ -49,14 +49,14 @@ export function cmdBackground(argv: string[], opts: BackgroundCmdOptions = {}): 
     case "--help":
     case "help":
       console.log(`Usage:
-  csagent background status         show whether autonomous cron is paused
-  csagent background pause [reason] pause all cron tick jobs (no token spend)
-  csagent background resume         resume due cron jobs
+  irida background status         show whether autonomous cron is paused
+  irida background pause [reason] pause all cron tick jobs (no token spend)
+  irida background resume         resume due cron jobs
 
 Hard override: env CSAGENT_PAUSE_BACKGROUND=1 forces paused regardless of file.`);
       return EXIT.ok;
     default:
-      console.error(`background: unknown subcommand '${sub}'\n\nRun: csagent background help`);
+      console.error(`background: unknown subcommand '${sub}'\n\nRun: irida background help`);
       return EXIT.usage;
   }
 }

@@ -170,7 +170,7 @@ export function formatLessonEvalSheet(rows: LessonEvalRow[]): string {
     "",
     "1. **Baseline (A)** — no lesson injection; only repo + default skills.",
     "2. **With lesson (B)** — `memory_get` the lesson (or `@memory:<lesson>`) before the task prompt.",
-    "3. Score **lift**: did B materially improve outcome vs A? Record via `csagent memory lesson-eval record`.",
+    "3. Score **lift**: did B materially improve outcome vs A? Record via `irida memory lesson-eval record`.",
     "",
     "| # | lesson | title | task | rubric | verdict |",
     "|---|--------|-------|------|--------|---------|",

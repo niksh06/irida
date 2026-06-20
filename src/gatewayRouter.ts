@@ -121,7 +121,7 @@ export class GatewaySessionRouter {
         await this.getOrCreateSession(chatId);
         return {
           reply: previousSessionId
-            ? `Новая сессия csagent (было ${previousSessionId}). Контекст сброшен — можно писать заново.`
+            ? `Новая сессия irida (было ${previousSessionId}). Контекст сброшен — можно писать заново.`
             : "Новая сессия csagent. Контекст сброшен — можно писать заново.",
         };
       }

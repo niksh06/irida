@@ -1,5 +1,5 @@
 /**
- * `csagent skills list|search` — discover local Markdown skills (issue 015).
+ * `irida skills list|search` — discover local Markdown skills (issue 015).
  */
 import { loadConfig, ConfigError } from "./config.js";
 import { listSkills, resolveSkillsRoot, searchSkills } from "./skills.js";
@@ -41,7 +41,7 @@ export function cmdSkillsList(opts: SkillsCmdOptions = {}): ExitCode {
 export function cmdSkillsSearch(query: string, opts: SkillsCmdOptions = {}): ExitCode {
   const dir = opts.dir ?? process.cwd();
   if (!query || !query.trim()) {
-    console.error('skills search: a query is required, e.g. csagent skills search "review"');
+    console.error('skills search: a query is required, e.g. irida skills search "review"');
     return EXIT.usage;
   }
   let cfg;
@@ -75,12 +75,12 @@ export function cmdSkills(argv: string[], opts: SkillsCmdOptions = {}): ExitCode
     case "--help":
     case "help":
       console.log(`Usage:
-  csagent skills list              list local skills
-  csagent skills search <query>    search name/description/tags
+  irida skills list              list local skills
+  irida skills search <query>    search name/description/tags
 `);
       return EXIT.ok;
     default:
-      console.error(`unknown skills subcommand: ${sub}\n\nRun: csagent skills help`);
+      console.error(`unknown skills subcommand: ${sub}\n\nRun: irida skills help`);
       return EXIT.usage;
   }
 }

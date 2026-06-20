@@ -1,5 +1,5 @@
 /**
- * `csagent auth` — store secrets locally (chmod 600, gitignored .agent/credentials.json).
+ * `irida auth` — store secrets locally (chmod 600, gitignored .agent/credentials.json).
  */
 import { createInterface } from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
@@ -34,22 +34,22 @@ import { listPgCredentialHistory, readPgCredentialHistoryValue } from "./credent
 import type { CredentialSecretName } from "./credentialsPg.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
-const AUTH_HELP = `csagent auth — local secrets storage (.agent/credentials.json or postgres pgcrypto)
+const AUTH_HELP = `irida auth — local secrets storage (.agent/credentials.json or postgres pgcrypto)
 
 Usage:
-  csagent auth login --stdin              Cursor API key (stdin or prompt)
-  csagent auth login --from-env           copy CURSOR_API_KEY from environment to file
-  csagent auth anthropic login --stdin    Anthropic API key (claude-agent engine, auth=api-key)
-  csagent auth anthropic logout           remove stored Anthropic API key
-  csagent auth claude token --stdin       Claude OAuth token from \`claude setup-token\` (auth=account)
-  csagent auth claude logout              remove stored Claude OAuth token
-  csagent auth telegram login --stdin     Telegram bot token
-  csagent auth telegram login --from-env  copy TELEGRAM_BOT_TOKEN from environment
-  csagent auth logout                     remove stored secrets
-  csagent auth telegram logout            remove telegram token only
-  csagent auth status                     key + telegram configured? (never prints secrets)
-  csagent auth history                    archived secret versions in postgres (no values)
-  csagent auth restore <id>               restore an archived version by history id
+  irida auth login --stdin              Cursor API key (stdin or prompt)
+  irida auth login --from-env           copy CURSOR_API_KEY from environment to file
+  irida auth anthropic login --stdin    Anthropic API key (claude-agent engine, auth=api-key)
+  irida auth anthropic logout           remove stored Anthropic API key
+  irida auth claude token --stdin       Claude OAuth token from \`claude setup-token\` (auth=account)
+  irida auth claude logout              remove stored Claude OAuth token
+  irida auth telegram login --stdin     Telegram bot token
+  irida auth telegram login --from-env  copy TELEGRAM_BOT_TOKEN from environment
+  irida auth logout                     remove stored secrets
+  irida auth telegram logout            remove telegram token only
+  irida auth status                     key + telegram configured? (never prints secrets)
+  irida auth history                    archived secret versions in postgres (no values)
+  irida auth restore <id>               restore an archived version by history id
 
 Environment overrides stored secrets for both CURSOR_API_KEY and TELEGRAM_BOT_TOKEN.
 With CSAGENT_DATABASE_URL + CSAGENT_SECRETS_KEY, secrets are encrypted in Postgres (pgcrypto).
@@ -110,7 +110,7 @@ async function readSecretArg(
   return { value };
 }
 
-/** `csagent auth anthropic …` — Anthropic API key for the claude-agent engine (auth=api-key). */
+/** `irida auth anthropic …` — Anthropic API key for the claude-agent engine (auth=api-key). */
 async function cmdAuthAnthropic(args: string[], dir: string): Promise<ExitCode> {
   const [sub, ...rest] = args;
   switch (sub) {
@@ -138,7 +138,7 @@ async function cmdAuthAnthropic(args: string[], dir: string): Promise<ExitCode> 
   }
 }
 
-/** `csagent auth claude …` — Claude account OAuth token for the claude-agent engine (auth=account). */
+/** `irida auth claude …` — Claude account OAuth token for the claude-agent engine (auth=account). */
 async function cmdAuthClaude(args: string[], dir: string): Promise<ExitCode> {
   const [sub, ...rest] = args;
   switch (sub) {
@@ -159,7 +159,7 @@ async function cmdAuthClaude(args: string[], dir: string): Promise<ExitCode> {
     case "--help":
     case "help":
       console.log(
-        "To connect your Claude account: run `claude setup-token` then `csagent auth claude token --stdin`,\n" +
+        "To connect your Claude account: run `claude setup-token` then `irida auth claude token --stdin`,\n" +
           "or run `claude login` (the Agent SDK reads the keychain / ~/.claude/.credentials.json).\n\n" +
           AUTH_HELP
       );
@@ -340,7 +340,7 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
           `${String(e.id).padEnd(5)} ${e.name.padEnd(20)} ${e.replaced_at.slice(0, 19).replace("T", " ")}  ${String(e.valueLength).padEnd(4)} ${e.formatOk ? "ok" : "INVALID"}`
         );
       }
-      console.log("\nRestore a valid version: csagent auth restore <id>");
+      console.log("\nRestore a valid version: irida auth restore <id>");
       return EXIT.ok;
     }
     case "restore": {
@@ -350,7 +350,7 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
       }
       const id = Number(rest[0]);
       if (!Number.isInteger(id) || id <= 0) {
-        console.error("auth restore: usage — csagent auth restore <history-id> (see auth history)");
+        console.error("auth restore: usage — irida auth restore <history-id> (see auth history)");
         return EXIT.usage;
       }
       const entry = await readPgCredentialHistoryValue(id);

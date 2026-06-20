@@ -101,7 +101,7 @@ export interface ChatSessionOptions {
   onTurnRetry?: (reason?: string) => void;
   /** Fired when rotation starts — UI can show a pending state (I-13). */
   onAgentRotating?: (info: { reason: string }) => void;
-  /** Fired when SDK agent is replaced inside the same csagent session. */
+  /** Fired when SDK agent is replaced inside the same irida session. */
   onAgentRotated?: (info: AgentRotatedInfo) => void;
 }
 

@@ -97,14 +97,14 @@ export async function checkUrlReachable(
       method: "HEAD",
       redirect: "follow",
       signal: controller.signal,
-      headers: { "User-Agent": "csagent-memory-audit/1.0" },
+      headers: { "User-Agent": "irida-memory-audit/1.0" },
     });
     if (res.status === 405 || res.status === 501) {
       res = await fetch(url, {
         method: "GET",
         redirect: "follow",
         signal: controller.signal,
-        headers: { "User-Agent": "csagent-memory-audit/1.0" },
+        headers: { "User-Agent": "irida-memory-audit/1.0" },
       });
     }
     if (res.status >= 400) {
@@ -219,7 +219,7 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
         warn(
           "seen_post legacy",
           false,
-          `${seen.current} legacy seen_post fact(s) — digest no longer writes these; run: csagent memory fact purge-seen-post`
+          `${seen.current} legacy seen_post fact(s) — digest no longer writes these; run: irida memory fact purge-seen-post`
         )
       );
     } else {
@@ -235,7 +235,7 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
         malformed === 0,
         malformed === 0
           ? "no current facts with subject starting with --"
-          : `${malformed} fact(s) with subject starting with -- — run: csagent memory fact purge-malformed-subjects`
+          : `${malformed} fact(s) with subject starting with -- — run: irida memory fact purge-malformed-subjects`
       )
     );
 
@@ -252,7 +252,7 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
         "memory silos",
         misaligned.length === 0,
         misaligned.length
-          ? `misaligned: ${misaligned.map((s) => s.label).join(", ")} — run: csagent memory align-silo`
+          ? `misaligned: ${misaligned.map((s) => s.label).join(", ")} — run: irida memory align-silo`
           : silos.length
             ? `${silos.length} silo(s) aligned with ${canonical}`
             : "no extra silos"

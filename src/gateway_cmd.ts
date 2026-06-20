@@ -1,8 +1,8 @@
 /**
- * `csagent gateway run` — long-running messaging bridge (issue 037).
+ * `irida gateway run` — long-running messaging bridge (issue 037).
  */
 import { resolve } from "node:path";
-import { csagentHome } from "./env.js";
+import { iridaHome } from "./env.js";
 import { loadConfig } from "./config.js";
 import { API_KEY_HELP, resolveApiKey, warmCredentialsCache } from "./credentials.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -43,7 +43,7 @@ function applyCliOverrides(cfg: GatewayConfig, opts: GatewayRunOptions): Gateway
 }
 
 export async function startGateway(opts: GatewayRunOptions = {}): Promise<GatewayRunHandle> {
-  const dir = opts.dir ?? csagentHome() ?? process.cwd();
+  const dir = opts.dir ?? iridaHome() ?? process.cwd();
   await warmCredentialsCache(dir);
   await warmGatewayAllowlistCache(dir);
   const { key: apiKey } = resolveApiKey(dir);
@@ -123,7 +123,7 @@ export async function cmdGatewayRun(opts: GatewayRunOptions = {}): Promise<ExitC
 }
 
 export async function cmdGatewayStatus(opts: GatewayRunOptions = {}): Promise<ExitCode> {
-  const dir = opts.dir ?? csagentHome() ?? process.cwd();
+  const dir = opts.dir ?? iridaHome() ?? process.cwd();
   await warmCredentialsCache(dir);
   await warmGatewayAllowlistCache(dir);
   const rows = [
@@ -159,12 +159,12 @@ export async function cmdGateway(argv: string[], opts: GatewayRunOptions = {}): 
     case "--help":
     case "help":
       console.log(`Usage:
-  csagent gateway status          launchd + log probe (no server start)
-  csagent gateway run [--adapter webhook|telegram] [--port 18789]
+  irida gateway status          launchd + log probe (no server start)
+  irida gateway run [--adapter webhook|telegram] [--port 18789]
 
 Config: .agent/gateway.json
 Webhook secret: env GATEWAY_WEBHOOK_SECRET
-Telegram token: csagent auth telegram login --stdin (or env TELEGRAM_BOT_TOKEN)
+Telegram token: irida auth telegram login --stdin (or env TELEGRAM_BOT_TOKEN)
 
 Example gateway.json (webhook):
 {
@@ -198,7 +198,7 @@ Webhook request:
 `);
       return EXIT.ok;
     default:
-      console.error(`gateway: unknown subcommand '${sub}'\n\nRun: csagent gateway help`);
+      console.error(`gateway: unknown subcommand '${sub}'\n\nRun: irida gateway help`);
       return EXIT.usage;
   }
 }

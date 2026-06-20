@@ -18,7 +18,7 @@ export interface SlashRegistryEntry {
 }
 
 export const SLASH_REGISTRY: SlashRegistryEntry[] = [
-  { cmd: "help", desc: "Show commands and hotkeys", descGateway: "Список команд csagent", surfaces: ["tui", "gateway"] },
+  { cmd: "help", desc: "Show commands and hotkeys", descGateway: "Список команд irida", surfaces: ["tui", "gateway"] },
   { cmd: "clear", desc: "Clear transcript", surfaces: ["tui"] },
   { cmd: "sessions", desc: "Pick a stored session", descGateway: "Последние сессии (этот чат)", surfaces: ["tui", "gateway"] },
   { cmd: "resume", desc: "Switch session by id", descGateway: "Возобновить фоновые задачи (cron)", args: "<id>", surfaces: ["tui", "gateway"] },

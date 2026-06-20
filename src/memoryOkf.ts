@@ -1,5 +1,5 @@
 /**
- * OKF audit, migration, review export, bundle export, and hygiene for csagent memory notes.
+ * OKF audit, migration, review export, bundle export, and hygiene for irida memory notes.
  */
 import {
   existsSync,

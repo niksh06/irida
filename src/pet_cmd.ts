@@ -1,13 +1,13 @@
 /**
- * `csagent pet status` — read optional `.agent/pet-state.json` (debug).
+ * `irida pet status` — read optional `.agent/pet-state.json` (debug).
  */
 import { EXIT, type ExitCode } from "./exit.js";
-import { csagentHome } from "./env.js";
+import { iridaHome } from "./env.js";
 import { petAssetsReady, petDirCandidates, resolvePetDir } from "./petAssets.js";
 import { PetRuntimeTracker, readPetStateSnapshot } from "./petRuntime.js";
 
 function resolveDir(): string {
-  return csagentHome() ?? process.cwd();
+  return iridaHome() ?? process.cwd();
 }
 
 export function cmdPetStatus(_args: string[]): ExitCode {
@@ -47,9 +47,9 @@ export async function cmdPet(args: string[]): Promise<ExitCode> {
     case "--help":
     case "help":
       console.log(`Usage:
-  csagent pet status    optional snapshot from .agent/pet-state.json
+  irida pet status    optional snapshot from .agent/pet-state.json
 
-The mascot lives in \`csagent tui\` (terminal frames).`);
+The mascot lives in \`irida tui\` (terminal frames).`);
       return EXIT.ok;
     default:
       console.error(`unknown pet subcommand: ${sub}`);

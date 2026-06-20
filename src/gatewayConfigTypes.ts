@@ -69,7 +69,7 @@ export function loadGatewayConfig(dir: string = process.cwd()): GatewayConfig {
   const path = gatewayConfigPath(dir);
   if (!existsSync(path)) {
     throw new GatewayConfigError(
-      `missing ${GATEWAY_FILE} — create .agent/gateway.json (see: csagent gateway help)`
+      `missing ${GATEWAY_FILE} — create .agent/gateway.json (see: irida gateway help)`
     );
   }
   let parsed: unknown;

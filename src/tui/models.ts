@@ -1,6 +1,6 @@
 import { loadConfig } from "../config.js";
 import { resolveApiKey } from "../credentials.js";
-import { csagentModels } from "../env.js";
+import { iridaModels } from "../env.js";
 
 /** Default model ids when SDK list is unavailable (override via CSAGENT_MODELS). */
 export const DEFAULT_MODELS = ["composer-2.5", "composer-2", "claude-4-sonnet", "gpt-5.4"];
@@ -25,7 +25,7 @@ export function mergePickerModels(configModel: string, ids: string[]): string[] 
 /** Static picker list (config + env or defaults). */
 export function listPickerModelsFallback(dir: string = process.cwd()): string[] {
   const cfg = loadConfig(dir);
-  const fromEnv = (csagentModels() ?? "")
+  const fromEnv = (iridaModels() ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);

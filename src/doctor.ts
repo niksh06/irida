@@ -1,5 +1,5 @@
 /**
- * `cursor-agent doctor` — validate the minimum needed for a local SDK run
+ * `irida doctor` — validate the minimum needed for a local SDK run
  * (issue 004). Never prints secret values.
  */
 import { warmCredentialsCache } from "./credentials.js";

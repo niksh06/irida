@@ -1,5 +1,5 @@
 /**
- * Terminal setup for csagent TUI.
+ * Terminal setup for irida TUI.
  *
  * Alternate screen (DEC 1049) disables the terminal scrollback buffer — trackpad
  * scrolling stops working in Cursor/iTerm. Keep alt screen opt-in via CSAGENT_TUI_ALT=1.
@@ -7,10 +7,10 @@
  * Default mode: full transcript in scrollback → native trackpad scroll.
  * Alt screen: DEC 1007 maps wheel to arrow keys for Ink virtual viewport.
  */
-import { csagentTuiAlt } from "../env.js";
+import { iridaTuiAlt } from "../env.js";
 
 export function useAltScreen(): boolean {
-  return csagentTuiAlt() === "1";
+  return iridaTuiAlt() === "1";
 }
 
 export function enterTuiTerminal(): void {

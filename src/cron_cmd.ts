@@ -1,5 +1,5 @@
 /**
- * `csagent cron list|run|tick` — scheduled jobs (issue 038).
+ * `irida cron list|run|tick` — scheduled jobs (issue 038).
  */
 import { loadConfig, ConfigError } from "./config.js";
 import {
@@ -45,7 +45,7 @@ export function cmdCronList(opts: CronCmdOptions = {}): ExitCode {
   const path = cronJobsPath(dir);
   if (jobs.length === 0) {
     console.log(`No jobs in ${path}`);
-    console.log("Create .agent/cron.jobs.json — see: csagent cron help");
+    console.log("Create .agent/cron.jobs.json — see: irida cron help");
     return EXIT.ok;
   }
   console.log("ID               CRON            NEXT (local)       ON   PROMPT");
@@ -168,16 +168,16 @@ export async function cmdCron(argv: string[], opts: CronCmdOptions = {}): Promis
     case "--help":
     case "help":
       console.log(`Usage:
-  csagent cron list              show jobs and next run time
-  csagent cron run <id>          execute one job now
-  csagent cron tick              run all due jobs (call from system cron)
-  csagent cron qa [job-id]       automated digest QA (default: tparser-daily-digest)
-  csagent cron qa --alert        QA + Telegram alert on FAIL
-  csagent cron qa --morning --alert   morning re-check (launchd 08:00)
+  irida cron list              show jobs and next run time
+  irida cron run <id>          execute one job now
+  irida cron tick              run all due jobs (call from system cron)
+  irida cron qa [job-id]       automated digest QA (default: tparser-daily-digest)
+  irida cron qa --alert        QA + Telegram alert on FAIL
+  irida cron qa --morning --alert   morning re-check (launchd 08:00)
 
 Jobs file: .agent/cron.jobs.json
 Example crontab (every 5 min):
-  */5 * * * * cd /path/to/project && csagent cron tick
+  */5 * * * * cd /path/to/project && irida cron tick
 
 Job JSON:
 {
@@ -196,7 +196,7 @@ Job JSON:
 `);
       return EXIT.ok;
     default:
-      console.error(`cron: unknown subcommand '${sub}'\n\nRun: csagent cron help`);
+      console.error(`cron: unknown subcommand '${sub}'\n\nRun: irida cron help`);
       return EXIT.usage;
   }
 }

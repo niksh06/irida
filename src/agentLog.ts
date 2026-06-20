@@ -36,7 +36,7 @@ export interface AgentLoggerOptions {
 
 /** Build a logger: CSAGENT_LOG → stdout/stderr by level (or logFile); always forwards to onLog. */
 export function resolveAgentLogger(opts: AgentLoggerOptions = {}): (line: string) => void {
-  const component = opts.component ?? "csagent";
+  const component = opts.component ?? "irida";
   const enabled = agentLogEnabled();
   let fileReady = false;
   return (line: string) => {

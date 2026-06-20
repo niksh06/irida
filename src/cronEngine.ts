@@ -394,7 +394,7 @@ export async function cronTick(
 
   if (isBackgroundPaused(dir)) {
     console.error(
-      "[cron] tick skipped — background paused (`csagent background resume` or unset CSAGENT_PAUSE_BACKGROUND)"
+      "[cron] tick skipped — background paused (`irida background resume` or unset CSAGENT_PAUSE_BACKGROUND)"
     );
     return { ran: [], skipped: jobs.map((j) => j.id), errors: [] };
   }

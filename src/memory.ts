@@ -212,7 +212,7 @@ async function loadMemoriesForToken(dir: string, tokenName: string): Promise<str
         return blocks;
       }
       const all = listMemories(dir);
-      if (all.length === 0) throw new MemoryError("no memories stored — use csagent memory add");
+      if (all.length === 0) throw new MemoryError("no memories stored — use irida memory add");
       let total = 0;
       const blocks: string[] = [];
       for (const entry of all) {

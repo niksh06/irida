@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { loadCsagentEnv, parseEnvFile } from "../src/loadEnv.js";
+import { loadIridaEnv, parseEnvFile } from "../src/loadEnv.js";
 
 test("parseEnvFile handles export and quotes", () => {
   const parsed = parseEnvFile(`
@@ -15,7 +15,7 @@ CSAGENT_DATABASE_URL='postgresql://x'
   assert.equal(parsed.CSAGENT_DATABASE_URL, "postgresql://x");
 });
 
-test("loadCsagentEnv does not override existing env", () => {
+test("loadIridaEnv does not override existing env", () => {
   const dir = mkdtempSync(join(tmpdir(), "csagent-env-"));
   writeFileSync(
     join(dir, ".env"),
@@ -25,7 +25,7 @@ test("loadCsagentEnv does not override existing env", () => {
   const prevHome = process.env.CSAGENT_HOME;
   process.env.CSAGENT_HOME = "/already-set";
   try {
-    const loaded = loadCsagentEnv(dir);
+    const loaded = loadIridaEnv(dir);
     assert.ok(loaded.some((p) => p.endsWith(".env")));
     assert.equal(process.env.CSAGENT_HOME, "/already-set");
     assert.equal(process.env.OTHER_FROM_FILE, "1");

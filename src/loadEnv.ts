@@ -1,11 +1,11 @@
 /**
- * Load csagent env files before CLI/MCP startup (no dotenv dependency).
+ * Load irida env files before CLI/MCP startup (no dotenv dependency).
  * Does not override variables already set in the process environment.
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { csagentEnvFile } from "./env.js";
+import { iridaEnvFile } from "./env.js";
 
 /** Warn when a secret-bearing env file is group/other-readable (POSIX only). */
 function warnIfWorldReadable(path: string): void {
@@ -57,10 +57,10 @@ function applyEnvFile(path: string): void {
 }
 
 /** Load env in precedence order (first wins; never overrides existing env). */
-export function loadCsagentEnv(cwd: string = process.cwd()): string[] {
+export function loadIridaEnv(cwd: string = process.cwd()): string[] {
   const loaded: string[] = [];
   const candidates: string[] = [];
-  const explicit = csagentEnvFile();
+  const explicit = iridaEnvFile();
   if (explicit) candidates.push(explicit);
   // Prefer the new ~/.irida/irida.env; fall back to legacy ~/.csagent/csagent.env (rename shim).
   candidates.push(resolve(homedir(), ".irida/irida.env"));

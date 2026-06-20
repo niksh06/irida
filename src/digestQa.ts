@@ -245,7 +245,7 @@ export function formatDigestQaAlert(report: DigestQaReport, opts: DigestQaAlertO
     "",
     ...failed.map((c) => `FAIL ${c.name}: ${c.detail}`),
     "",
-    "Проверь: csagent cron qa · deploy/DIGEST-QA.md",
+    "Проверь: irida cron qa · deploy/DIGEST-QA.md",
   ];
   return lines.join("\n");
 }

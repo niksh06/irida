@@ -6,7 +6,7 @@ import { enterTuiTerminal, leaveTuiTerminal } from "./terminal.js";
 
 export async function runTui(opts: TuiOptions = {}): Promise<ExitCode> {
   const onUnhandled = (reason: unknown) => {
-    console.error("csagent tui: unhandled rejection:", reason);
+    console.error("irida tui: unhandled rejection:", reason);
   };
   process.on("unhandledRejection", onUnhandled);
   enterTuiTerminal();

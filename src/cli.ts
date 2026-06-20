@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * cursor-agent — local-first personal agent on the Cursor SDK.
+ * irida — local-first personal agent on the Cursor SDK.
  * P0 commands (issue 001): doctor, run, chat, sessions, resume, config — all
  * implemented. See docs/reviews/mvp-p0-review.md for status and limitations.
  */
-import { loadCsagentEnv } from "./loadEnv.js";
+import { loadIridaEnv } from "./loadEnv.js";
 import { warmCredentialsCache } from "./credentials.js";
-loadCsagentEnv();
+loadIridaEnv();
 
 import { cmdDoctor, cmdDoctorMorningAlert } from "./doctor.js";
 import { cmdRun } from "./run.js";

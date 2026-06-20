@@ -1,5 +1,5 @@
 /**
- * Resolved csagent environment accessors (Arch-4 — the single env read layer).
+ * Resolved irida environment accessors (Arch-4 — the single env read layer).
  *
  * Goal: nothing outside this module (and the DB-specific pg/pool.ts) reads
  * `process.env.CSAGENT_*` directly, so every knob is discoverable in one place
@@ -26,31 +26,26 @@ export function iridaHome(): string | undefined {
   return dualEnv("HOME");
 }
 
-/** @deprecated legacy alias for {@link iridaHome}. */
-export function csagentHome(): string | undefined {
-  return iridaHome();
-}
-
 /**
  * Install root of the agent (e.g. ~/.csagent/csagent) — the second candidate
  * for resolving skills/prompts/scripts when launched outside the project dir.
  */
-export function csagentRoot(): string | undefined {
+export function iridaRoot(): string | undefined {
   return dualEnv("ROOT");
 }
 
 /** Override for the project dir MCP child tools resolve memory/cron against. */
-export function csagentMemoryDir(): string | undefined {
+export function iridaMemoryDir(): string | undefined {
   return dualEnv("MEMORY_DIR");
 }
 
 /** Override for the state dir (.agent) MCP child tools resolve against. */
-export function csagentStateDir(): string | undefined {
+export function iridaStateDir(): string | undefined {
   return dualEnv("STATE_DIR");
 }
 
 /** Knowledge-base root for `memory kb` import/export. */
-export function csagentKbRoot(): string | undefined {
+export function iridaKbRoot(): string | undefined {
   return dualEnv("KB_ROOT");
 }
 
@@ -66,72 +61,72 @@ export function backgroundPauseEnv(): string | undefined {
 // --- diagnostics / logging toggles (callers interpret "0"/"1") ---
 
 /** Action transcript logging — enabled unless set to "0". */
-export function csagentActionLog(): string | undefined {
+export function iridaActionLog(): string | undefined {
   return dualEnv("ACTION_LOG");
 }
 
 /** Run logging — enabled unless set to "0". */
-export function csagentRunLog(): string | undefined {
+export function iridaRunLog(): string | undefined {
   return dualEnv("RUN_LOG");
 }
 
 /** Idle-refresh interval in ms ("0" disables); caller parses the number. */
-export function csagentAgentIdleMs(): string | undefined {
+export function iridaAgentIdleMs(): string | undefined {
   return dualEnv("AGENT_IDLE_MS");
 }
 
-/** Explicit env-file path, highest precedence in loadCsagentEnv. */
-export function csagentEnvFile(): string | undefined {
+/** Explicit env-file path, highest precedence in loadIridaEnv. */
+export function iridaEnvFile(): string | undefined {
   return dualEnv("ENV");
 }
 
 /** Use the alternate TUI screen buffer when "1". */
-export function csagentTuiAlt(): string | undefined {
+export function iridaTuiAlt(): string | undefined {
   return dualEnv("TUI_ALT");
 }
 
 /** Comma-separated model picker override; caller splits. */
-export function csagentModels(): string | undefined {
+export function iridaModels(): string | undefined {
   return dualEnv("MODELS");
 }
 
 /** Escape hatch to allow writes under CSAGENT_HOME/.agent during tests. */
-export function csagentAllowProdStateWrite(): string | undefined {
+export function iridaAllowProdStateWrite(): string | undefined {
   return dualEnv("ALLOW_PROD_STATE_WRITE");
 }
 
 // --- gateway child-process context (passed to MCP tool subprocesses) ---
 
-export function csagentGatewayChatId(): string | undefined {
+export function iridaGatewayChatId(): string | undefined {
   return dualEnv("GATEWAY_CHAT_ID");
 }
 
-export function csagentGatewayAdapter(): string | undefined {
+export function iridaGatewayAdapter(): string | undefined {
   return dualEnv("GATEWAY_ADAPTER");
 }
 
 // --- browser MCP / chromium launch ---
 
-export function csagentBrowserRoot(): string | undefined {
+export function iridaBrowserRoot(): string | undefined {
   return dualEnv("BROWSER_ROOT");
 }
 
-export function csagentBrowserProfile(): string | undefined {
+export function iridaBrowserProfile(): string | undefined {
   return dualEnv("BROWSER_PROFILE");
 }
 
-export function csagentBrowserHeadless(): string | undefined {
+export function iridaBrowserHeadless(): string | undefined {
   return dualEnv("BROWSER_HEADLESS");
 }
 
-export function csagentBrowserNoSandbox(): string | undefined {
+export function iridaBrowserNoSandbox(): string | undefined {
   return dualEnv("BROWSER_NO_SANDBOX");
 }
 
-export function csagentBrowserInsecureTls(): string | undefined {
+export function iridaBrowserInsecureTls(): string | undefined {
   return dualEnv("BROWSER_INSECURE_TLS");
 }
 
-export function csagentChromePath(): string | undefined {
+export function iridaChromePath(): string | undefined {
   return dualEnv("CHROME_PATH");
 }

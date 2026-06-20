@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { csagentRoot } from "./env.js";
+import { iridaRoot } from "./env.js";
 import type { PetState, PetTheme } from "./petState.js";
 
 export const PET_MANIFEST_REL = join("deploy", "assets", "pet", "manifest.json");
@@ -25,7 +25,7 @@ export interface PetManifest {
 
 export function petDirCandidates(repoOrHome: string): string[] {
   const out: string[] = [];
-  const root = csagentRoot();
+  const root = iridaRoot();
   if (root) out.push(join(root, "deploy", "assets", "pet"));
   out.push(join(repoOrHome, "deploy", "assets", "pet"));
   if (repoOrHome !== process.cwd()) {

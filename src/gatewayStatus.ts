@@ -1,9 +1,9 @@
 /**
- * `csagent gateway status` — launchd + log probe (I-18).
+ * `irida gateway status` — launchd + log probe (I-18).
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { csagentHome } from "./env.js";
+import { iridaHome } from "./env.js";
 import { backgroundPauseState } from "./backgroundPause.js";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
@@ -63,7 +63,7 @@ function logAgeMs(path: string): number {
 
 export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusLine[] {
   const rows: GatewayStatusLine[] = [];
-  const home = csagentHome() || resolve(dir, "..", "..");
+  const home = iridaHome() || resolve(dir, "..", "..");
   const logDir = resolve(home, "logs");
   const cronLog = resolve(logDir, "cron-tick.log");
 

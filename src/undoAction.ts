@@ -1,5 +1,5 @@
 /**
- * Undo last reversible csagent mutation (I-45).
+ * Undo last reversible irida mutation (I-45).
  */
 import { loadCronJobs, saveCronJobs, type CronJob } from "./cronJobs.js";
 import { CronJobsError } from "./cronJobs.js";

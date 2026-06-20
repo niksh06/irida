@@ -1,5 +1,5 @@
 /**
- * `cursor-agent resume <session-id> "<prompt>"` — continue a stored session
+ * `irida resume <session-id> "<prompt>"` — continue a stored session
  * (issue 011). Cursor SDK local agents are not reliably durable after the
  * process exits, so resume has two paths:
  *
@@ -80,11 +80,11 @@ export async function cmdResume(
   const write = opts.write ?? ((s: string) => process.stdout.write(s));
 
   if (!sessionId || !sessionId.trim()) {
-    console.error("resume: a session id is required (see `cursor-agent sessions`)");
+    console.error("resume: a session id is required (see `irida sessions`)");
     return EXIT.usage;
   }
   if (!prompt || !prompt.trim()) {
-    console.error('resume: a prompt is required, e.g. cursor-agent resume <id> "continue"');
+    console.error('resume: a prompt is required, e.g. irida resume <id> "continue"');
     return EXIT.usage;
   }
   let cfg: AgentConfig;
@@ -124,7 +124,7 @@ export async function cmdResume(
   try {
     const session = await store.getSession(sessionId);
     if (!session) {
-      console.error(`resume: session '${sessionId}' not found (see \`cursor-agent sessions\`)`);
+      console.error(`resume: session '${sessionId}' not found (see \`irida sessions\`)`);
       return EXIT.usage;
     }
     const sessionEngine = (session.engine ?? "").trim() || "cursor";

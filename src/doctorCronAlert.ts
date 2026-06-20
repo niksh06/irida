@@ -17,7 +17,7 @@ export function gatherCronHealthCheck(dir: string = process.cwd()): DoctorCheck 
       name: "cron jobs",
       ok: false,
       detail: "cron.jobs.json missing",
-      fix: "copy deploy/cron.jobs.example.json → .agent/cron.jobs.json, then: csagent cron list",
+      fix: "copy deploy/cron.jobs.example.json → .agent/cron.jobs.json, then: irida cron list",
     };
   }
   const cron = gatherDoctorChecks(dir).find((c) => c.name === "cron jobs");

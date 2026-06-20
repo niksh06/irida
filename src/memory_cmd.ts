@@ -1,10 +1,10 @@
 /**
- * `csagent memory` — notes + temporal facts (csagent-memory, issue 036+).
+ * `irida memory` — notes + temporal facts (csagent-memory, issue 036+).
  */
 import { isAbsolute, resolve } from "node:path";
 import { stdin as input } from "node:process";
 import { loadConfig, ConfigError } from "./config.js";
-import { csagentKbRoot } from "./env.js";
+import { iridaKbRoot } from "./env.js";
 import { importHappyinKb } from "./importHappyinKb.js";
 import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from "./memory.js";
 import { alignMemorySilos } from "./memorySiloOps.js";
@@ -132,7 +132,7 @@ export async function cmdMemoryList(opts: MemoryCmdOptions = {}): Promise<ExitCo
     if (notes.length === 0) {
       const files = listMemories(dir);
       if (files.length === 0) {
-        console.log("No memories — use: csagent memory add <name>");
+        console.log("No memories — use: irida memory add <name>");
         return EXIT.ok;
       }
       console.log("NAME             WING       TITLE                                    PREVIEW");
@@ -184,7 +184,7 @@ export async function cmdMemoryAdd(
 ): Promise<ExitCode> {
   const dir = opts.dir ?? process.cwd();
   if (!name.trim()) {
-    console.error("memory add: name required, e.g. csagent memory add project --stdin");
+    console.error("memory add: name required, e.g. irida memory add project --stdin");
     return EXIT.usage;
   }
   let body = bodyArg?.trim() ?? "";
@@ -303,7 +303,7 @@ export async function cmdMemoryImportMd(
   opts: MemoryCmdOptions = {}
 ): Promise<ExitCode> {
   let memoryDir = opts.dir ?? process.cwd();
-  let kbRoot = csagentKbRoot() ?? "";
+  let kbRoot = iridaKbRoot() ?? "";
   let dryRun = false;
   const domains: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -354,7 +354,7 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
       const predicate = rest[1];
       const object = rest.slice(2).join(" ").trim();
       if (!subject || !predicate || !object) {
-        console.error("usage: csagent memory fact add <subject> <predicate> <object>");
+        console.error("usage: irida memory fact add <subject> <predicate> <object>");
         return EXIT.usage;
       }
       try {
@@ -373,7 +373,7 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
       const subject = rest[0];
       const predicate = rest[1];
       if (!subject) {
-        console.error("usage: csagent memory fact query <subject> [predicate]");
+        console.error("usage: irida memory fact query <subject> [predicate]");
         return EXIT.usage;
       }
       const facts = await withStore(dir, (s) => s.queryFacts({ subject, predicate }));
@@ -389,7 +389,7 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
     case "invalidate": {
       const id = rest[0];
       if (!id) {
-        console.error("usage: csagent memory fact invalidate <fact-id>");
+        console.error("usage: irida memory fact invalidate <fact-id>");
         return EXIT.usage;
       }
       const ok = await withStore(dir, (s) => s.invalidateFact(id));
@@ -421,7 +421,7 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
     case "prune": {
       const subject = rest[0];
       if (subject !== "seen_post") {
-        console.error("usage: csagent memory fact prune seen_post --older-than 30d [--dry-run]");
+        console.error("usage: irida memory fact prune seen_post --older-than 30d [--dry-run]");
         return EXIT.usage;
       }
       let olderThan = `${SEEN_POST_TTL_DAYS}d`;
@@ -444,12 +444,12 @@ export async function cmdMemoryFact(argv: string[], opts: MemoryCmdOptions = {})
     }
     default:
       console.log(`Usage:
-  csagent memory fact add <subject> <predicate> <object>
-  csagent memory fact query <subject> [predicate]
-  csagent memory fact invalidate <fact-id>
-  csagent memory fact purge-seen-post [--dry-run]
-  csagent memory fact purge-malformed-subjects [--dry-run]
-  csagent memory fact prune seen_post --older-than 30d [--dry-run]  (legacy TTL)
+  irida memory fact add <subject> <predicate> <object>
+  irida memory fact query <subject> [predicate]
+  irida memory fact invalidate <fact-id>
+  irida memory fact purge-seen-post [--dry-run]
+  irida memory fact purge-malformed-subjects [--dry-run]
+  irida memory fact prune seen_post --older-than 30d [--dry-run]  (legacy TTL)
 `);
       return sub ? EXIT.usage : EXIT.ok;
   }
@@ -911,19 +911,19 @@ export async function cmdMemoryOkf(argv: string[], opts: MemoryCmdOptions = {}):
       default:
         console.error(`memory okf: unknown action '${action ?? ""}'`);
         console.error(`Usage:
-  csagent memory okf audit [--json]
-  csagent memory okf migrate-lessons [--apply] [--limit N]
-  csagent memory okf backfill-lineage [--apply]   # sourceHash from cursor-ide archive
-  csagent memory okf repair-titles [--apply]      # human title from description/Summary
-  csagent memory okf strip-legacy-meta [--apply] # drop HTML lineage when YAML present
-  csagent memory okf promote [--apply] [--keep-file deploy/promote-lessons.json]
-  csagent memory okf export-review [--out Reports/cursor-lesson-review]
-  csagent memory okf export-bundle [--bundle-out .agent/memory/okf/cursor-lesson] [--exclude-fixtures]
-  csagent memory okf purge-stubs [--apply] [--fixtures-only | --stubs-only]
-  csagent memory okf purge-meta-distill [--apply] [--keep-file deploy/meta-distill-keep.json]
-  csagent memory okf purge-tparser [--apply] [--keep-file deploy/tparser-keep.json]
-  csagent memory okf purge-gateway [--apply] [--keep-file deploy/gateway-keep.json]
-  csagent memory okf purge-shard --shard A-tparser [--apply] [--keep-file …]`);
+  irida memory okf audit [--json]
+  irida memory okf migrate-lessons [--apply] [--limit N]
+  irida memory okf backfill-lineage [--apply]   # sourceHash from cursor-ide archive
+  irida memory okf repair-titles [--apply]      # human title from description/Summary
+  irida memory okf strip-legacy-meta [--apply] # drop HTML lineage when YAML present
+  irida memory okf promote [--apply] [--keep-file deploy/promote-lessons.json]
+  irida memory okf export-review [--out Reports/cursor-lesson-review]
+  irida memory okf export-bundle [--bundle-out .agent/memory/okf/cursor-lesson] [--exclude-fixtures]
+  irida memory okf purge-stubs [--apply] [--fixtures-only | --stubs-only]
+  irida memory okf purge-meta-distill [--apply] [--keep-file deploy/meta-distill-keep.json]
+  irida memory okf purge-tparser [--apply] [--keep-file deploy/tparser-keep.json]
+  irida memory okf purge-gateway [--apply] [--keep-file deploy/gateway-keep.json]
+  irida memory okf purge-shard --shard A-tparser [--apply] [--keep-file …]`);
         return EXIT.usage;
     }
   } catch (e) {
@@ -1009,7 +1009,7 @@ export async function cmdMemoryLessonEval(argv: string[], opts: MemoryCmdOptions
         const lesson = positional[0];
         const verdict = positional[1] ? parseLessonEvalVerdict(positional[1]) : undefined;
         if (!lesson || !verdict) {
-          console.error("usage: csagent memory lesson-eval record <lesson> pass|fail|neutral [--note TEXT]");
+          console.error("usage: irida memory lesson-eval record <lesson> pass|fail|neutral [--note TEXT]");
           return EXIT.usage;
         }
         const fact = await recordLessonEval(dir, lesson, verdict, note);
@@ -1033,11 +1033,11 @@ export async function cmdMemoryLessonEval(argv: string[], opts: MemoryCmdOptions
       default:
         console.error(`memory lesson-eval: unknown action '${action ?? ""}'`);
         console.error(`Usage:
-  csagent memory lesson-eval validate [--json] [--promote-file PATH] [--tasks-file PATH]
-  csagent memory lesson-eval list [--json]
-  csagent memory lesson-eval sheet [--out Reports/cursor-lesson-eval-sheet.md]
-  csagent memory lesson-eval record <lesson> pass|fail|neutral [--note TEXT]
-  csagent memory lesson-eval summary [--json]`);
+  irida memory lesson-eval validate [--json] [--promote-file PATH] [--tasks-file PATH]
+  irida memory lesson-eval list [--json]
+  irida memory lesson-eval sheet [--out Reports/cursor-lesson-eval-sheet.md]
+  irida memory lesson-eval record <lesson> pass|fail|neutral [--note TEXT]
+  irida memory lesson-eval summary [--json]`);
         return EXIT.usage;
     }
   } catch (e) {
@@ -1155,28 +1155,28 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
     case "--help":
     case "help":
       console.log(`Usage:
-  csagent memory list                      list stored notes
-  csagent memory show <name>               print one note
-  csagent memory add <name> [--wing W] [--stdin]
-  csagent memory search <query> [--semantic]   keyword (FTS) or vector search
-  csagent memory reindex-embeddings        embed notes missing a vector (PG)
-  csagent memory ingest-sessions [--window-hours N] [--force]
+  irida memory list                      list stored notes
+  irida memory show <name>               print one note
+  irida memory add <name> [--wing W] [--stdin]
+  irida memory search <query> [--semantic]   keyword (FTS) or vector search
+  irida memory reindex-embeddings        embed notes missing a vector (PG)
+  irida memory ingest-sessions [--window-hours N] [--force]
                                            ingest recent sessions → episodic notes
-  csagent memory rm <name>
-  csagent memory import-md --kb-root PATH …   (deprecated — use file KB + skill kb-ops)
-  csagent memory align-silo [--dry-run]   merge repo/cron silos → canonical ~/.csagent/.agent/memory
-  csagent memory audit [--links] [--stale-days N] [--all-notes] [--json]
-  csagent memory re-wing [--apply]            move default corpus → tparser/reddit/style (I-81)
-  csagent memory lesson-eval validate|list|sheet|record|summary  (I-79 paired eval)
-  csagent memory purge-archive [--wing cursor-ide] [--older-than-days 180] [--require-lesson] [--apply]
-  csagent memory fact add|query|invalidate …
+  irida memory rm <name>
+  irida memory import-md --kb-root PATH …   (deprecated — use file KB + skill kb-ops)
+  irida memory align-silo [--dry-run]   merge repo/cron silos → canonical ~/.csagent/.agent/memory
+  irida memory audit [--links] [--stale-days N] [--all-notes] [--json]
+  irida memory re-wing [--apply]            move default corpus → tparser/reddit/style (I-81)
+  irida memory lesson-eval validate|list|sheet|record|summary  (I-79 paired eval)
+  irida memory purge-archive [--wing cursor-ide] [--older-than-days 180] [--require-lesson] [--apply]
+  irida memory fact add|query|invalidate …
 
 In chat/TUI, inject with @memory:<name> or @memory: for all.
 Notes live in DB (sqlite/postgres) + mirror .agent/memory/*.md for @memory.
 `);
       return EXIT.ok;
     default:
-      console.error(`unknown memory subcommand: ${sub}\n\nRun: csagent memory help`);
+      console.error(`unknown memory subcommand: ${sub}\n\nRun: irida memory help`);
       return EXIT.usage;
   }
 }

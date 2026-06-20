@@ -4,11 +4,11 @@
 import { resolve } from "node:path";
 import { loadConfig, resolveMemoryRoot } from "../config.js";
 import {
-  csagentMemoryDir,
-  csagentBrowserRoot,
-  csagentBrowserProfile,
-  csagentBrowserHeadless,
-  csagentChromePath,
+  iridaMemoryDir,
+  iridaBrowserRoot,
+  iridaBrowserProfile,
+  iridaBrowserHeadless,
+  iridaChromePath,
 } from "../env.js";
 import { DEFAULT_BROWSER_PROFILE, DEFAULT_USER_AGENT } from "../browser/defaults.js";
 
@@ -21,21 +21,21 @@ export interface BrowserMcpContext {
 }
 
 export function resolveBrowserRoot(projectDir: string): string {
-  const fromEnv = csagentBrowserRoot();
+  const fromEnv = iridaBrowserRoot();
   if (fromEnv) return resolve(fromEnv);
   return resolve(resolveMemoryRoot(projectDir), "browser");
 }
 
 export function resolveBrowserMcpContext(projectDir?: string): BrowserMcpContext {
-  const dir = projectDir || csagentMemoryDir() || process.cwd();
+  const dir = projectDir || iridaMemoryDir() || process.cwd();
   const cfg = loadConfig(dir);
   const browserRoot = resolveBrowserRoot(dir);
   const profile =
-    csagentBrowserProfile() ||
+    iridaBrowserProfile() ||
     cfg.browser?.profile?.trim() ||
     DEFAULT_BROWSER_PROFILE;
 
-  const headlessEnv = csagentBrowserHeadless()?.toLowerCase();
+  const headlessEnv = iridaBrowserHeadless()?.toLowerCase();
   let headless = cfg.browser?.headless ?? true;
   if (headlessEnv === "true" || headlessEnv === "1") headless = true;
   if (headlessEnv === "false" || headlessEnv === "0") headless = false;
@@ -45,6 +45,6 @@ export function resolveBrowserMcpContext(projectDir?: string): BrowserMcpContext
     profile,
     headless,
     userAgent: cfg.browser?.userAgent?.trim() || DEFAULT_USER_AGENT,
-    chromePath: csagentChromePath() || cfg.browser?.chromePath?.trim(),
+    chromePath: iridaChromePath() || cfg.browser?.chromePath?.trim(),
   };
 }

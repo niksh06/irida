@@ -5,10 +5,10 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveMemoryRoot } from "../config.js";
 import {
-  csagentMemoryDir,
-  csagentStateDir,
-  csagentGatewayChatId,
-  csagentGatewayAdapter,
+  iridaMemoryDir,
+  iridaStateDir,
+  iridaGatewayChatId,
+  iridaGatewayAdapter,
 } from "../env.js";
 import {
   listCronJobsText,
@@ -24,10 +24,10 @@ export interface CronMcpContext {
 }
 
 export function resolveCronMcpContext(): CronMcpContext {
-  const dir = csagentMemoryDir() ?? process.cwd();
-  const stateDir = csagentStateDir() ?? resolveMemoryRoot(dir);
-  const gatewayChatId = csagentGatewayChatId();
-  const gatewayAdapter = csagentGatewayAdapter() || "telegram";
+  const dir = iridaMemoryDir() ?? process.cwd();
+  const stateDir = iridaStateDir() ?? resolveMemoryRoot(dir);
+  const gatewayChatId = iridaGatewayChatId();
+  const gatewayAdapter = iridaGatewayAdapter() || "telegram";
   return { dir, stateDir, gatewayChatId, gatewayAdapter };
 }
 
@@ -39,7 +39,7 @@ export function registerCronMcpTools(server: McpServer, ctx: CronMcpContext): vo
   server.registerTool(
     "cron_list",
     {
-      description: "List scheduled csagent cron jobs (read-only).",
+      description: "List scheduled irida cron jobs (read-only).",
       inputSchema: {
         userOnly: z
           .boolean()

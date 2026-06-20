@@ -61,7 +61,7 @@ export function applyEngineAuthEnv(authMode: EngineAuth, secret: string): () => 
   };
 }
 
-/** Map csagent MCP entries ({command}|{url}) to Agent SDK McpServerConfig. */
+/** Map irida MCP entries ({command}|{url}) to Agent SDK McpServerConfig. */
 export function toAgentMcpServers(mcp?: McpServers): Record<string, unknown> | undefined {
   if (!mcp) return undefined;
   const out: Record<string, unknown> = {};

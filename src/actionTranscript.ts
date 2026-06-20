@@ -1,12 +1,12 @@
 /**
- * Append-only action transcript for reversible csagent mutations (I-44).
+ * Append-only action transcript for reversible irida mutations (I-44).
  */
 import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { redact } from "./redact.js";
-import { csagentActionLog } from "./env.js";
+import { iridaActionLog } from "./env.js";
 import type { CronJob } from "./cronJobs.js";
 
 export const ACTION_TRANSCRIPT_FILE = "action.transcript.jsonl";
@@ -23,7 +23,7 @@ export interface ActionTranscriptEntry {
 }
 
 export function actionTranscriptEnabled(): boolean {
-  return csagentActionLog() !== "0";
+  return iridaActionLog() !== "0";
 }
 
 export function actionTranscriptPath(dir: string): string {

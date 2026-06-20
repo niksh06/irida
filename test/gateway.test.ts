@@ -180,7 +180,7 @@ test("GatewaySessionRouter /new resets peer to fresh sess_", async () => {
     const first = loadGatewayPeers(dir).peers[peerKey("telegram", "u1")];
     assert.ok(first?.startsWith("sess_"));
     const out = await router.handleInbound("u1", "/new");
-    assert.match(out.reply, /Новая сессия csagent/);
+    assert.match(out.reply, /Новая сессия irida/);
     const second = loadGatewayPeers(dir).peers[peerKey("telegram", "u1")];
     assert.ok(second?.startsWith("sess_"));
     assert.notEqual(first, second);

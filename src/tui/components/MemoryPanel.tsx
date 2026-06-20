@@ -17,7 +17,7 @@ export function MemoryPanel(props: { dir: string; onClose: () => void }) {
       footer="Inject with @memory:<name> or @memory: · Esc to close"
     >
       {entries.length === 0 ? (
-        <Text color={theme.muted}>No memories — csagent memory add &lt;name&gt; --stdin</Text>
+        <Text color={theme.muted}>No memories — irida memory add &lt;name&gt; --stdin</Text>
       ) : (
         entries.map((m) => (
           <Text key={m.name} wrap="wrap">

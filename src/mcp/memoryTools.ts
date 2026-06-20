@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveMemoryRoot, loadConfig } from "../config.js";
-import { csagentMemoryDir, csagentStateDir } from "../env.js";
+import { iridaMemoryDir, iridaStateDir } from "../env.js";
 import { saveMemory } from "../memory.js";
 import { createMemoryStore, SECURE_WING } from "../memoryStore.js";
 import { MemoryFactValidationError } from "../memoryFactValidate.js";
@@ -27,8 +27,8 @@ export const MEMORY_MCP_TOOL_NAMES = [
 ] as const;
 
 export function resolveMemoryMcpContext(): MemoryMcpContext {
-  const dir = csagentMemoryDir() ?? process.cwd();
-  const stateDir = csagentStateDir() ?? resolveMemoryRoot(dir);
+  const dir = iridaMemoryDir() ?? process.cwd();
+  const stateDir = iridaStateDir() ?? resolveMemoryRoot(dir);
   return { dir, stateDir };
 }
 
@@ -94,7 +94,7 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
   server.registerTool(
     "memory_get",
     {
-      description: "Load a durable csagent memory note by name (verbatim markdown body).",
+      description: "Load a durable irida memory note by name (verbatim markdown body).",
       inputSchema: {
         name: z.string().describe("Note name, e.g. tparser-workflow"),
       },
@@ -112,7 +112,7 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
     "memory_search",
     {
       description:
-        "Search csagent memory notes. hybrid=true merges FTS + vector (default when embeddings on); semantic=true is vector-only.",
+        "Search irida memory notes. hybrid=true merges FTS + vector (default when embeddings on); semantic=true is vector-only.",
       inputSchema: {
         query: z.string().describe("Search text"),
         limit: z.number().int().min(1).max(50).optional().describe("Max hits (default 10)"),
@@ -178,7 +178,7 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
   server.registerTool(
     "memory_list",
     {
-      description: "List available csagent memory note names.",
+      description: "List available irida memory note names.",
       inputSchema: {
         wing: z.string().optional().describe("Filter by wing namespace"),
       },
@@ -196,7 +196,7 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
     "memory_save",
     {
       description:
-        "Create or update a csagent memory note. Use for durable facts the user asked to remember.",
+        "Create or update a irida memory note. Use for durable facts the user asked to remember.",
       inputSchema: {
         name: z.string().describe("Note name (letters, digits, ._-)"),
         body: z.string().describe("Markdown body"),

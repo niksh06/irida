@@ -1,5 +1,5 @@
 /**
- * `csagent store migrate` — sqlite → postgres (I-28).
+ * `irida store migrate` — sqlite → postgres (I-28).
  */
 import { loadConfig, ConfigError } from "./config.js";
 import { migrateSqliteToPostgres } from "./storeMigrate.js";
@@ -40,7 +40,7 @@ export async function cmdStore(argv: string[], dir: string = process.cwd()): Pro
     case "-h":
     case "--help":
       console.log(`Usage:
-  csagent store migrate [postgres-url]   copy sqlite sessions/runs to PG
+  irida store migrate [postgres-url]   copy sqlite sessions/runs to PG
 `);
       return EXIT.ok;
     default:

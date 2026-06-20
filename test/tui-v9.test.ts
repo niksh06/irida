@@ -20,7 +20,7 @@ describe("exportTranscript", () => {
       model: "composer-2.5",
       cwd: "/proj",
     });
-    assert.match(md, /# csagent transcript/);
+    assert.match(md, /# irida transcript/);
     assert.match(md, /## User/);
     assert.match(md, /hello/);
     assert.match(md, /## Assistant/);
