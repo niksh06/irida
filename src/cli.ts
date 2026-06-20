@@ -103,8 +103,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdChat({ skills, yesIUnderstand: yes, engine, auth });
     }
     case "tui": {
-      const { skills, yes } = extractFlags(rest);
-      return cmdTui({ skills, yesIUnderstand: yes });
+      const { skills, yes, engine, auth } = extractFlags(rest);
+      return cmdTui({ skills, yesIUnderstand: yes, engine, auth });
     }
     case "sessions":
       return cmdSessions(rest);

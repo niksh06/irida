@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { applyEngineAuthEnv } from "../src/engines/claudeAgentSdk.js";
+import { applyEngineAuthEnv, toAgentMcpServers } from "../src/engines/claudeAgentSdk.js";
 import { loadConfig } from "../src/config.js";
 import { createStore } from "../src/store.js";
 import { cmdResume } from "../src/resume.js";
@@ -57,6 +57,19 @@ test("applyEngineAuthEnv account empty: clears API key, keeps inherited login to
     restore();
     assert.equal(process.env.ANTHROPIC_API_KEY, "stale-api-key");
   });
+});
+
+test("toAgentMcpServers: maps stdio + http, drops malformed, empty → undefined", () => {
+  const out = toAgentMcpServers({
+    mem: { command: "node", args: ["x.js"], env: { A: "1" } },
+    web: { url: "https://mcp.example/sse", headers: { X: "1" } },
+    bad: { nope: true },
+  }) as Record<string, unknown>;
+  assert.deepEqual(out.mem, { type: "stdio", command: "node", args: ["x.js"], env: { A: "1" } });
+  assert.deepEqual(out.web, { type: "http", url: "https://mcp.example/sse", headers: { X: "1" } });
+  assert.equal("bad" in out, false);
+  assert.equal(toAgentMcpServers(undefined), undefined);
+  assert.equal(toAgentMcpServers({}), undefined);
 });
 
 test("resume guard: blocks cross-engine resume (offline, before any SDK call)", async () => {

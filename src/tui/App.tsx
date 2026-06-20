@@ -125,6 +125,10 @@ export interface TuiOptions {
   dir?: string;
   skills?: string[];
   yesIUnderstand?: boolean;
+  /** Override engine.provider (--engine). */
+  engine?: string;
+  /** Override engine.auth (--auth). */
+  auth?: string;
 }
 
 export function App(props: TuiOptions) {
@@ -324,6 +328,8 @@ export function App(props: TuiOptions) {
         dir,
         skills: props.skills,
         yesIUnderstand: props.yesIUnderstand,
+        engine: props.engine,
+        auth: props.auth,
         model: modelOverride,
         resumeSessionId,
         channel: SESSION_CHANNEL.tui,

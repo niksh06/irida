@@ -38,6 +38,14 @@ describe("formatSdkError", () => {
     assert.equal(out.rotatable, true);
   });
 
+  it("classifies claude-agent auth failures heuristically (plain message)", () => {
+    const out = formatSdkError(new Error("Invalid API key · please run /login"));
+    assert.equal(out.errorKind, "auth");
+    assert.equal(out.recoverable, true);
+    assert.equal(out.rotatable, false);
+    assert.match(out.message, /ANTHROPIC_API_KEY|claude login/);
+  });
+
   it("classifies rotatable vs auth", () => {
     const auth = { code: 16, message: "unauthenticated" };
     assert.equal(isAgentRotatableError(auth), false);

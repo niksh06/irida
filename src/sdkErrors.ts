@@ -57,6 +57,22 @@ export function formatSdkError(e: unknown): FormattedSdkError {
   }
 
   const raw = e instanceof Error ? e.message : String(e);
+
+  // Claude Agent SDK (claude-agent engine) surfaces failures as plain messages
+  // from its bundled binary — no typed exceptions reach us, so auth failures are
+  // classified heuristically. Marking them auth (recoverable, non-rotatable) stops
+  // chat from rotating+retrying uselessly and gives the user a fix hint.
+  if (!auth && /invalid api key|authentication|unauthorized|\bnot logged in\b|oauth|\/login|expired|credit balance/i.test(raw)) {
+    return {
+      message: redact(
+        `Authentication failed — ${raw}. Set ANTHROPIC_API_KEY (auth=api-key), or run \`claude login\` / \`claude setup-token\` (auth=account).`
+      ),
+      errorKind: "auth",
+      recoverable: true,
+      rotatable: false,
+    };
+  }
+
   const message = redact(raw || "SDK request failed");
   return {
     message: auth ? `Authentication failed — ${message}` : message,

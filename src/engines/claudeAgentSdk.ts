@@ -62,7 +62,7 @@ export function applyEngineAuthEnv(authMode: EngineAuth, secret: string): () => 
 }
 
 /** Map csagent MCP entries ({command}|{url}) to Agent SDK McpServerConfig. */
-function toAgentMcpServers(mcp?: McpServers): Record<string, unknown> | undefined {
+export function toAgentMcpServers(mcp?: McpServers): Record<string, unknown> | undefined {
   if (!mcp) return undefined;
   const out: Record<string, unknown> = {};
   for (const [name, v] of Object.entries(mcp)) {
@@ -143,6 +143,7 @@ export function createClaudeAgentSdk(opts?: { authMode?: EngineAuth }): ClaudeAg
 
         let status = "finished";
         let sid = sessionId;
+        let errorDetail: string | undefined;
         let finished = false;
         let resolveWait: () => void = () => {};
         const waitP = new Promise<void>((r) => (resolveWait = r));
@@ -155,7 +156,15 @@ export function createClaudeAgentSdk(opts?: { authMode?: EngineAuth }): ClaudeAg
                   sid = m.session_id;
                   agent.agentId = sid;
                 }
-                if (m.type === "result") status = Boolean(m.is_error) ? "error" : "finished";
+                if (m.type === "result") {
+                  const isErr = Boolean(m.is_error);
+                  status = isErr ? "error" : "finished";
+                  if (isErr) {
+                    const subtype = typeof m.subtype === "string" ? m.subtype : "";
+                    const txt = typeof m.result === "string" ? m.result : "";
+                    errorDetail = [subtype, txt].filter(Boolean).join(": ") || "agent run error";
+                  }
+                }
                 yield m;
               }
             } finally {
@@ -167,7 +176,10 @@ export function createClaudeAgentSdk(opts?: { authMode?: EngineAuth }): ClaudeAg
           },
           async wait() {
             if (!finished) await waitP;
-            return { status, id: sid };
+            // `error` is read by pickRunErrorDetail() so chat surfaces a useful detail.
+            const out: { status: string; id?: string; error?: string } = { status, id: sid };
+            if (errorDetail) out.error = errorDetail;
+            return out;
           },
         };
         return run;
