@@ -21,31 +21,31 @@ Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/s
 Needs **Node.js ≥ 20** and a **Cursor API key** (Dashboard → Integrations).
 
 ```bash
-git clone <repo-url> csagent && cd csagent
+git clone <repo-url> irida && cd csagent
 npm install && npm run build
-npm link                                   # global `csagent`
+npm link                                   # global `irida`
 
-printf '%s' "cursor_..." | csagent auth login --stdin
-csagent doctor
-csagent tui                                # or: csagent run "summarize this repo"
+printf '%s' "cursor_..." | irida auth login --stdin
+irida doctor
+irida tui                                # or: irida run "summarize this repo"
 ```
 
 State lives in `./.agent/` (SQLite, credentials chmod 600, memory notes).
 
-> **Name collision:** `cursor-agent` in PATH is Cursor's official CLI, not this repo. Use `csagent`.
+> **Name collision:** `cursor-agent` in PATH is Cursor's official CLI, not this repo. Use `irida`.
 
 Next steps:
 
-- **[OPS.md](OPS.md)** — home install (`~/.csagent`), Postgres store (gateway/cron/secure notes), launchd services, backups, store switching.
+- **[OPS.md](OPS.md)** — home install (`~/.irida`), Postgres store (gateway/cron/secure notes), launchd services, backups, store switching.
 - **[REFERENCE.md](REFERENCE.md)** — all commands, TUI, memory, cron jobs, gateway config, MCP servers, safety, exit codes, architecture.
 - **[CHANGELOG.md](CHANGELOG.md)** — what changed.
 
 ## Telegram in three commands
 
 ```bash
-csagent auth telegram login --stdin
+irida auth telegram login --stdin
 cp deploy/gateway.json.example .agent/gateway.json   # set your chat id
-csagent gateway run --adapter telegram
+irida gateway run --adapter telegram
 ```
 
 Each chat gets a stable session; unknown chats need pairing approval. Digests, schedules (`/schedule`), memory and delegate runs work straight from chat. Details: [REFERENCE.md](REFERENCE.md#gateway-webhook--telegram--chat).
@@ -53,7 +53,7 @@ Each chat gets a stable session; unknown chats need pairing approval. Digests, s
 ## Develop
 
 ```bash
-npm run typecheck && npm test    # mocked SDK; PG-gated tests via CSAGENT_TEST_PG_URL
+npm run typecheck && npm test    # mocked SDK; PG-gated tests via IRIDA_TEST_PG_URL
 npm run pack:check               # npm pack dry-run (tarball whitelist)
 ```
 
@@ -73,7 +73,7 @@ If you find **csagent** useful, you can optionally support development on Boosty
 
 This project depends on [`@cursor/sdk`](https://www.npmjs.com/package/@cursor/sdk), which is **proprietary software** © Anysphere Inc. Its use is governed by [Cursor Terms of Service](https://cursor.com/terms-of-service), not by this repository's license.
 
-- You need your own **Cursor account** and **API key** (`CURSOR_API_KEY` or `csagent auth login`).
+- You need your own **Cursor account** and **API key** (`CURSOR_API_KEY` or `irida auth login`).
 - SDK usage is **billed** according to Cursor pricing (same pools as IDE / Cloud Agents).
 - Do **not** redistribute, relicense, or bundle `@cursor/sdk` as if it were part of this project.
 

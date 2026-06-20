@@ -29,7 +29,7 @@ For sites that need authentication or captcha:
 3. After successful login → `browser_save_session` with a profile name (e.g. `github`, `qwen`).
 4. Next time → `browser_load_session` with that profile, then `browser_navigate`.
 
-Cookies and Chromium profile live under `~/.csagent/.agent/browser/` when `CSAGENT_HOME` is set.
+Cookies and Chromium profile live under `~/.irida/.agent/browser/` when `IRIDA_HOME` is set.
 
 ## Do not
 

@@ -5,9 +5,9 @@
 ## Автоматически (`cron qa`)
 
 ```bash
-~/.csagent/csagent/scripts/csagent-run.sh cron qa
+~/.irida/csagent/scripts/csagent-run.sh cron qa
 # или
-bash ~/.csagent/csagent/deploy/digest-qa.sh
+bash ~/.irida/csagent/deploy/digest-qa.sh
 ```
 
 Проверяет `cron.state.json` (`lastResult`) и сохранённое тело digest (`.agent/cron.last-digest.tparser-daily-digest.txt`).
@@ -51,7 +51,7 @@ topics: 5/5 (ai-ml, aisec-mlsec, …)
 FAIL tg links: 0 t.me link(s)
 …
 
-Проверь: csagent cron qa · deploy/DIGEST-QA.md
+Проверь: irida cron qa · deploy/DIGEST-QA.md
 ```
 
 При `status: FAILED` в post-mortem отдельный QA-alert **не** шлётся (достаточно post-mortem).
@@ -78,7 +78,7 @@ Alert prefix: `🌅 morning QA FAIL` (отличается от ночного `
 ## Если FAIL
 
 1. `/status` — `cron tparser-daily-digest`
-2. `tail -50 ~/.csagent/logs/cron-tick.error.log`
+2. `tail -50 ~/.irida/logs/cron-tick.error.log`
 3. Ручной smoke: `cron run tparser-daily-digest`
 4. Topic с `✗` — смотреть delegate в логе `[cron] topic delegate done topic=…`
 

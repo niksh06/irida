@@ -16,4 +16,4 @@ npx tsx src/cli.ts eval run memory-search-smoke
 2. Append to `cases`: `query`, `expectTop1` (note name), optional `mustNotWings` (default `["cursor-ide"]`).
 3. Run `npm run eval` — no LLM judge; fails if top-1 wrong or forbidden wing appears in top-N (`topN`, default 5).
 
-Prod spot-check (optional): same queries against `CSAGENT_DATABASE_URL` with `csagent memory search`.
+Prod spot-check (optional): same queries against `IRIDA_DATABASE_URL` with `irida memory search`.

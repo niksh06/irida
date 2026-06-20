@@ -10,7 +10,7 @@ Obsidian vault work is **filesystem-first**. Tolaria MCP is read-only — use re
 
 Resolve once per task; never pass unresolved `$OBSIDIAN_VAULT_PATH` to tools.
 
-1. `OBSIDIAN_VAULT_PATH` from the environment (`~/.csagent/csagent.env` or shell).
+1. `OBSIDIAN_VAULT_PATH` from the environment (`~/.irida/irida.env` or shell).
 2. If unset, ask the user for the vault path (must be absolute).
 3. All paths must be **absolute**; vault names may contain spaces.
 
@@ -18,8 +18,8 @@ Resolve once per task; never pass unresolved `$OBSIDIAN_VAULT_PATH` to tools.
 
 | Store | Use for |
 |-------|---------|
-| **kb-ops** | Technology reference KB (`$CSAGENT_HOME/knowledge-space`, git) |
-| **csagent memory** (`memory_*` MCP) | Agent durable notes, TParser context, "remember for next turn" |
+| **kb-ops** | Technology reference KB (`$IRIDA_HOME/knowledge-space`, git) |
+| **irida memory** (`memory_*` MCP) | Agent durable notes, TParser context, "remember for next turn" |
 | **Obsidian vault** (this skill) | User PKM, journals, LLM wiki, handoff markdown |
 
 Do not duplicate the same content in both unless the user asks. Prefer **memory** for operational agent state; prefer **vault** for human-facing notes.
@@ -82,10 +82,10 @@ Add to `gateway.json` or cron job `skills` when Telegram/cron should touch the v
 "skills": ["memory-ops", "obsidian-ops"]
 ```
 
-Set vault path in `~/.csagent/csagent.env`:
+Set vault path in `~/.irida/irida.env`:
 
 ```bash
 export OBSIDIAN_VAULT_PATH="/absolute/path/to/ForNotes"
 ```
 
-Re-run `deploy/install-launchd.sh` after changing `csagent.env` so gateway/cron inherit the variable.
+Re-run `deploy/install-launchd.sh` after changing `irida.env` so gateway/cron inherit the variable.

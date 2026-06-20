@@ -1,52 +1,52 @@
-# csagent — Reference
+# irida — Reference
 
 Full command, configuration, and architecture reference. Install and deployment live in [OPS.md](OPS.md); quickstart in [README.md](README.md).
 
-> **Name collision:** if you have Cursor CLI installed, `cursor-agent` in your PATH is **Cursor's official agent**, not this repo. It has no `doctor` subcommand — `doctor` is treated as a prompt and the process hangs. Use **`csagent`**, **`npm run doctor`**, or **`npm run dev -- …`**.
+> **Name collision:** if you have Cursor CLI installed, `cursor-agent` in your PATH is **Cursor's official agent**, not this repo. It has no `doctor` subcommand — `doctor` is treated as a prompt and the process hangs. Use **`irida`**, **`npm run doctor`**, or **`npm run dev -- …`**.
 
 ## Commands
 
 ### Core
 
 ```bash
-csagent doctor                       # key, node, cwd, config, mcp, cron/gateway files, API probe
-csagent run "summarize repo"         # one-shot (Agent.prompt)
-csagent chat                         # interactive multi-turn (Agent.create)
-csagent tui                          # Ink TUI (recommended)
-csagent sessions                     # list sess_ (newest first)
-csagent sessions search <query>      # filter by id / title / cwd
-csagent resume <sess_id> "follow up" # live resume or transcript replay
-csagent store migrate [pg-url]       # one-shot sqlite → postgres (sessions/runs/memory)
-csagent config                       # print non-secret config
-csagent skills list|search <q>       # local Markdown skills
+irida doctor                       # key, node, cwd, config, mcp, cron/gateway files, API probe
+irida run "summarize repo"         # one-shot (Agent.prompt)
+irida chat                         # interactive multi-turn (Agent.create)
+irida tui                          # Ink TUI (recommended)
+irida sessions                     # list sess_ (newest first)
+irida sessions search <query>      # filter by id / title / cwd
+irida resume <sess_id> "follow up" # live resume or transcript replay
+irida store migrate [pg-url]       # one-shot sqlite → postgres (sessions/runs/memory)
+irida config                       # print non-secret config
+irida skills list|search <q>       # local Markdown skills
 ```
 
 ### Auth
 
 ```bash
-csagent auth login --stdin           # save key to .agent/credentials.json
-csagent auth status                  # configured? (never prints secret)
-csagent auth logout                  # remove credentials file
+irida auth login --stdin           # save key to .agent/credentials.json
+irida auth status                  # configured? (never prints secret)
+irida auth logout                  # remove credentials file
 ```
 
 ### Memory, cron, gateway
 
 ```bash
-csagent memory list|show|add|search|rm …
-csagent memory align-silo [--dry-run]   # merge repo/cron silos → CSAGENT_HOME memory
-csagent memory audit [--links] [--stale-days 90]  # notes/facts/silo QA
-csagent memory purge-archive [--wing cursor-ide] [--older-than-days 180] [--require-lesson] [--apply]
-csagent memory fact add|query|invalidate …
-csagent cron list|run <id>|tick|qa
-csagent gateway status         # launchd + log probe + outbox + 24h run metrics
-csagent gateway run [--adapter webhook|telegram] [--port 18789]
+irida memory list|show|add|search|rm …
+irida memory align-silo [--dry-run]   # merge repo/cron silos → IRIDA_HOME memory
+irida memory audit [--links] [--stale-days 90]  # notes/facts/silo QA
+irida memory purge-archive [--wing cursor-ide] [--older-than-days 180] [--require-lesson] [--apply]
+irida memory fact add|query|invalidate …
+irida cron list|run <id>|tick|qa
+irida gateway status         # launchd + log probe + outbox + 24h run metrics
+irida gateway run [--adapter webhook|telegram] [--port 18789]
 ```
 
 During development: `npm run dev -- <subcommand>` (same as above).
 
 > **Resume caveat:** local SDK agents are not reliably durable after process exit. `resume` tries live `Agent.resume` first; on failure it **replays the stored transcript** into a fresh agent.
 
-## TUI (`csagent tui`)
+## TUI (`irida tui`)
 
 - **Session tabs** — recent `sess_` in the header; **`1`–`5`**, **Tab** / **Shift+Tab**, **←**/**→** (empty composer), **Ctrl+[** / **Ctrl+]** to switch.
 - **Slash commands** — `/help`, `/sessions`, `/skills`, `/memory`, `/model`, `/export`, `/tools`, `/doctor`, `/delegate <prompt>` (isolated run + **inject** into parent `sess_`), `/find <text>` (transcript search; repeat = older match), `/new`, `/resume <id>`, `/clear`, `/copy`, `/rename`, `/exit`, …
@@ -63,9 +63,9 @@ Bundled: `memory-ops`, `browser-ops`, `obsidian-ops`, `cron-ops` (see `skills/`)
 | Layout | Skills root |
 |--------|-------------|
 | Dev (repo checkout) | `<repo>/skills/` |
-| Prod (`~/.csagent` home) | **`$CSAGENT_ROOT/skills`** (typically `~/.csagent/csagent/skills`) |
+| Prod (`~/.irida` home) | **`$IRIDA_ROOT/skills`** (typically `~/.irida/csagent/skills`) |
 
-Resolution order: `CSAGENT_HOME` + `skillsPath` → **`CSAGENT_ROOT`** + `skillsPath` → `cwd` + `skillsPath`. Gateway uses `CSAGENT_HOME` for state (`.agent/gateway.json`) but loads skills from the install copy. `csagent doctor` prints `skills root: …`; `csagent skills list` prints `Skills root: …`. There is no separate `~/.csagent/skills/` unless you create an overlay.
+Resolution order: `IRIDA_HOME` + `skillsPath` → **`IRIDA_ROOT`** + `skillsPath` → `cwd` + `skillsPath`. Gateway uses `IRIDA_HOME` for state (`.agent/gateway.json`) but loads skills from the install copy. `irida doctor` prints `skills root: …`; `irida skills list` prints `Skills root: …`. There is no separate `~/.irida/skills/` unless you create an overlay.
 
 ```markdown
 ---
@@ -77,15 +77,15 @@ Always answer with exactly one lowercase word.
 ```
 
 ```bash
-csagent run --skill terse "capital of France"
-csagent chat --skill terse
+irida run --skill terse "capital of France"
+irida chat --skill terse
 ```
 
 ## Workspace context (`@file` / `@dir`)
 
 ```bash
-csagent run "review @file:src/cli.ts"
-csagent run "what lives in @dir:src?"
+irida run "review @file:src/cli.ts"
+irida run "what lives in @dir:src?"
 ```
 
 Paths are relative to project cwd; traversal outside the workspace is blocked. The safety gate checks the **composed prompt** — destructive content smuggled via `@file`/`@memory` hits the same denylist.
@@ -93,7 +93,7 @@ Paths are relative to project cwd; traversal outside the workspace is blocked. T
 ## Memory (`@memory`)
 
 ```bash
-csagent memory add tparser --stdin <<'EOF'
+irida memory add tparser --stdin <<'EOF'
 # TParser
 XSS alerts: Reports/analysis/digest_qa_*.md
 EOF
@@ -103,11 +103,11 @@ In chat/TUI: `@memory:tparser` or `/memory`. Secrets redacted on save.
 
 ### Technology knowledge base (file, not Postgres)
 
-HappyIn-style reference lives at **`$CSAGENT_HOME/knowledge-space`** (git clone). Articles: `docs/{domain}/{slug}.md`. Update: `git pull`. Agents use skill **`kb-ops`** — Grep/Read on disk; enable in `gateway.json` alongside `memory-ops`. See [skills/kb-ops.md](skills/kb-ops.md). Do not use `memory_search` for stack documentation.
+HappyIn-style reference lives at **`$IRIDA_HOME/knowledge-space`** (git clone). Articles: `docs/{domain}/{slug}.md`. Update: `git pull`. Agents use skill **`kb-ops`** — Grep/Read on disk; enable in `gateway.json` alongside `memory-ops`. See [skills/kb-ops.md](skills/kb-ops.md). Do not use `memory_search` for stack documentation.
 
-Legacy CLI `csagent memory import-md` (bulk copy into PG) is **deprecated** for prod — prefer file KB.
+Legacy CLI `irida memory import-md` (bulk copy into PG) is **deprecated** for prod — prefer file KB.
 
-**Secure notes (Postgres only):** `csagent memory add vault --wing secure --stdin` — body is pgcrypto-encrypted at rest (`CSAGENT_SECRETS_KEY`), never mirrored to `.md`, masked in `memory list`/`search`; only `memory show` (and MCP `memory_get`) decrypts. SQLite store refuses the `secure` wing explicitly.
+**Secure notes (Postgres only):** `irida memory add vault --wing secure --stdin` — body is pgcrypto-encrypted at rest (`IRIDA_SECRETS_KEY`), never mirrored to `.md`, masked in `memory list`/`search`; only `memory show` (and MCP `memory_get`) decrypts. SQLite store refuses the `secure` wing explicitly.
 
 **Default (MCP-first):** do not set `memory.onStart`. The built-in MCP server `csagent-memory` is attached automatically (`memory.mcp`, default true). On any turn the agent can call `memory_search`, `memory_get`, … Enable skills `memory-ops` and **`kb-ops`** in `gateway.json` — memory for agent state, kb-ops for technology reference on disk.
 
@@ -128,7 +128,7 @@ Four independent layers; only the ones you enable run. Order in `composePrompt`:
 | **autoRag** | `memory.autoRag` | Every turn — silent `searchNotes` on user text, prepends hits | **off** (MCP-first, I-55) |
 | **MCP `memory_search`** | `memory.mcp` (default true) | Model tool call on demand | on-demand via skill `memory-ops` |
 
-**CLI** `csagent memory search` is manual — cron/gateway never call it unless a job prompt or agent tool does.
+**CLI** `irida memory search` is manual — cron/gateway never call it unless a job prompt or agent tool does.
 
 **Default search scope:** wings `cursor-ide`, `secure`, and `episodic` are excluded from FTS/semantic unless opted in (`includeArchive`, `includeEpisodic`, or CLI flags). Meta notes are included. Secure notes match by name/title only; body stays encrypted.
 
@@ -145,8 +145,8 @@ Local Ollama-compatible embeddings (default `nomic-embed-text`, 768d) + pgvector
 Optional: `"url": "http://127.0.0.1:11434"`, `"model": "nomic-embed-text"`. With this on, every note save computes an embedding (fail-soft if the daemon is down); secure-wing notes are **never** embedded.
 
 ```bash
-csagent memory search "how do consumers split shards" --semantic
-csagent memory reindex-embeddings     # backfill notes saved before enabling
+irida memory search "how do consumers split shards" --semantic
+irida memory reindex-embeddings     # backfill notes saved before enabling
 ```
 
 MCP: `memory_search` accepts `semantic: true` (falls back to keyword FTS when no vectors match). Requires `ollama pull nomic-embed-text` and the Postgres store.
@@ -156,8 +156,8 @@ MCP: `memory_search` accepts `semantic: true` (falls back to keyword FTS when no
 Recent chat sessions are upserted as searchable notes in wing **`episodic`** (`ep.<sessionId>`). Idempotent: re-ingests only when `session.updated_at` is newer than the note.
 
 ```bash
-csagent memory ingest-sessions              # last 7 days (default)
-csagent memory ingest-sessions --window-hours 48 --force
+irida memory ingest-sessions              # last 7 days (default)
+irida memory ingest-sessions --window-hours 48 --force
 ```
 
 Cron builtin: `"builtin": "session-ingest"` (example: nightly after `session-export`). Episodic notes are for MCP/`memory_search` — not bulk `@memory:*` injection.
@@ -169,10 +169,10 @@ Parent chats under `~/.cursor/projects/*/agent-transcripts/*.jsonl` → wing **`
 **Search:** `cursor-ide` is excluded from default FTS/semantic (archive). Use `--include-archive` or MCP `includeArchive: true` for forensic lookup.
 
 ```bash
-csagent memory mine-cursor                    # last 7 days, max 30 (default)
-csagent memory mine-cursor --all              # every transcript (backfill + daily cron)
-csagent memory search "gateway cron"          # skips cursor-ide
-csagent memory search "gateway cron" --include-archive
+irida memory mine-cursor                    # last 7 days, max 30 (default)
+irida memory mine-cursor --all              # every transcript (backfill + daily cron)
+irida memory search "gateway cron"          # skips cursor-ide
+irida memory search "gateway cron" --include-archive
 ```
 
 Cron builtin: `"builtin": "cursor-mine"` (scans all transcripts; example `cursor-mine-daily` at `15 0 * * *`).
@@ -182,12 +182,12 @@ Cron builtin: `"builtin": "cursor-mine"` (scans all transcripts; example `cursor
 Compressed playbooks from raw `cursor-ide` archive → wing **`cursor-lesson`** (`lesson.<uuid>`). **Included in default search** (unlike archive). HITL: cron writes proposals only; profile patches never auto-merge to `meta`.
 
 ```bash
-csagent memory distill-cursor              # delta queue (top 10, respects baseline)
-csagent memory distill-cursor --backfill --limit 10   # backfill batch
-csagent memory distill-cursor --backfill --run --parallel 3 --limit 10   # map-reduce SDK batch (composer-2.5-fast)
-csagent memory distill-cursor --backfill --run --dry-run   # chunk plan only
-csagent memory distill-cursor --show-baseline
-csagent memory distill-cursor --set-baseline --baseline-note "backfill complete"
+irida memory distill-cursor              # delta queue (top 10, respects baseline)
+irida memory distill-cursor --backfill --limit 10   # backfill batch
+irida memory distill-cursor --backfill --run --parallel 3 --limit 10   # map-reduce SDK batch (composer-2.5-fast)
+irida memory distill-cursor --backfill --run --dry-run   # chunk plan only
+irida memory distill-cursor --show-baseline
+irida memory distill-cursor --set-baseline --baseline-note "backfill complete"
 ```
 
 State file: `.agent/cursor-distill.baseline.json` — after baseline, only archives **updated after** that timestamp are queued (delta).
@@ -199,30 +199,30 @@ Weekly flow (example, disabled in repo):
 
 Template: `deploy/prompts/cursor-lesson.template.md` (OKF v0.1 Playbook)
 
-**Canonical playbooks** (operator-authored, stable names): `lesson.gateway-idle-rotation` — see `deploy/prompts/cursor-lesson-canonical-idle-rotation.md`. Load: `csagent memory add lesson.gateway-idle-rotation --wing cursor-lesson --stdin --dir <config-dir>`.
+**Canonical playbooks** (operator-authored, stable names): `lesson.gateway-idle-rotation` — see `deploy/prompts/cursor-lesson-canonical-idle-rotation.md`. Load: `irida memory add lesson.gateway-idle-rotation --wing cursor-lesson --stdin --dir <config-dir>`.
 
 **Delta upsert:** weekly distill must use queue **Lesson name** exactly; stale → overwrite, never fork. Optional `memory_fact_add` (`cursor_lesson`, lesson name, decision).
 
 **OKF hygiene & review:**
 
 ```bash
-csagent memory okf audit [--json]
-csagent memory okf migrate-lessons [--apply]   # legacy HTML → YAML frontmatter
-csagent memory okf backfill-lineage [--apply] # sourceHash from archive (lineage audit)
-csagent memory okf repair-titles [--apply]    # fix uuid placeholder titles
-csagent memory okf strip-legacy-meta [--apply] # drop HTML lineage when YAML present
-csagent memory okf promote [--apply] [--keep-file deploy/promote-lessons.json] # HITL → status: approved
-csagent memory okf export-review [--out Reports/cursor-lesson-review]
-csagent memory okf export-bundle [--bundle-out .agent/memory/okf/cursor-lesson] [--exclude-fixtures]
+irida memory okf audit [--json]
+irida memory okf migrate-lessons [--apply]   # legacy HTML → YAML frontmatter
+irida memory okf backfill-lineage [--apply] # sourceHash from archive (lineage audit)
+irida memory okf repair-titles [--apply]    # fix uuid placeholder titles
+irida memory okf strip-legacy-meta [--apply] # drop HTML lineage when YAML present
+irida memory okf promote [--apply] [--keep-file deploy/promote-lessons.json] # HITL → status: approved
+irida memory okf export-review [--out Reports/cursor-lesson-review]
+irida memory okf export-bundle [--bundle-out .agent/memory/okf/cursor-lesson] [--exclude-fixtures]
 ```
 
 **Browse on disk:** Postgres is source of truth; `export-bundle` mirrors the current corpus to markdown under `{config-dir}/.agent/memory/okf/cursor-lesson/` (use `--dir` for prod). Re-export removes stale `*.md` orphans from prior runs.
 
 ```bash
-csagent memory okf purge-stubs [--apply] [--fixtures-only | --stubs-only]   # phase-1 hygiene
-csagent memory okf purge-meta-distill [--apply] [--keep-file deploy/meta-distill-keep.json]   # phase-2
-csagent memory okf purge-tparser [--apply] [--keep-file deploy/tparser-keep.json]
-csagent memory okf purge-gateway [--apply] [--keep-file deploy/gateway-keep.json]
+irida memory okf purge-stubs [--apply] [--fixtures-only | --stubs-only]   # phase-1 hygiene
+irida memory okf purge-meta-distill [--apply] [--keep-file deploy/meta-distill-keep.json]   # phase-2
+irida memory okf purge-tparser [--apply] [--keep-file deploy/tparser-keep.json]
+irida memory okf purge-gateway [--apply] [--keep-file deploy/gateway-keep.json]
 ```
 
 ### Auto-RAG (optional, conservative pilot — I-55)
@@ -246,7 +246,7 @@ Reference config (`deploy/agent.config.example.json`):
 }
 ```
 
-Pilot enable/rollback and metrics: [deploy/PERSONAL-OPS.md](deploy/PERSONAL-OPS.md#autorag-pilot). With `CSAGENT_LOG=1`, each turn logs one line: `autoRag hits=N chars=M notes=name1,name2` (names only, no body).
+Pilot enable/rollback and metrics: [deploy/PERSONAL-OPS.md](deploy/PERSONAL-OPS.md#autorag-pilot). With `IRIDA_LOG=1`, each turn logs one line: `autoRag hits=N chars=M notes=name1,name2` (names only, no body).
 
 ### Turn context — mode prefix + profile excerpt (I-52)
 
@@ -268,12 +268,12 @@ Example: `ADVICE: проверь cron` → composed prompt contains `Mode: ADVIC
   "preTurn": {
     "profileNote": "user-profile.niksh",
     "profileMaxChars": 1500,
-    "modeEnv": "CSAGENT_MODE"
+    "modeEnv": "IRIDA_MODE"
   }
 }
 ```
 
-When `preTurn` is configured, `CSAGENT_MODE=ADVICE|DO|DEBUG|SYNC` applies when the message has no prefix. Profile excerpt is fail-soft (missing note → no block). Does **not** inject `agent-profile.composer` — use MCP `memory_get` for that.
+When `preTurn` is configured, `IRIDA_MODE=ADVICE|DO|DEBUG|SYNC` applies when the message has no prefix. Profile excerpt is fail-soft (missing note → no block). Does **not** inject `agent-profile.composer` — use MCP `memory_get` for that.
 
 ## Cron (scheduled jobs)
 
@@ -332,10 +332,10 @@ Simple inline job (no delegates):
 ```
 
 ```bash
-csagent cron list
-csagent cron run tparser-daily-digest
-csagent cron qa                    # digest QA (after first nightly run)
-csagent cron tick    # launchd ai.csagent.cron-tick every 5 min, or system crontab
+irida cron list
+irida cron run tparser-daily-digest
+irida cron qa                    # digest QA (after first nightly run)
+irida cron tick    # launchd ai.csagent.cron-tick every 5 min, or system crontab
 ```
 
 Job extras:
@@ -344,7 +344,7 @@ Job extras:
 - `"catchUp": "skip"` — drop stale slots instead of catching up (briefings that must not arrive late). Default `"once"`.
 - `"gateScript": "path.sh"` — cheap pre-check before waking the SDK: last stdout line `{"wakeAgent": false, "reason": "…"}` skips the run entirely (no tokens, no notify; slot is consumed). Fail-open: gate errors never block the job. Manual `cron run` bypasses the gate.
 - `"script": "path.sh"` — deterministic shell job with **no SDK at all**: non-empty stdout → notify text; empty stdout → silent success; non-zero exit → failed with stderr. Example: `deploy/scripts/csagent-watchdog.sh` (gateway/outbox/cron health, zero tokens).
-- Builtins: `"builtin": "memory-audit"` (notes/facts/silo QA), `"builtin": "session-export"` (daily transcripts → `Reports/sessions/YYYY-MM-DD/`), `"builtin": "session-ingest"` (sessions → episodic memory notes), `"builtin": "cursor-mine"` (all Cursor IDE transcripts → wing `cursor-ide`), `"builtin": "cursor-distill-queue"` (stale/missing distill candidates for I-65). Legacy `seen_post` facts: `csagent memory fact purge-seen-post`.
+- Builtins: `"builtin": "memory-audit"` (notes/facts/silo QA), `"builtin": "session-export"` (daily transcripts → `Reports/sessions/YYYY-MM-DD/`), `"builtin": "session-ingest"` (sessions → episodic memory notes), `"builtin": "cursor-mine"` (all Cursor IDE transcripts → wing `cursor-ide`), `"builtin": "cursor-distill-queue"` (stale/missing distill candidates for I-65). Legacy `seen_post` facts: `irida memory fact purge-seen-post`.
 - Tick takes a cross-process lock (`cron.tick.lock`) — overlapping ticks skip instead of double-firing.
 - Optional `sessionId` binds to an existing `sess_`. Destructive prompts denied unless `"yesIUnderstand": true`. Doctor checks the **cron prompt guard** (injection patterns).
 
@@ -352,7 +352,7 @@ Job extras:
 
 ## Gateway (webhook / Telegram → chat)
 
-`.agent/gateway.json`. Webhook secret via env; Telegram token via **`csagent auth telegram login --stdin`** (same `credentials.json`) or env.
+`.agent/gateway.json`. Webhook secret via env; Telegram token via **`irida auth telegram login --stdin`** (same `credentials.json`) or env.
 
 **Webhook:**
 
@@ -368,7 +368,7 @@ Job extras:
 
 ```bash
 export GATEWAY_WEBHOOK_SECRET=your-secret
-csagent gateway run
+irida gateway run
 curl -X POST http://127.0.0.1:18789/hook \
   -H 'Content-Type: application/json' \
   -H "X-Gateway-Secret: $GATEWAY_WEBHOOK_SECRET" \
@@ -388,15 +388,15 @@ curl -X POST http://127.0.0.1:18789/hook \
 ```
 
 ```bash
-csagent auth telegram login --stdin   # or --from-env
-csagent gateway run --adapter telegram
+irida auth telegram login --stdin   # or --from-env
+irida gateway run --adapter telegram
 ```
 
-Each `chatId` → stable `sess_` (visible in `csagent sessions` / TUI). Allowlist required; unknown chats get a **pairing code** (capped, 24h TTL) — admin in allowlist runs `/approve <code>`. Both adapters honor approved pairings.
+Each `chatId` → stable `sess_` (visible in `irida sessions` / TUI). Allowlist required; unknown chats get a **pairing code** (capped, 24h TTL) — admin in allowlist runs `/approve <code>`. Both adapters honor approved pairings.
 
 Delivery: agent replies and digests use Bot API **Rich Messages** (`sendRichMessage` + native markdown, default) with fallback to HTML `sendMessage`, then plain text. Set `telegram.messageFormat` to `"html"` or `"plain"` in `gateway.json`. Tool progress stays plain one-liners (self-updating via `editMessageText`). Failed sends park in `gateway.outbox.json` and drain with backoff — replies and digests survive restarts and network outages. Per-chat queues keep one slow turn from blocking other chats.
 
-**Telegram slash commands (csagent catalog, no LLM):**
+**Telegram slash commands (irida catalog, no LLM):**
 
 | Command | Action |
 |---------|--------|
@@ -428,7 +428,7 @@ In `agent.config.json` — passed to every SDK call. Built-ins (when enabled): `
 }
 ```
 
-Browser tools: `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_save_session`, `browser_load_session`, `browser_close`. Profile data: `<stateDir>/browser/`. Set `CSAGENT_CHROME_PATH` or `browser.chromePath` if Puppeteer's bundled Chromium is not installed.
+Browser tools: `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_save_session`, `browser_load_session`, `browser_close`. Profile data: `<stateDir>/browser/`. Set `IRIDA_CHROME_PATH` or `browser.chromePath` if Puppeteer's bundled Chromium is not installed.
 
 ## Configuration
 
@@ -436,9 +436,9 @@ Project-local `agent.config.json`. **Secrets never go here.**
 
 | Secret | Use when |
 |--------|----------|
-| `csagent auth login --stdin` | Cursor API key → `.agent/credentials.json` or Postgres (pgcrypto) |
-| `csagent auth telegram login --stdin` | Telegram bot token (same stores) |
-| `export CSAGENT_SECRETS_KEY=…` | With `CSAGENT_DATABASE_URL` — encrypt tokens in `credential_secrets` |
+| `irida auth login --stdin` | Cursor API key → `.agent/credentials.json` or Postgres (pgcrypto) |
+| `irida auth telegram login --stdin` | Telegram bot token (same stores) |
+| `export IRIDA_SECRETS_KEY=…` | With `IRIDA_DATABASE_URL` — encrypt tokens in `credential_secrets` |
 | `export CURSOR_API_KEY=…` / `TELEGRAM_BOT_TOKEN=…` | CI override (wins over stored secrets) |
 
 ```json
@@ -454,7 +454,7 @@ Project-local `agent.config.json`. **Secrets never go here.**
 }
 ```
 
-State: SQLite at `<stateDir>/state.sqlite` by default, or Postgres when `CSAGENT_DATABASE_URL` is set. Previews redacted; no secrets stored. Ops run log: `<stateDir>/logs/runs.jsonl` (no previews; `CSAGENT_RUN_LOG=0` disables). Each line includes optional **I-68** metadata: `channel` (`telegram` | `cli` | `tui` | `cron` | `run` | …), `cron_job` (when from cron), `is_test` (temp cwd / `CSAGENT_TEST=1`). `gateway status` aggregates prod-only (`is_test` excluded). Doctor warns when 24h runs exist but all token fields are null.
+State: SQLite at `<stateDir>/state.sqlite` by default, or Postgres when `IRIDA_DATABASE_URL` is set. Previews redacted; no secrets stored. Ops run log: `<stateDir>/logs/runs.jsonl` (no previews; `IRIDA_RUN_LOG=0` disables). Each line includes optional **I-68** metadata: `channel` (`telegram` | `cli` | `tui` | `cron` | `run` | …), `cron_job` (when from cron), `is_test` (temp cwd / `IRIDA_TEST=1`). `gateway status` aggregates prod-only (`is_test` excluded). Doctor warns when 24h runs exist but all token fields are null.
 
 **Cloud (016):** `runtime: "cloud"` + `safety.allowCloud` only gate today — **no real cloud SDK path** (deliberately deferred: cloud agents run without access to the local machine, which defeats the local-first design).
 
@@ -491,14 +491,14 @@ Auth errors (`ERROR_NOT_LOGGED_IN`) are **not** fixed by rotation — refresh th
 
 ```bash
 npm run typecheck
-npm test            # mocked SDK; PG-gated tests need CSAGENT_TEST_PG_URL
+npm test            # mocked SDK; PG-gated tests need IRIDA_TEST_PG_URL
 npm run accept      # MVP acceptance harness
 npm run smoke       # live SDK (needs key)
 ```
 
-Optional diagnostics: `CSAGENT_LOG=1` in `csagent.env` (rotation, runs → gateway.log; TUI writes `.agent/tui.log`); `CSAGENT_LOG_VERBOSE=1` for per-tool lines.
+Optional diagnostics: `IRIDA_LOG=1` in `irida.env` (rotation, runs → gateway.log; TUI writes `.agent/tui.log`); `IRIDA_LOG_VERBOSE=1` for per-tool lines.
 
-Idle sessions: `CSAGENT_AGENT_IDLE_MS` (default `1200000` = 20 min) proactively refreshes the SDK agent before the next turn; set `0` to disable.
+Idle sessions: `IRIDA_AGENT_IDLE_MS` (default `1200000` = 20 min) proactively refreshes the SDK agent before the next turn; set `0` to disable.
 
 ## Architecture
 

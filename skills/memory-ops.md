@@ -6,7 +6,7 @@ tags: [memory, csagent]
 
 Memory is **on-demand**, not preloaded. Do not assume context contains project facts.
 
-**Technology best practices** (Kafka, Python, Docker, security, …) live in the **file KB** — skill **`kb-ops`**, not `memory_search`. Postgres holds csagent state only.
+**Technology best practices** (Kafka, Python, Docker, security, …) live in the **file KB** — skill **`kb-ops`**, not `memory_search`. Postgres holds irida state only.
 
 ## When retrieval happens
 
@@ -19,11 +19,11 @@ Not every turn runs memory search. **`memory_search` is on-demand** — call it 
 | **autoRag** | Silent FTS/semantic search every turn | **off** (MCP-first) |
 | **MCP `memory_search`** | You call the tool | **on-demand** (this skill) |
 
-CLI `csagent memory search` is manual lookup only — the gateway does not run it automatically.
+CLI `irida memory search` is manual lookup only — the gateway does not run it automatically.
 
 **Archive wings** (`cursor-ide`, `secure`, `episodic`) are excluded from default search. Use `includeArchive: true` for forensic IDE transcript lookup; `includeEpisodic: true` for session-ingest notes. **`wings: ["default", "tparser", "cursor-lesson", "meta"]`** restricts ops search without archive/style noise. Distilled playbooks live in wing **`cursor-lesson`** (default search). Topic wings: **`tparser`**, **`reddit`**, **`style`** (I-81 split from `default`).
 
-**Archive retention (I-80):** raw `cursor-ide` notes are capped at 200 KB on ingest; purge stale rows with `csagent memory purge-archive --older-than-days 180` (dry-run by default). Safer cut: `--require-lesson` deletes only when matching `lesson.*` exists.
+**Archive retention (I-80):** raw `cursor-ide` notes are capped at 200 KB on ingest; purge stale rows with `irida memory purge-archive --older-than-days 180` (dry-run by default). Safer cut: `--require-lesson` deletes only when matching `lesson.*` exists.
 
 ## Retrieval router
 
@@ -32,7 +32,7 @@ Route before calling tools — wrong store wastes tokens and adds noise.
 | User question type | Action |
 |--------------------|--------|
 | Tech stack (Kafka, Docker, Python, …) | **`kb-ops`** — Grep/Read disk KB; **not** `memory_search` |
-| csagent ops / cron / TParser / gateway | `memory_search` — e.g. `wings: ["default", "tparser", "cursor-lesson", "meta"]` |
+| irida ops / cron / TParser / gateway | `memory_search` — e.g. `wings: ["default", "tparser", "cursor-lesson", "meta"]` |
 | TParser workflow / channels | `memory_search` with `wings: ["tparser"]` or `memory_get tparser-workflow` |
 | Reddit feeds / digests | `memory_search` with `wings: ["reddit"]` |
 | Post style / editorial tone | `memory_search` with `wings: ["style"]` |
@@ -47,7 +47,7 @@ Route before calling tools — wrong store wastes tokens and adds noise.
 
 ## Read (before answering)
 
-When the user asks about **csagent setup**, TParser, cron, past **agent** decisions, episodic sessions, or cursor-lessons:
+When the user asks about **irida setup**, TParser, cron, past **agent** decisions, episodic sessions, or cursor-lessons:
 
 For **stack / library / infra** questions → **kb-ops** first; only use memory if the user stored an ops note about it.
 
@@ -64,7 +64,7 @@ Never guess from chat history alone when these tools are available.
 - Durable prose → `memory_save`
 - Structured "seen X" / preferences → `memory_fact_add`
 - Close outdated facts → `memory_fact_invalidate` with `fact_id` from query, or `subject` + optional `predicate`/`object` scope
-- Do not use shell `csagent memory …` when MCP tools exist.
+- Do not use shell `irida memory …` when MCP tools exist.
 
 ## Do not
 

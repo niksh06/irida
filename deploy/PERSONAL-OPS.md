@@ -1,4 +1,4 @@
-# Personal ops runbook (csagent @ ~/.csagent)
+# Personal ops runbook (irida @ ~/.irida)
 
 Локальный контур: **digest → Telegram → memory**. Не публичная дока — для одной машины.
 
@@ -6,7 +6,7 @@
 
 | Что | Когда | Где |
 |-----|-------|-----|
-| TParser daily digest | `59 23 * * *` | `~/.csagent/.agent/cron.jobs.json` → `tparser-daily-digest` |
+| TParser daily digest | `59 23 * * *` | `~/.irida/.agent/cron.jobs.json` → `tparser-daily-digest` |
 | Reddit daily digest | `58 23` fetch · `59 23` SDK | `reddit-rss-fetch` → `reddit-digest-daily`; note `reddit-digest-YYYY-MM-DD` wing `reddit` |
 | cron-tick | каждые 300s | launchd `ai.csagent.cron-tick` |
 | gateway | always | launchd `ai.csagent.gateway` |
@@ -15,7 +15,7 @@
 | cursor-lesson | `0 7 * * 1` | queue builtin + SDK distill → wing `cursor-lesson` (disabled by default) |
 | introspection | `0 6 * * 1` | weekly proposal note via `introspection-ops` skill |
 
-**Wave B (memory loop):** nightly `session-ingest` → wing `episodic`; nightly `cursor-mine` → wing `cursor-ide`; weekly `cursor-lesson` (distill) + `introspection-weekly` → proposal notes. **autoRag off in prod** (MCP-first); pilot config: [autoRag pilot](#autorag-pilot). First backfill: `csagent memory ingest-sessions --window-hours 168`; IDE archive: `csagent memory mine-cursor --all`.
+**Wave B (memory loop):** nightly `session-ingest` → wing `episodic`; nightly `cursor-mine` → wing `cursor-ide`; weekly `cursor-lesson` (distill) + `introspection-weekly` → proposal notes. **autoRag off in prod** (MCP-first); pilot config: [autoRag pilot](#autorag-pilot). First backfill: `irida memory ingest-sessions --window-hours 168`; IDE archive: `irida memory mine-cursor --all`.
 
 **Memory governance:** tiers (files / PG / embeddings), OKF scope, LLM wiki — [docs/MEMORY-GOVERNANCE.md](../docs/MEMORY-GOVERNANCE.md). Tech KB: [skills/kb-ops.md](../skills/kb-ops.md). Monthly: `memory audit` + checklist §7. After Wave F deploy: `memory re-wing --apply` (I-81), reload `deploy/prompts/csagent-index.md`.
 
@@ -30,31 +30,31 @@
 ### Digest QA (после первого ночного digest)
 
 ```bash
-bash ~/.csagent/csagent/deploy/digest-qa.sh
+bash ~/.irida/csagent/deploy/digest-qa.sh
 ```
 
-Чеклист: [deploy/DIGEST-QA.md](DIGEST-QA.md). Команда: `csagent cron qa`.
+Чеклист: [deploy/DIGEST-QA.md](DIGEST-QA.md). Команда: `irida cron qa`.
 
 ## Быстрые команды
 
 ```bash
 # health pass (includes gateway-smoke I-88)
-bash ~/.csagent/csagent/deploy/prod-check.sh
+bash ~/.irida/csagent/deploy/prod-check.sh
 
 # gateway-only smoke after restart
-bash ~/.csagent/csagent/deploy/gateway-smoke.sh
+bash ~/.irida/csagent/deploy/gateway-smoke.sh
 
 # ручной digest (smoke)
-~/.csagent/csagent/scripts/csagent-run.sh cron run tparser-daily-digest
+~/.irida/csagent/scripts/csagent-run.sh cron run tparser-daily-digest
 
 # Reddit digest (I-77): fetch RSS → context artifact → SDK summarize + memory_save
-bash ~/.csagent/csagent/deploy/scripts/reddit-rss-fetch.sh | head
-~/.csagent/csagent/scripts/csagent-run.sh cron run reddit-rss-fetch
-~/.csagent/csagent/scripts/csagent-run.sh cron run reddit-digest-daily
+bash ~/.irida/csagent/deploy/scripts/reddit-rss-fetch.sh | head
+~/.irida/csagent/scripts/csagent-run.sh cron run reddit-rss-fetch
+~/.irida/csagent/scripts/csagent-run.sh cron run reddit-digest-daily
 
 # логи
-tail -f ~/.csagent/logs/gateway.log
-tail -f ~/.csagent/logs/cron-tick.log
+tail -f ~/.irida/logs/gateway.log
+tail -f ~/.irida/logs/cron-tick.log
 ```
 
 Telegram: `/status`, `/doctor`, `/memory`, `/sessions`, `/schedule`.
@@ -82,7 +82,7 @@ User jobs: id с префиксом `user-`, max 10, notify → этот чат.
 
 Skill: `cron-ops` в `gateway.json` (см. `deploy/gateway.json.example`).
 
-Файлы: `~/.csagent/.agent/cron.schedule.pending.json`, `cron.jobs.json`.
+Файлы: `~/.irida/.agent/cron.schedule.pending.json`, `cron.jobs.json`.
 
 ### Утренний re-check (08:00)
 
@@ -91,7 +91,7 @@ launchd `ai.csagent.digest-qa-morning` → `cron qa --morning --alert`.
 Если ночной digest не прошёл QA (или не было run) — **🌅 morning QA FAIL** в Telegram.
 
 ```bash
-bash ~/.csagent/csagent/deploy/digest-qa-morning.sh   # ручной прогон
+bash ~/.irida/csagent/deploy/digest-qa-morning.sh   # ручной прогон
 ```
 
 ### Утренний cron health (08:05)
@@ -101,7 +101,7 @@ launchd `ai.csagent.prod-check-morning` → `doctor morning-alert`.
 Если `cron.jobs.json` missing/invalid — **🌅 morning cron health FAIL** в Telegram (с `fix:` из doctor).
 
 ```bash
-bash ~/.csagent/csagent/deploy/prod-check-morning.sh   # ручной прогон
+bash ~/.irida/csagent/deploy/prod-check-morning.sh   # ручной прогон
 ```
 
 ### Digest follow-up (H2)
@@ -119,13 +119,13 @@ bash ~/.csagent/csagent/deploy/prod-check-morning.sh   # ручной прого
 |-----|----------|-------|
 | `memory-curator-weekly` | `0 4 * * 0` | memory-ops, отчёт в Telegram |
 
-Tech reference KB: skill **`kb-ops`**, path `~/.csagent/knowledge-space` (`git pull`). Not in Postgres — see [skills/kb-ops.md](../skills/kb-ops.md).
+Tech reference KB: skill **`kb-ops`**, path `~/.irida/knowledge-space` (`git pull`). Not in Postgres — see [skills/kb-ops.md](../skills/kb-ops.md).
 
 ### Memory audit
 
 ```bash
-~/.csagent/csagent/scripts/csagent-run.sh memory audit
-~/.csagent/csagent/scripts/csagent-run.sh memory audit --links   # HEAD-check URLs in ops notes
+~/.irida/csagent/scripts/csagent-run.sh memory audit
+~/.irida/csagent/scripts/csagent-run.sh memory audit --links   # HEAD-check URLs in ops notes
 ```
 
 Проверяет: notes vs `.md`, stale ops notes, `seen_post` facts, silo alignment, stub notes. Результат: `.agent/memory-audit.last.json`. Exit 70 = FAIL/WARN критичные пункты.
@@ -139,19 +139,19 @@ Tech reference KB: skill **`kb-ops`**, path `~/.csagent/knowledge-space` (`git p
 Переустановка после обновления кода:
 
 ```bash
-bash ~/.csagent/csagent/deploy/install-launchd.sh
+bash ~/.irida/csagent/deploy/install-launchd.sh
 ```
 
 **Вручную:**
 
 ```bash
-bash ~/.csagent/csagent/deploy/backup-personal.sh
+bash ~/.irida/csagent/deploy/backup-personal.sh
 ```
 
 Создаёт `~/backups/csagent-YYYYMMDD-HHMM/`:
 
 - Postgres dump (если docker PG запущен)
-- Копия `~/.csagent/.agent/*.json` (без credentials — только конфиги cron/gateway/peers)
+- Копия `~/.irida/.agent/*.json` (без credentials — только конфиги cron/gateway/peers)
 - `cron.state.json` (last run + post-mortem)
 
 Восстановление PG — см. [deploy/README.md](README.md#backup).
@@ -164,9 +164,9 @@ Reference: `deploy/agent.config.example.json` (conservative: `limit: 2`, `semant
 
 ### Enable (after HITL sign-off)
 
-1. Edit `~/.csagent/csagent/agent.config.json` — merge `memory.autoRag` from example; set `"enabled": true`.
+1. Edit `~/.irida/csagent/agent.config.json` — merge `memory.autoRag` from example; set `"enabled": true`.
 2. **Do not** add wing `meta` without separate approval.
-3. Optional observability: `export CSAGENT_LOG=1` in `csagent.env`.
+3. Optional observability: `export IRIDA_LOG=1` in `irida.env`.
 4. Deploy + restart:
 
 ```bash
@@ -188,9 +188,9 @@ Set `"enabled": false` (or remove `autoRag` block), `setup-home.sh`, restart gat
 | Gateway p50 turn duration | stable ±10% | p95 up >25% |
 | Short-message context ratio | no spike in composed size | irrelevant memory quoted in replies |
 | Errors | none | context overflow / rotation churn |
-| Logs (`CSAGENT_LOG=1`) | `hits=0–2`, sensible note names | always `hits=2` with unrelated names |
+| Logs (`IRIDA_LOG=1`) | `hits=0–2`, sensible note names | always `hits=2` with unrelated names |
 
-Inspect: `tail -f ~/.csagent/logs/gateway.log | grep autoRag`, `/status` runs 24h row.
+Inspect: `tail -f ~/.irida/logs/gateway.log | grep autoRag`, `/status` runs 24h row.
 
 ## После правок в Downloads
 
@@ -198,8 +198,8 @@ Inspect: `tail -f ~/.csagent/logs/gateway.log | grep autoRag`, `/status` runs 24
 cd "/path/to/csagent-clone"
 npm test && npm run build
 bash deploy/setup-home.sh
-~/.csagent/csagent/scripts/csagent-run.sh doctor          # format секретов + API probe — обязательно
-bash ~/.csagent/csagent/deploy/install-launchd.sh
+~/.irida/csagent/scripts/csagent-run.sh doctor          # format секретов + API probe — обязательно
+bash ~/.irida/csagent/deploy/install-launchd.sh
 bash deploy/prod-check.sh
 ```
 
@@ -211,7 +211,7 @@ Post-mortem gateway 2026-06-18 (Postgres `:5435` down, poll alive но turns FAI
 
 Post-mortem gateway 2026-06-18 (allowlist split-brain, test ID `99` в prod, pairing dead-end): [Reports/analysis/postmortem-gateway-allowlist-split-brain-2026-06-18.md](../Reports/analysis/postmortem-gateway-allowlist-split-brain-2026-06-18.md).
 
-**Важно:** `setup-home.sh` синхронизирует **код**, не Postgres. Секреты в PG перезаписывает только `auth login`. **Gateway allowlist:** при `CSAGENT_DATABASE_URL` + `CSAGENT_SECRETS_KEY` chat ID хранятся **зашифрованными** в PG (`gateway_allowed_chats`); при первом `gateway run` мигрируют из `gateway.json`, plaintext `allowedChatIds` очищается (`allowedChatIdsStorage: pg`). Без Postgres — как раньше, только `~/.csagent/.agent/gateway.json`. `doctor` — строки `gateway allowlist` + sanity.
+**Важно:** `setup-home.sh` синхронизирует **код**, не Postgres. Секреты в PG перезаписывает только `auth login`. **Gateway allowlist:** при `IRIDA_DATABASE_URL` + `IRIDA_SECRETS_KEY` chat ID хранятся **зашифрованными** в PG (`gateway_allowed_chats`); при первом `gateway run` мигрируют из `gateway.json`, plaintext `allowedChatIds` очищается (`allowedChatIdsStorage: pg`). Без Postgres — как раньше, только `~/.irida/.agent/gateway.json`. `doctor` — строки `gateway allowlist` + sanity.
 
 ## Когда что-то сломалось
 
@@ -222,8 +222,8 @@ Post-mortem gateway 2026-06-18 (allowlist split-brain, test ID `99` в prod, pai
 | `/status` FAIL gateway | `gateway status`, `tail gateway.error.log`, `doctor` (format секретов) |
 | inbound тишина, outbound OK | `getWebhookInfo` → `allowed_updates` must include `message` (not only `channel_post`); см. [postmortem 2026-06-17](../Reports/analysis/postmortem-gateway-telegram-inbound-silent-2026-06-17.md) |
 | poll alive, бот молчит, `ECONNREFUSED :5435` | Docker + Postgres: `open -a Docker`, `docker compose -f deploy/docker-compose.csagent-postgres.yml up -d`, `pg_isready -h 127.0.0.1 -p 5435`; restart gateway; см. [postmortem PG 2026-06-18](../Reports/analysis/postmortem-gateway-postgres-down-2026-06-18.md) |
-| pairing / «чат не в allowlist» | `jq .allowedChatIds ~/.csagent/.agent/gateway.json` (prod ≠ repo); diff с `.agent/gateway.json`; `/approve` только из allowlist-чата; см. [postmortem allowlist 2026-06-18](../Reports/analysis/postmortem-gateway-allowlist-split-brain-2026-06-18.md) |
+| pairing / «чат не в allowlist» | `jq .allowedChatIds ~/.irida/.agent/gateway.json` (prod ≠ repo); diff с `.agent/gateway.json`; `/approve` только из allowlist-чата; см. [postmortem allowlist 2026-06-18](../Reports/analysis/postmortem-gateway-allowlist-split-brain-2026-06-18.md) |
 | poll `Not Found` | битый token в PG → `auth telegram login --from-env` или `--stdin` |
 | turn `ERROR_NOT_LOGGED_IN` | битый Cursor key в PG → `auth login --from-env` или `--stdin` |
-| doctor format FAIL | секрет в PG мусор — пере-save через auth, не трогать `CSAGENT_SECRETS_KEY` без re-encrypt |
+| doctor format FAIL | секрет в PG мусор — пере-save через auth, не трогать `IRIDA_SECRETS_KEY` без re-encrypt |
 | topics 0/5 в post-mortem | TParser cwd, API, delegate logs в cron-tick |

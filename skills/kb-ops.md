@@ -1,6 +1,6 @@
 ---
 name: kb-ops
-description: Search the local HappyIn knowledge base (git markdown under CSAGENT_HOME/knowledge-space) for technology best practices, flags, and gotchas
+description: Search the local HappyIn knowledge base (git markdown under IRIDA_HOME/knowledge-space) for technology best practices, flags, and gotchas
 tags: [kb, knowledge-base, csagent, happyin]
 ---
 
@@ -10,11 +10,11 @@ The **technology reference KB** lives on disk — **not** in csagent-memory (Pos
 
 Resolve once per task:
 
-1. `CSAGENT_KB_ROOT` from env (`~/.csagent/csagent.env` or shell).
-2. Else `$CSAGENT_HOME/knowledge-space` when `CSAGENT_HOME` is set.
+1. `IRIDA_KB_ROOT` from env (`~/.irida/irida.env` or shell).
+2. Else `$IRIDA_HOME/knowledge-space` when `IRIDA_HOME` is set.
 3. Else ask the user for an absolute path.
 
-Default prod layout: **`~/.csagent/knowledge-space`** (git clone of [knowledge-space](https://github.com/AnastasiyaW/knowledge-space)).
+Default prod layout: **`~/.irida/knowledge-space`** (git clone of [knowledge-space](https://github.com/AnastasiyaW/knowledge-space)).
 
 Articles: **`{KB_ROOT}/docs/{domain}/{slug}.md`** (834+ articles, 26+ domains).
 
@@ -23,7 +23,7 @@ Articles: **`{KB_ROOT}/docs/{domain}/{slug}.md`** (834+ articles, 26+ domains).
 | Store | Use for |
 |-------|---------|
 | **kb-ops** (this skill) | Kafka, Python, Docker, security, LLM agents, etc. — **canonical tech reference** |
-| **memory-ops** | csagent ops, TParser cron context, user prefs, episodic, cursor-lesson playbooks |
+| **memory-ops** | irida ops, TParser cron context, user prefs, episodic, cursor-lesson playbooks |
 | **obsidian-ops** | Personal PKM vault (`OBSIDIAN_VAULT_PATH`), LLM wiki, journals |
 
 Never duplicate KB articles into `memory_save`. Promote to memory only a **one-line ops decision** the gateway must recall offline (rare).
@@ -33,18 +33,18 @@ Never duplicate KB articles into `memory_save`. Promote to memory only a **one-l
 **Every time** you open the KB for a task (before Grep/Read), refresh the clone:
 
 ```bash
-git -C "$CSAGENT_KB_ROOT" pull --ff-only
+git -C "$IRIDA_KB_ROOT" pull --ff-only
 ```
 
-- Resolve `CSAGENT_KB_ROOT` first (see Root path).
+- Resolve `IRIDA_KB_ROOT` first (see Root path).
 - **Fail open:** if pull fails (no network, merge conflict, not a git repo), say so briefly and read whatever is on disk — do not block the answer.
-- Operator-only manual sync uses the same command; no csagent CLI, no Postgres.
+- Operator-only manual sync uses the same command; no irida CLI, no Postgres.
 
 ## Read workflow
 
 When the user asks about a **technology**, configuration, gotchas, or best practices:
 
-1. **Sync** — `git pull --ff-only` in `$CSAGENT_KB_ROOT` (above).
+1. **Sync** — `git pull --ff-only` in `$IRIDA_KB_ROOT` (above).
 2. **Orient** — read `{KB_ROOT}/docs/for-llm-agents.md` or `{KB_ROOT}/docs/index.md` if domain is unclear.
 3. **Search** — `Grep` with path `{KB_ROOT}/docs`, pattern = keywords (domain name, tool, error). Prefer `*.md` only.
 4. **Open** — `Read` the best-matching `{KB_ROOT}/docs/{domain}/{slug}.md`.
@@ -90,7 +90,7 @@ KB articles are **dense reference** (code, configs, **Gotchas** section). Prefer
 
 ## Validate links & format (when editing KB)
 
-Run from **`$CSAGENT_KB_ROOT`** after changing wiki-links or markdown paths. Same checks as CI (`.github/workflows/`).
+Run from **`$IRIDA_KB_ROOT`** after changing wiki-links or markdown paths. Same checks as CI (`.github/workflows/`).
 
 **Required before commit/PR:**
 
@@ -117,8 +117,8 @@ Add to gateway or cron when the agent should use the KB (recommended for Telegra
 "skills": ["memory-ops", "kb-ops", "browser-ops"]
 ```
 
-Optional in `~/.csagent/csagent.env`:
+Optional in `~/.irida/irida.env`:
 
 ```bash
-export CSAGENT_KB_ROOT="$CSAGENT_HOME/knowledge-space"
+export IRIDA_KB_ROOT="$IRIDA_HOME/knowledge-space"
 ```
