@@ -9,6 +9,7 @@ import { saveMemory } from "../memory.js";
 import { createMemoryStore, SECURE_WING } from "../memoryStore.js";
 import { MemoryFactValidationError } from "../memoryFactValidate.js";
 import { buildMemorySearchOptions } from "../memorySearchPolicy.js";
+import { stalenessNote, staleMarker } from "../memoryStaleness.js";
 
 export interface MemoryMcpContext {
   dir: string;
@@ -102,8 +103,10 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
     async ({ name }) => {
       const note = await withStore(ctx, (s) => s.getNote(name));
       if (!note) return textResult(`Not found: ${name}`);
+      const stale = stalenessNote(note.updated_at, Date.now(), loadConfig(ctx.dir).memory?.stalenessDays);
+      const banner = stale ? `${stale}\n\n` : "";
       return textResult(
-        `# ${note.title || note.name}\nwing: ${note.wing}\nupdated: ${note.updated_at}\n\n${note.body}`
+        `${banner}# ${note.title || note.name}\nwing: ${note.wing}\nupdated: ${note.updated_at}\n\n${note.body}`
       );
     }
   );
@@ -167,10 +170,12 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
         return s.searchNotes(query, lim, searchOpts);
       });
       if (hits.length === 0) return textResult("No matches.");
-      const lines = hits.map(
-        (n) =>
-          `- ${n.name} [${n.wing}] ${n.title}\n  ${n.body.replace(/\s+/g, " ").trim().slice(0, 200)}`
-      );
+      const staleDaysCfg = loadConfig(ctx.dir).memory?.stalenessDays;
+      const now = Date.now();
+      const lines = hits.map((n) => {
+        const mark = staleMarker(n.updated_at, now, staleDaysCfg);
+        return `- ${n.name} [${n.wing}]${mark ? ` ${mark}` : ""} ${n.title}\n  ${n.body.replace(/\s+/g, " ").trim().slice(0, 200)}`;
+      });
       return textResult(lines.join("\n"));
     }
   );

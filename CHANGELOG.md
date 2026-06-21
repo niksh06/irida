@@ -8,6 +8,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Memory staleness annotation (I-115)** — recalled/injected memory reflects what was true when written; the model otherwise treats it as current. Notes older than `memory.stalenessDays` (default 7, 0 disables) now get a one-line caution to re-verify code-coupled details (file/function/flag/path) before relying on them. Applied across every recall path: `@memory` injection, session-start injection, AutoRAG silent pre-turn injection, and the `memory_get` MCP tool (full caution); `memory_search` hits get a compact `⚠Nd` marker. Annotation only — never blocks recall. `src/memoryStaleness.ts` + tests.
+
+### Added
+
 - **Cost / usage tracking (I-116)** — per-run token usage now carries cache read/write (priced ~0.1× / 1.25× input), captured on both the interactive and one-shot/cron paths (the latter recorded no usage before). New `src/pricing.ts` (per-MTok rates for the claude-agent models from the `claude-api` skill, `RATES_AS_OF` stamped) estimates USD per run by its own model — unknown models (cursor composer, future models) price to `null` (tokens-only). `gateway status` / `/status` 24h rollup gains `· cache r/w …` and `· $X.XX est`; a new gateway `/usage` slash adds the current session's cumulative usage (aggregated by `session_id` in `runs.jsonl`, so it survives resume). On the account engine the figure is tagged `subscription (no metered charge)` since the $ is the metered-equivalent, not a bill.
 
 ### Added

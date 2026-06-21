@@ -8,6 +8,7 @@ import { loadConfig, resolveMemoryRoot, type AgentConfig } from "./config.js";
 import { createMemoryStore } from "./memoryStore.js";
 import { redact } from "./redact.js";
 import { titleFromOkfOrBody } from "./okf.js";
+import { stalenessNote } from "./memoryStaleness.js";
 
 export class MemoryError extends Error {}
 
@@ -127,8 +128,14 @@ export function listMemoryRefs(prompt: string): MemoryRefToken[] {
   return out;
 }
 
-function formatMemoryBlock(name: string, body: string): string {
-  return `### Memory: ${name}\n\n${body.trim()}`;
+function formatMemoryBlock(
+  name: string,
+  body: string,
+  opts?: { updatedAt?: string | null; stalenessDays?: number }
+): string {
+  const stale = stalenessNote(opts?.updatedAt, Date.now(), opts?.stalenessDays);
+  const footer = stale ? `\n\n_${stale}_` : "";
+  return `### Memory: ${name}\n\n${body.trim()}${footer}`;
 }
 
 /** Load configured notes for the first turn of a chat session. */
@@ -140,16 +147,17 @@ export async function sessionStartMemoryBlocks(
   if (!onStart?.length) return [];
 
   const maxChars = cfg.memory.maxCharsPerTurn ?? MAX_TOTAL_CHARS;
+  const stalenessDays = cfg.memory.stalenessDays;
   const store = createMemoryStore(dir, cfg.stateDir);
   const blocks: string[] = [];
   let total = 0;
 
   try {
-    const loadOne = async (name: string): Promise<string | undefined> => {
+    const loadOne = async (name: string): Promise<{ body: string; updatedAt?: string } | undefined> => {
       const note = await store.getNote(name);
-      if (note) return note.body;
+      if (note) return { body: note.body, updatedAt: note.updated_at };
       try {
-        return readMemory(dir, name);
+        return { body: readMemory(dir, name) };
       } catch {
         return undefined;
       }
@@ -160,7 +168,7 @@ export async function sessionStartMemoryBlocks(
       if (notes.length > 0) {
         for (const n of notes) {
           if (total + n.body.length > maxChars) break;
-          blocks.push(formatMemoryBlock(n.name, n.body));
+          blocks.push(formatMemoryBlock(n.name, n.body, { updatedAt: n.updated_at, stalenessDays }));
           total += n.body.length;
         }
       } else {
@@ -177,11 +185,11 @@ export async function sessionStartMemoryBlocks(
     for (const raw of onStart) {
       const name = raw.trim();
       if (!name || name === "*") continue;
-      const body = await loadOne(name);
-      if (!body) continue;
-      if (total + body.length > maxChars) break;
-      blocks.push(formatMemoryBlock(name, body));
-      total += body.length;
+      const loaded = await loadOne(name);
+      if (!loaded) continue;
+      if (total + loaded.body.length > maxChars) break;
+      blocks.push(formatMemoryBlock(name, loaded.body, { updatedAt: loaded.updatedAt, stalenessDays }));
+      total += loaded.body.length;
     }
     return blocks;
   } finally {
@@ -190,12 +198,14 @@ export async function sessionStartMemoryBlocks(
 }
 
 async function loadMemoriesForToken(dir: string, tokenName: string): Promise<string[]> {
-  const store = createMemoryStore(dir, loadConfig(dir).stateDir);
+  const cfg = loadConfig(dir);
+  const stalenessDays = cfg.memory?.stalenessDays;
+  const store = createMemoryStore(dir, cfg.stateDir);
   try {
-    const loadOne = async (name: string): Promise<string> => {
+    const loadOne = async (name: string): Promise<{ body: string; updatedAt?: string }> => {
       const note = await store.getNote(name);
-      if (note) return note.body;
-      return readMemory(dir, name);
+      if (note) return { body: note.body, updatedAt: note.updated_at };
+      return { body: readMemory(dir, name) };
     };
 
     if (!tokenName.trim()) {
@@ -205,7 +215,7 @@ async function loadMemoriesForToken(dir: string, tokenName: string): Promise<str
         const blocks: string[] = [];
         for (const n of notes) {
           if (total + n.body.length > MAX_TOTAL_CHARS) break;
-          blocks.push(formatMemoryBlock(n.name, n.body));
+          blocks.push(formatMemoryBlock(n.name, n.body, { updatedAt: n.updated_at, stalenessDays }));
           total += n.body.length;
         }
         if (blocks.length === 0) throw new MemoryError("memories exceed total size limit");
@@ -227,7 +237,8 @@ async function loadMemoriesForToken(dir: string, tokenName: string): Promise<str
 
     const name = sanitizeName(tokenName);
     try {
-      return [formatMemoryBlock(name, await loadOne(name))];
+      const loaded = await loadOne(name);
+      return [formatMemoryBlock(name, loaded.body, { updatedAt: loaded.updatedAt, stalenessDays })];
     } catch (e) {
       if (e instanceof MemoryError) throw e;
       throw new MemoryError(`memory not found: ${name}`);

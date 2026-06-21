@@ -88,6 +88,8 @@ export interface MemoryConfig {
   embedExcludeWings?: string[];
   /** Hybrid search weights and related options (Postgres + embeddings). */
   search?: MemorySearchConfig;
+  /** Annotate recalled notes older than this many days with a re-verify caution (I-115; default 7, 0 disables). */
+  stalenessDays?: number;
 }
 
 /** Stealth browser MCP (puppeteer-extra + persistent Chromium profile). */
@@ -316,6 +318,7 @@ const memorySchema = z.object({
   preTurn: preTurnSchema.optional(),
   searchExcludeWings: trimmedStringArray.optional(),
   embedExcludeWings: trimmedStringArray.optional(),
+  stalenessDays: z.number().min(0).optional(),
 });
 
 const browserSchema = z.object({

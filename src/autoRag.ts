@@ -5,12 +5,15 @@
 import { agentLogEnabled, resolveAgentLogger } from "./agentLog.js";
 import { loadConfig, type AgentConfig } from "./config.js";
 import { createMemoryStore, SECURE_WING, type MemoryNote } from "./memoryStore.js";
+import { stalenessNote } from "./memoryStaleness.js";
 
 const DEFAULT_LIMIT = 3;
 const DEFAULT_MAX_CHARS = 12_000;
 
-function formatAutoRagBlock(note: MemoryNote): string {
-  return `### Memory: ${note.name}\n\n${note.body.trim()}`;
+function formatAutoRagBlock(note: MemoryNote, stalenessDays?: number): string {
+  const stale = stalenessNote(note.updated_at, Date.now(), stalenessDays);
+  const footer = stale ? `\n\n_${stale}_` : "";
+  return `### Memory: ${note.name}\n\n${note.body.trim()}${footer}`;
 }
 
 function resolveAutoRag(cfg: AgentConfig): {
@@ -84,7 +87,7 @@ export async function autoRagMemoryBlocks(
       if (note.wing === SECURE_WING) continue;
       if (note.body === "(encrypted — use memory show)") continue;
       if (opts.wings?.length && !opts.wings.includes(note.wing)) continue;
-      const block = formatAutoRagBlock(note);
+      const block = formatAutoRagBlock(note, config.memory?.stalenessDays);
       if (total + block.length > opts.maxChars) break;
       blocks.push(block);
       noteNames.push(note.name);
