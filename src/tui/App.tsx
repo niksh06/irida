@@ -1006,7 +1006,7 @@ export function App(props: TuiOptions) {
               totalLines={allRows.length}
             />
             <ToolCallBanner entry={activityLog[activityLog.length - 1] ?? null} />
-            <ThinkingBar text={thinkingText} expanded={thinkingExpanded} />
+            <ThinkingBar text={thinkingText} expanded={thinkingExpanded} tick={petClock} elapsedMs={turnElapsedMs} />
             <ActivityBar
               label={activity}
               busy={busy}
