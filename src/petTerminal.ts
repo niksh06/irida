@@ -67,19 +67,42 @@ type PetAnim = readonly PetFrame[];
 // trails sparkles when idle, spins + crackles when working, bursts with confetti
 // when happy, sheds a falling tear when sad, and breathes with rising zZz asleep.
 export const PET_WISP_FRAMES: Record<PetState, PetAnim> = {
-  // idle — calm float: a drifting sparkle, a blink, and glances left/right.
+  // idle — a little life, not a loop: the eye TRACKS a sparkle drifting left→right
+  // (◐ follows it left, ◉ centre, ◑ right), then a blink, a curious "?" peek with a
+  // wide eye, and a settle — while the energy tail gently swishes.
   idle: [
     [
-      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "accent" }, { t: "  ·  ·", c: "muted" }] },
+      { parts: [{ t: "✦", c: "accent" }, { t: "  ·  · ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◐", c: "accent" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "◇", c: "accent" }, { t: "   ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "accent" }, { t: " ·  · ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◐", c: "accent" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "◇", c: "accent" }, { t: "    ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " · ", c: "muted" }, { t: "✦", c: "accent" }, { t: "  · ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◉", c: "accent" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
       { parts: [{ t: "    ", c: "muted" }, { t: "◇", c: "accent" }, { t: "   ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: " ·  ", c: "muted" }, { t: "✦", c: "accent" }, { t: "  ·", c: "muted" }] },
+      { parts: [{ t: " ·  ", c: "muted" }, { t: "✦", c: "accent" }, { t: " · ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◉", c: "accent" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "     ", c: "muted" }, { t: "◇", c: "accent" }, { t: "  ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  · ", c: "muted" }, { t: "✦", c: "accent" }, { t: " ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◑", c: "accent" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
       { parts: [{ t: "    ", c: "muted" }, { t: "✧", c: "accent" }, { t: "   ", c: "muted" }] },
     ],
@@ -88,7 +111,7 @@ export const PET_WISP_FRAMES: Record<PetState, PetAnim> = {
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◑", c: "accent" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
-      { parts: [{ t: "     ", c: "muted" }, { t: "✧", c: "accent" }, { t: "  ", c: "muted" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "✧", c: "accent" }, { t: "    ", c: "muted" }] },
     ],
     [
       { parts: [{ t: " ·  ·  ·", c: "muted" }] },
@@ -98,11 +121,18 @@ export const PET_WISP_FRAMES: Record<PetState, PetAnim> = {
       { parts: [{ t: "    ", c: "muted" }, { t: "·", c: "muted" }, { t: "   ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: "✦", c: "accent" }, { t: "  ·  · ", c: "muted" }] },
+      { parts: [{ t: " ·  ", c: "muted" }, { t: "?", c: "accent" }, { t: " · ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
-      { parts: [{ t: " │  ", c: "primary" }, { t: "◐", c: "accent" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◎", c: "accent" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
-      { parts: [{ t: "   ", c: "muted" }, { t: "✧", c: "accent" }, { t: "    ", c: "muted" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "◇", c: "accent" }, { t: "   ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  ", c: "muted" }, { t: "✦", c: "accent" }, { t: "  ·", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◉", c: "accent" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "◇", c: "accent" }, { t: "   ", c: "muted" }] },
     ],
   ],
   // working — the single eye spins (◐→◓→◑→◒) while energy crackles in the tail.

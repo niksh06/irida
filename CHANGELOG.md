@@ -8,7 +8,7 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Changed
 
-- **Wisp mascot — alive (TUI delight)** — the in-terminal companion gained richer multi-frame animations so it feels alive: it blinks and glances left/right with a drifting sparkle when idle, spins a full eye rotation (◐◓◑◒) with crackling energy when working, bursts confetti then settles when happy, sheds a tear that wells up and falls when sad, and breathes with rising zZz asleep. Same 5-row × 8-column corner invariant (no jitter). Fixed a pre-existing display-width bug where the 2-cell `⚡` made the working frames 9 columns wide (→ 1-cell `ϟ`/`↯`); the width test now measures real display columns (`string-width`), not code points. `npm run pet` shows it off.
+- **Wisp mascot — alive (TUI delight)** — the in-terminal companion gained richer multi-frame animations so it feels alive: when idle its eye now **tracks a sparkle drifting left→right** (◐ follows it left, ◉ centre, ◑ right), then it blinks, does a curious wide-eye "?" peek, and settles — a 9-frame "watching" behavior, not a loop — while the energy tail swishes. It spins a full eye rotation (◐◓◑◒) with crackling energy when working, bursts confetti then settles when happy, sheds a tear that wells up and falls when sad, and breathes with rising zZz asleep. Same 5-row × 8-column corner invariant (no jitter). Fixed a pre-existing display-width bug where the 2-cell `⚡` made the working frames 9 columns wide (→ 1-cell `ϟ`/`↯`); the width test now measures real display columns (`string-width`), not code points, and the eye-tracking choreography is pinned by a test. `npm run pet` shows it off.
 
 ### Added
 

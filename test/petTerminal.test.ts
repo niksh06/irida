@@ -7,7 +7,14 @@ import {
   deriveTuiPetState,
   petTerminalFrame,
   petTerminalLabel,
+  PET_WISP_FRAMES,
 } from "../src/petTerminal.js";
+
+const STATES = ["idle", "working", "happy", "sad", "sleep"] as const;
+/** Iterate every frame of a state (self-maintaining as animations grow). */
+const eachFrame = (fn: (state: (typeof STATES)[number], tick: number) => void) => {
+  for (const state of STATES) for (let tick = 0; tick < PET_WISP_FRAMES[state].length; tick++) fn(state, tick);
+};
 
 describe("deriveTuiPetState", () => {
   const now = 1_000_000;
@@ -34,44 +41,62 @@ describe("petTerminalFrame", () => {
     assert.notEqual(ta, tb);
   });
 
-  it("idle has accent sparkles", () => {
+  it("idle has accent sparkles and an eye", () => {
     const frame = petTerminalFrame("idle", 0);
     const text = frame.flatMap((l) => l.parts).map((p) => p.t).join("");
     assert.match(text, /✦/);
-    assert.match(text, /◉/);
+    const eye = frame[2]!.parts.map((p) => p.t).join("");
+    assert.match(eye, /[◉◎◐◑‿]/); // idle's eye glances/blinks, so don't pin one glyph
+  });
+
+  it("idle eye TRACKS the sparkle (left→◐, right→◑) and blinks + peeks", () => {
+    let sawLeft = false;
+    let sawRight = false;
+    for (const frame of PET_WISP_FRAMES.idle) {
+      const row0 = frame[0]!.parts.map((p) => p.t).join("");
+      const eye = frame[2]!.parts.map((p) => p.t).join("");
+      const sparkle = [...row0].indexOf("✦"); // ~column; blink/peek frames have none
+      if (sparkle === -1) continue;
+      if (sparkle <= 1) {
+        assert.match(eye, /◐/, `sparkle@${sparkle} (left) → eye should look left`);
+        sawLeft = true;
+      }
+      if (sparkle >= 6) {
+        assert.match(eye, /◑/, `sparkle@${sparkle} (right) → eye should look right`);
+        sawRight = true;
+      }
+    }
+    assert.ok(sawLeft && sawRight, "idle should glance both ways as the sparkle drifts");
+    const eyes = PET_WISP_FRAMES.idle.map((f) => f[2]!.parts.map((p) => p.t).join(""));
+    assert.ok(eyes.some((e) => /‿/.test(e)), "idle blinks");
+    assert.ok(eyes.some((e) => /◎/.test(e)), "idle has a curious wide-eye peek");
   });
 
   it("every state keeps a single eye (one consistent character on the eye row)", () => {
     // The eye lives on row 2 (0-indexed), between the box sides │ … │.
-    const EYES = /[◉‿◐◓◑◒◕◠^╥\-]/gu;
-    for (const state of ["idle", "working", "happy", "sad", "sleep"] as const) {
-      for (let tick = 0; tick < 6; tick++) {
-        const eyeRow = petTerminalFrame(state, tick)[2]!.parts.map((p) => p.t).join("");
-        const eyes = eyeRow.match(EYES) ?? [];
-        assert.equal(eyes.length, 1, `${state}@${tick} eye row "${eyeRow}" should have exactly one eye`);
-      }
-    }
+    const EYES = /[◉◎‿◐◓◑◒◕◠^╥\-]/gu;
+    eachFrame((state, tick) => {
+      const eyeRow = petTerminalFrame(state, tick)[2]!.parts.map((p) => p.t).join("");
+      const eyes = eyeRow.match(EYES) ?? [];
+      assert.equal(eyes.length, 1, `${state}@${tick} eye row "${eyeRow}" should have exactly one eye`);
+    });
   });
 
   it("all frames are the same height (no vertical jump)", () => {
-    for (const state of ["idle", "working", "happy", "sad", "sleep"] as const) {
-      for (let tick = 0; tick < 6; tick++) {
-        assert.equal(petTerminalFrame(state, tick).length, 5, `${state}@${tick}`);
-      }
-    }
+    eachFrame((state, tick) => {
+      assert.equal(petTerminalFrame(state, tick).length, 5, `${state}@${tick}`);
+    });
   });
 
   it("every row is exactly 8 DISPLAY columns wide (no horizontal jump)", () => {
     // Measure with string-width, not code points: a 2-cell glyph (e.g. ⚡) is one
     // code point but two terminal columns, which would jitter the corner in Ink.
-    for (const state of ["idle", "working", "happy", "sad", "sleep"] as const) {
-      for (let tick = 0; tick < 6; tick++) {
-        for (const [i, line] of petTerminalFrame(state, tick).entries()) {
-          const text = line.parts.map((p) => p.t).join("");
-          assert.equal(stringWidth(text), 8, `${state}@${tick} row${i} "${text}"`);
-        }
+    eachFrame((state, tick) => {
+      for (const [i, line] of petTerminalFrame(state, tick).entries()) {
+        const text = line.parts.map((p) => p.t).join("");
+        assert.equal(stringWidth(text), 8, `${state}@${tick} row${i} "${text}"`);
       }
-    }
+    });
   });
 });
 
