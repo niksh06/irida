@@ -133,7 +133,7 @@ async function sendDigestQaFollowUp(
   dir: string,
   target: CronJobNotifyTarget
 ): Promise<void> {
-  if (!job.topicDelegates || !exec.ok) return;
+  if ((!job.topicDelegates && !job.recordDigest) || !exec.ok) return;
   const report = evaluateDigestQa(dir, job.id, at);
   saveDigestQaResult(dir, job.id, report);
   if (report.ok) {
@@ -196,10 +196,10 @@ export async function sendCronJobNotify(
   const target = resolveJobNotifyTarget(job);
   if (!target) return;
   const text = formatNotifyText(payload, exec);
-  if (job.topicDelegates && exec.output?.trim()) {
+  if ((job.topicDelegates || job.recordDigest) && exec.output?.trim()) {
     saveDigestOutput(dir, job.id, exec.output);
   }
-  const postMortem = job.topicDelegates ? formatCronPostMortem(job.id, exec, at) : "";
+  const postMortem = job.topicDelegates || job.recordDigest ? formatCronPostMortem(job.id, exec, at) : "";
   try {
     if (target.mode === "telegram") {
       const token = resolveTelegramBotToken(dir, target.tokenEnv).value;

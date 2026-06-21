@@ -1,0 +1,91 @@
+TParser **daily digest** — single agent (no delegates). Produce the full daily digest in ONE run.
+Window: **last 24 hours** — compute `WINDOW_START = now − 24h` (UTC), `WINDOW_END = now`. **Do not use /api/feed.**
+
+You do the whole job yourself: fetch once, bucket into five topics, analyze, then output the final Telegram digest (Russian). Output **ONLY** the final Telegram message body — no preamble, no tool narration.
+
+## Setup (once)
+
+1. `memory_get` name=`tparser-workflow` — tag/sphere rules and interests.
+2. Fetch posts **once**:
+   - `GET http://127.0.0.1:8002/api/posts/recent-live?limit=300`
+   - Paginate `after_rowid` until posts are older than `WINDOW_START`.
+   - Keep items with `created_at` (or `date`) >= `WINDOW_START`.
+3. Hydrate: batch `GET /api/posts/by-keys?keys=channel_id:post_id,...` (max 50 keys per call).
+4. Bucket each post into **one** topic by `topic_tags` (else summary keywords). A post belongs to at most one topic (highest-priority match).
+
+## Topics (five buckets)
+
+- **AI / ML / LLM** — AI, ML, LLM, benchmark, research, agent, RAG, fine-tuning
+- **AISec / MLSec** — AISec, MLSec, LLM security, adversarial, jailbreak, prompt injection, model abuse
+- **InfoSec / AppSec** — InfoSec, AppSec, security, vulnerability, CVE, exploit, malware, incident
+- **Programming / devtools** — programming, devtools, language, framework, open source, library, IDE
+- **DevSecOps / DevOps** — DevSecOps, DevOps, CI/CD, K8s, kubernetes, cloud, infra, SRE, terraform
+
+## Per-post analysis (within each topic, priority desc)
+
+Analyze **all** matched posts per topic. For each post keep this block:
+
+```
+### {n}. {channel_or_title} · `{priority}` · {primary_tag}
+
+**Структура поста:**
+- Bullets preserving the gist, key claims, named entities, and **all URLs** from `urls`/message (external links verbatim).
+
+**Вердикт агента:**
+2–4 предложения: что это значит в разрезе текущих интересов (tparser-workflow). Если ссылок несколько — какая главная и почему.
+
+**Telegram:** https://t.me/c/{short}/{post_id}
+**Источник:** {best external URL or «(нет URL)»}
+```
+
+Link rules: `short` = str(channel_id) with leading `-100` stripped. Never `t.me/@channel`. Pick the most relevant external URL for Источник; list others under Структура.
+
+**Deep check** (optional, ≤1 per post): for a post with external http(s) link and thin summary, use `browser_navigate` + `browser_snapshot` (browser-ops) on the **one** primary URL, or `GET /api/posts/{post_id}/analysis?channel_id=`. Never invent content.
+
+**Dedup:** window `WINDOW_START`–`WINDOW_END` only; do **not** write `memory_fact_add` / `seen_post` facts. No Obsidian writes.
+
+## Output (the only thing you print)
+
+**Hard limit ≤3500 characters** (one Telegram message, ~2 min read). If over budget, compress вердикты and drop lower-priority posts — **never drop `t.me/` links**. Keep ≤5 posts per topic (top by priority) when a topic is large.
+
+```
+📬 TParser · день · {WINDOW_END}
+5 тем · {total_posts} постов проанализировано
+
+**TL;DR:** 2–3 предложения — главный итог дня (first content after the header stats).
+
+## Сводка дня
+- 3–5 bullets: главные тренды across topics.
+- **По темам:** AI/ML {n1} · AISec {n2} · InfoSec {n3} · Programming {n4} · DevOps {n5}
+
+---
+
+## AI / ML / LLM
+(per-post blocks: Структура + Вердикт + Telegram line; top 5 by priority if >5)
+
+## AISec / MLSec
+…
+
+## InfoSec / AppSec
+…
+
+## Programming / devtools
+…
+
+## DevSecOps / DevOps
+…
+
+---
+
+В чате: «топ-50», «только InfoSec», «только AI» для углубления.
+```
+
+## Rules
+
+- Russian. **TL;DR first**, immediately after the header line, before `## Сводка дня`.
+- Keep each post block intact: Структура поста, Вердикт агента, Telegram on its own line. Do not use markdown link syntax for t.me.
+- If a topic has 0 posts: one line «нет релевантных постов».
+- Compress when over 3500 chars — shorten вердикт, trim lower-priority posts, never drop links.
+- Do not invent posts. Do not re-fetch the API beyond the steps above.
+
+If all topics empty: `📬 TParser · день · {WINDOW_END} · релевантных постов не было.`

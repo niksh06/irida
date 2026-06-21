@@ -97,11 +97,12 @@ export function evaluateDigestQa(
 
   try {
     const jobs = loadCronJobs(dir);
-    jobFound = jobs.some((j) => j.id === jobId && j.topicDelegates);
-    if (!jobFound) {
-      checks.push(check("job config", false, `job '${jobId}' missing or not topicDelegates`));
+    const job = jobs.find((j) => j.id === jobId && (j.topicDelegates || j.recordDigest));
+    jobFound = Boolean(job);
+    if (!job) {
+      checks.push(check("job config", false, `job '${jobId}' missing or not a digest (topicDelegates/recordDigest)`));
     } else {
-      checks.push(check("job config", true, `${jobId} · topicDelegates`));
+      checks.push(check("job config", true, `${jobId} · ${job.topicDelegates ? "topicDelegates" : "single-agent"}`));
     }
   } catch (e) {
     checks.push(check("job config", false, e instanceof Error ? e.message : String(e)));
@@ -149,6 +150,14 @@ export function evaluateDigestQa(
     checks.push(check("duration", false, "durationMs missing"));
   }
 
+  const body = loadDigestOutput(dir, jobId);
+  const empty = body ? isEmptyDigest(body) : false;
+  const topicHeaders = body
+    ? TPARSE_DAILY_TOPICS.filter((t) =>
+        new RegExp(t.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(body)
+      )
+    : [];
+
   if (last.topicTotal != null && last.topicOk != null) {
     checks.push(
       check(
@@ -164,14 +173,22 @@ export function evaluateDigestQa(
       }
     }
   } else {
-    checks.push(check("topics", false, "topic stats missing from lastResult"));
+    // Single-agent (recordDigest) digest: no per-topic stats — derive coverage
+    // from the saved body's section headings.
+    checks.push(
+      check(
+        "topics",
+        empty || topicHeaders.length >= DIGEST_MIN_TOPIC_OK,
+        empty
+          ? "skipped (empty day)"
+          : `${topicHeaders.length}/${TPARSE_DAILY_TOPICS.length} topic sections in body (min ${DIGEST_MIN_TOPIC_OK})`
+      )
+    );
   }
 
-  const body = loadDigestOutput(dir, jobId);
   if (!body) {
     checks.push(check("digest body", false, `missing ${digestOutputPath(dir, jobId)}`));
   } else {
-    const empty = isEmptyDigest(body);
     const hasHeader = /📬|TParser/i.test(body);
     checks.push(
       check("digest header", hasHeader || empty, hasHeader ? "📬/TParser present" : "no header (non-empty digest)")
@@ -199,9 +216,6 @@ export function evaluateDigestQa(
       checks.push(check("tg links", links >= 1, `${links} t.me link(s)`));
     }
 
-    const topicHeaders = TPARSE_DAILY_TOPICS.filter((t) =>
-      new RegExp(t.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(body)
-    );
     if (empty) {
       checks.push(check("topic sections", true, "skipped (empty day)"));
     } else {

@@ -20,6 +20,7 @@ export const CRON_BUILTIN_HANDLERS = [
   "cursor-mine",
   "cursor-distill-queue",
   "cursor-distill-backfill-queue",
+  "claude-session-prune",
 ] as const;
 export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
 
@@ -55,6 +56,12 @@ export interface CronJob {
   synthesizePromptFile?: string;
   /** Hours for daily window (default 24). */
   topicWindowHours?: number;
+  /**
+   * Treat this job's output as the daily digest even on the single-prompt path:
+   * save the snapshot (saveDigestOutput) + run digest-QA. Lets a single-agent
+   * digest (no topicDelegates) keep the morning freshness check working.
+   */
+  recordDigest?: boolean;
   /** Built-in CLI handler (no SDK prompt). */
   builtin?: CronBuiltinHandler;
   /**
@@ -187,6 +194,7 @@ function validateJob(raw: unknown, index: number): CronJob {
   if (typeof o.topicWindowHours === "number" && o.topicWindowHours > 0) {
     job.topicWindowHours = Math.min(o.topicWindowHours, 72);
   }
+  if (o.recordDigest === true) job.recordDigest = true;
   if (typeof o.graceMinutes === "number" && o.graceMinutes > 0) {
     job.graceMinutes = Math.min(Math.floor(o.graceMinutes), 24 * 60);
   }

@@ -6,6 +6,14 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 - **Memory audit backlog (Wave F)** — `Reports/analysis/memory-audit-improvements-2026-06-16.md`; issues I-69…I-82 (P0–P2 hygiene/retrieval/eval)
 
+### Changed
+
+- **TParser daily digest → single agent** — the digest ran 5 topic delegates + a synthesizer (6 SDK runs), which on the claude-agent **account** engine tripped a subscription rate cap (`403 Request not allowed`, 4/5 topics then fail) and spawned 6 orphan SDK session transcripts per run. Replaced with one agent that fetches once, buckets the five topics, and emits the digest in a single run (`deploy/prompts/tparser-daily-single.prompt.txt`). New `recordDigest` cron-job flag saves the snapshot + runs digest-QA on the single-prompt path (morning freshness check keeps working, topic coverage derived from the body when per-topic stats are absent).
+
+### Added
+
+- **`claude-session-prune` cron builtin** — age-based sweep of stale Claude Agent SDK session transcripts under `~/.claude/projects/*/*.jsonl` (default >14 days). Safe: an active resumable session (gateway, appended every turn) keeps a fresh mtime and survives; one-shot cron/delegate orphans age out. `src/claudeSessionPrune.ts` + tests.
+
 ### Security
 
 - **Tool execution guardrails on claude-agent (I-94)** — runtime tool-deny gate: the Agent SDK `canUseTool` callback vets the tool inputs the agent chooses (e.g. a `Bash` command) against the shared `safety.ts` denylist, denying destructive shapes (`rm -rf`, `drop table`, force-push, `mkfs`, fork bomb). Replaces the hardcoded `bypassPermissions` **only when enabled**. Config `engine.toolPolicy` is **off by default** and per-surface (`bySurface` by `channel`) so gateway/cron can be strict while TUI stays relaxed; `gateway status` surfaces the state. OS sandbox (I-95) deferred to a later layer. The cursor-engine equivalent stays blocked by `@cursor/sdk` (no programmatic hooks).

@@ -7,14 +7,18 @@
       "graceMinutes": 480,
       "cwd": "/path/to/TParser",
       "skills": ["memory-ops", "browser-ops"],
-      "topicDelegates": true,
-      "topicWindowHours": 24,
-      "topicPromptFile": "deploy/prompts/tparser-daily-topic.prompt.txt",
-      "synthesizePromptFile": "deploy/prompts/tparser-daily-synthesize.prompt.txt",
+      "promptFile": "deploy/prompts/tparser-daily-single.prompt.txt",
+      "recordDigest": true,
       "notify": {
         "chatId": "YOUR_CHAT_ID",
         "telegram": true
       }
+    },
+    {
+      "id": "claude-session-prune",
+      "cron": "30 5 * * *",
+      "graceMinutes": 720,
+      "builtin": "claude-session-prune"
     },
     {
       "id": "reddit-rss-fetch",

@@ -24,6 +24,7 @@ import {
 import { loadCronJobPromptText } from "./cronPrompt.js";
 import { scanPromptText, validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
+import { pruneClaudeSessions, formatBytes } from "./claudeSessionPrune.js";
 import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
 import { exportRecentSessions } from "./sessionExport.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
@@ -204,6 +205,23 @@ export async function executeCronJob(
         ok: false,
         exitCode: EXIT.software,
         message: `cursor-distill-backfill-queue failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "claude-session-prune") {
+    try {
+      const r = pruneClaudeSessions();
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `claude-session-prune: removed ${r.pruned}/${r.scanned} stale transcript(s) >${r.maxAgeDays}d, freed ${formatBytes(r.bytesFreed)}`,
+        silent: r.pruned === 0,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `claude-session-prune failed: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }
