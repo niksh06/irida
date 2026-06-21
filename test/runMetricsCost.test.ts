@@ -50,3 +50,27 @@ describe("computeRunMetrics cost (I-116)", () => {
     assert.equal(m.costUsd, 3);
   });
 });
+
+import { sessionUsage, formatSessionUsage } from "../src/runMetrics.js";
+
+describe("sessionUsage (I-116, survives resume)", () => {
+  const now = Date.now();
+  it("sums only the target session's runs across turns", () => {
+    const entries = [
+      base({ session_id: "sess_A", input_tokens: 100, output_tokens: 200 }),
+      base({ session_id: "sess_A", input_tokens: 50, output_tokens: 70, cache_read_tokens: 1000 }),
+      base({ session_id: "sess_B", input_tokens: 999 }), // other session — excluded
+    ];
+    const u = sessionUsage(entries, "sess_A");
+    assert.equal(u.runs, 2);
+    assert.equal(u.inputTokens, 150);
+    assert.equal(u.outputTokens, 270);
+    assert.equal(u.cacheReadTokens, 1000);
+    assert.ok(u.costUsd != null && u.costUsd > 0);
+    assert.match(formatSessionUsage(u), /sess_A: 2 turn\(s\)/);
+  });
+  it("zero runs for an unknown session", () => {
+    assert.equal(sessionUsage([], "nope").runs, 0);
+    assert.equal(sessionUsage([], "nope").costUsd, null);
+  });
+});

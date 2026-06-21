@@ -128,6 +128,56 @@ export function countRecentErrorKinds(
   return recent.filter((e) => e.error_kind != null && set.has(e.error_kind)).length;
 }
 
+export interface SessionUsage {
+  sessionId: string;
+  runs: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number | null;
+}
+
+/**
+ * Aggregate usage for one session across all its runs (I-116). Keyed by
+ * `session_id` in `runs.jsonl`, so the total **survives resume** — a session
+ * resumed in a fresh process still sums its earlier turns from the persisted log.
+ */
+export function sessionUsage(entries: RunLogEntry[], sessionId: string): SessionUsage {
+  const mine = entries.filter((e) => e.session_id === sessionId && e.status !== "injected");
+  let costUsd: number | null = null;
+  for (const e of mine) {
+    const c = estimateCostUsd(
+      {
+        inputTokens: e.input_tokens,
+        outputTokens: e.output_tokens,
+        cacheReadTokens: e.cache_read_tokens,
+        cacheCreationTokens: e.cache_creation_tokens,
+      },
+      e.model
+    );
+    if (c != null) costUsd = (costUsd ?? 0) + c;
+  }
+  return {
+    sessionId,
+    runs: mine.length,
+    inputTokens: mine.reduce((n, e) => n + (e.input_tokens ?? 0), 0),
+    outputTokens: mine.reduce((n, e) => n + (e.output_tokens ?? 0), 0),
+    cacheReadTokens: mine.reduce((n, e) => n + (e.cache_read_tokens ?? 0), 0),
+    cacheCreationTokens: mine.reduce((n, e) => n + (e.cache_creation_tokens ?? 0), 0),
+    costUsd,
+  };
+}
+
+export function loadSessionUsage(dir: string, stateDir: string, sessionId: string): SessionUsage {
+  return sessionUsage(loadRunLogEntries(dir, stateDir), sessionId);
+}
+
+export function formatSessionUsage(u: SessionUsage): string {
+  const cost = u.costUsd != null ? ` · ${formatUsd(u.costUsd)} est` : "";
+  return `session ${u.sessionId}: ${u.runs} turn(s) · tokens in/out ${u.inputTokens}/${u.outputTokens} · cache r/w ${u.cacheReadTokens}/${u.cacheCreationTokens}${cost}`;
+}
+
 export function formatRunMetrics(
   m: RunMetrics,
   windowHours = 24,

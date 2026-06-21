@@ -10,6 +10,7 @@ import { tryApprovePairing } from "./gatewayPairing.js";
 import { backgroundPauseState, setBackgroundPaused } from "./backgroundPause.js";
 import { createMemoryStore } from "./memoryStore.js";
 import { loadConfig } from "./config.js";
+import { loadRunMetrics, formatRunMetrics, loadSessionUsage, formatSessionUsage } from "./runMetrics.js";
 import { createStore } from "./store.js";
 import { searchSessions } from "./sessionSearch.js";
 import { listSkills } from "./skills.js";
@@ -109,6 +110,18 @@ export async function handleGatewaySlash(
       const lines = checks.map((c) => `${c.ok ? "OK" : "FAIL"} ${c.name}: ${c.detail}`);
       const all = doctorAllOk(checks);
       return [`irida doctor (${all ? "pass" : "fail"})`, ...lines].join("\n");
+    }
+
+    case "usage": {
+      const cfg = loadConfig(ctx.dir);
+      const m = loadRunMetrics(ctx.dir, cfg.stateDir, 24, { prodOnly: true });
+      const lines = [`irida usage`, `24h: ${formatRunMetrics(m, 24, { prodOnly: true })}`];
+      const sid = loadGatewayPeers(ctx.dir).peers[peerKey(ctx.adapter, ctx.chatId)];
+      if (sid) lines.push(formatSessionUsage(loadSessionUsage(ctx.dir, cfg.stateDir, sid)));
+      const account =
+        cfg.engine.provider === "claude-agent" && (cfg.engine.auth ?? "api-key") === "account";
+      if (account && m.costUsd != null) lines.push("(account/subscription — $ is metered-equivalent, not billed)");
+      return lines.join("\n");
     }
 
     case "memory": {
