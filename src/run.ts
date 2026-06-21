@@ -233,6 +233,10 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       cwd: agentCwd,
       runtime: cfg.runtime,
       model: effectiveModel,
+      input_tokens: r.usage?.inputTokens ?? null,
+      output_tokens: r.usage?.outputTokens ?? null,
+      cache_read_tokens: r.usage?.cacheReadTokens ?? null,
+      cache_creation_tokens: r.usage?.cacheCreationTokens ?? null,
       ...runLogMeta,
     });
     if (failed) {

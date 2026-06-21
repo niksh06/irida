@@ -593,6 +593,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             model: cfg.model,
             input_tokens: usage.inputTokens ?? null,
             output_tokens: usage.outputTokens ?? null,
+            cache_read_tokens: usage.cacheReadTokens ?? null,
+            cache_creation_tokens: usage.cacheCreationTokens ?? null,
             ...runLogMeta(),
           });
           await store.upsertSession({

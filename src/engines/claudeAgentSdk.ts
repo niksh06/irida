@@ -27,7 +27,9 @@ import type {
   RunLike,
   McpServers,
   AgentSendOptions,
+  StreamUsage,
 } from "../host.js";
+import { parseStreamUsage } from "../host.js";
 import type { EngineAuth } from "../config.js";
 import { DEFAULT_CLAUDE_AGENT_MODEL } from "../config.js";
 import { destructiveReason } from "../safety.js";
@@ -163,14 +165,23 @@ async function collectOneShot(q: AsyncIterable<Record<string, unknown>>): Promis
   let resultText = "";
   let sessionId: string | undefined;
   let isError = false;
+  let usage: StreamUsage | undefined;
   for await (const m of q) {
     if (typeof m.session_id === "string") sessionId = m.session_id;
+    const u = parseStreamUsage(m);
+    if (u) usage = { ...usage, ...u };
     if (m.type === "result") {
       isError = Boolean(m.is_error);
       if (typeof m.result === "string") resultText = m.result;
     }
   }
-  return { status: isError ? "error" : "finished", result: resultText, id: sessionId, agentId: sessionId };
+  return {
+    status: isError ? "error" : "finished",
+    result: resultText,
+    id: sessionId,
+    agentId: sessionId,
+    ...(usage ? { usage } : {}),
+  };
 }
 
 export function createClaudeAgentSdk(opts?: {

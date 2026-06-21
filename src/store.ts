@@ -56,6 +56,9 @@ export interface RunRecord {
   /** Stream usage for the ops run log (I-33); not persisted in DB columns. */
   input_tokens?: number | null;
   output_tokens?: number | null;
+  /** Cache usage for cost estimation (I-116); jsonl only. */
+  cache_read_tokens?: number | null;
+  cache_creation_tokens?: number | null;
   /** Run log metadata (I-68); jsonl only — not persisted in DB columns. */
   channel?: string | null;
   cron_job?: string | null;

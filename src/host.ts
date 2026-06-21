@@ -13,6 +13,8 @@ export interface SdkPromptResult {
   result?: string;
   id?: string;
   agentId?: string;
+  /** Token usage for cost/metrics (I-116); best-effort, engine-dependent. */
+  usage?: StreamUsage;
 }
 
 export type McpServers = Record<string, unknown>;
@@ -34,6 +36,8 @@ export interface OneShotResult {
   text: string;
   runId: string | null;
   agentId: string | null;
+  /** Token usage for cost/metrics (I-116); best-effort, engine-dependent. */
+  usage?: StreamUsage;
 }
 
 export class StartupError extends Error {}
@@ -127,6 +131,10 @@ export interface StreamUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  /** Tokens served from cache (cheap, ~0.1× input). */
+  cacheReadTokens?: number;
+  /** Tokens written to the cache this turn (1.25× input for the 5m TTL). */
+  cacheCreationTokens?: number;
 }
 
 /** Extract token usage from SDK stream events or InteractionUpdate (best-effort). */
@@ -158,8 +166,18 @@ function extractUsage(o: Record<string, unknown>): StreamUsage | null {
   const output =
     num(o.output_tokens) ?? num(o.outputTokens) ?? num(o.completion_tokens) ?? num(o.completionTokens);
   const total = num(o.total_tokens) ?? num(o.totalTokens);
-  if (input == null && output == null && total == null) return null;
-  return { inputTokens: input, outputTokens: output, totalTokens: total };
+  const cacheRead = num(o.cache_read_input_tokens) ?? num(o.cacheReadInputTokens);
+  const cacheCreation = num(o.cache_creation_input_tokens) ?? num(o.cacheCreationInputTokens);
+  if (input == null && output == null && total == null && cacheRead == null && cacheCreation == null) {
+    return null;
+  }
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    totalTokens: total,
+    cacheReadTokens: cacheRead,
+    cacheCreationTokens: cacheCreation,
+  };
 }
 
 function num(v: unknown): number | undefined {
@@ -262,5 +280,6 @@ export async function runOneShot(
     text: String(res.result ?? ""),
     runId: res.id ?? null,
     agentId: res.agentId ?? null,
+    usage: res.usage,
   };
 }

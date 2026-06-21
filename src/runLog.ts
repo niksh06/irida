@@ -24,6 +24,9 @@ export interface RunLogEntry {
   cwd: string;
   input_tokens: number | null;
   output_tokens: number | null;
+  /** Cache usage for cost estimation (I-116). */
+  cache_read_tokens?: number | null;
+  cache_creation_tokens?: number | null;
   /** Entry channel (I-68). */
   channel?: string | null;
   cron_job?: string | null;
@@ -56,6 +59,8 @@ export function runRecordToLogEntry(r: RunRecord): RunLogEntry {
     cwd: r.cwd,
     input_tokens: r.input_tokens ?? null,
     output_tokens: r.output_tokens ?? null,
+    cache_read_tokens: r.cache_read_tokens ?? null,
+    cache_creation_tokens: r.cache_creation_tokens ?? null,
     channel: r.channel ?? null,
     cron_job: r.cron_job ?? null,
     is_test: r.is_test === true,
