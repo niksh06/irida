@@ -8,6 +8,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Cost / usage tracking (I-116)** — per-run token usage now carries cache read/write (priced ~0.1× / 1.25× input), captured on both the interactive and one-shot/cron paths (the latter recorded no usage before). New `src/pricing.ts` (per-MTok rates for the claude-agent models from the `claude-api` skill, `RATES_AS_OF` stamped) estimates USD per run by its own model — unknown models (cursor composer, future models) price to `null` (tokens-only). `gateway status` / `/status` 24h rollup gains `· cache r/w …` and `· $X.XX est`; a new gateway `/usage` slash adds the current session's cumulative usage (aggregated by `session_id` in `runs.jsonl`, so it survives resume). On the account engine the figure is tagged `subscription (no metered charge)` since the $ is the metered-equivalent, not a bill.
+
+### Added
+
 - **Autonomous self-monitor (I-121)** — `claude-session-prune`-style cron builtin `self-monitor` that asserts the autonomous surfaces are alive and **alerts robustly** when not. Two new detectors — cron freshness for any job flagged `critical` (generalizes the digest freshness check; new `critical`/`maxAgeHours` job fields) and an engine **auth/403 streak** from `runs.jsonl` (surfaces the claude-agent account rate-cap that previously only hit `error.log`) — plus reuse of the existing gateway probes (store/poll/outbox). Delivery rides the normal cron notify path (**direct Telegram + outbox park**, never an agent turn, so the alert can't be taken down by the engine it reports on). Anti-spam via `self-monitor.state.json`: alert on change or every 6h while red; **daily heartbeat** so silence means confirmed-healthy. Detection + alert only (no remediation). `src/selfMonitor.ts` + tests.
 
 ### Changed
