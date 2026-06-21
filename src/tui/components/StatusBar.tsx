@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import type { SessionMeta, TurnStats } from "../types.js";
 import { formatDuration } from "../../toolFormat.js";
+import { estimateCostUsd, formatUsd } from "../../pricing.js";
 
 export function StatusBar(props: {
   meta: SessionMeta | null;
@@ -13,12 +14,14 @@ export function StatusBar(props: {
   turnElapsedMs?: number;
   mcpCount?: number;
   sessionToolCalls?: number;
+  /** Account/subscription engine — the $ is metered-equivalent, not billed. */
+  subscription?: boolean;
 }) {
-  const { meta, busy, error, scrollHint, lastTurn, turnElapsedMs, mcpCount, sessionToolCalls } = props;
+  const { meta, busy, error, scrollHint, lastTurn, turnElapsedMs, mcpCount, sessionToolCalls, subscription } = props;
   const shortCwd = meta?.cwd ? shorten(meta.cwd, 24) : "—";
   const shortSid = meta?.sessionId ? meta.sessionId.slice(0, 10) : "—";
 
-  const runLine = formatRunLine(busy, turnElapsedMs, lastTurn, sessionToolCalls, mcpCount);
+  const runLine = formatRunLine(busy, turnElapsedMs, lastTurn, sessionToolCalls, mcpCount, meta?.model, subscription);
 
   return (
     <Box
@@ -67,7 +70,9 @@ function formatRunLine(
   turnElapsedMs: number | undefined,
   lastTurn: TurnStats | null | undefined,
   sessionToolCalls: number | undefined,
-  mcpCount: number | undefined
+  mcpCount: number | undefined,
+  model: string | undefined,
+  subscription: boolean | undefined
 ): string | null {
   const parts: string[] = [];
 
@@ -78,6 +83,8 @@ function formatRunLine(
     if (lastTurn.toolCalls > 0) parts.push(`tools ${lastTurn.toolCalls}`);
     const tok = formatTokens(lastTurn);
     if (tok) parts.push(tok);
+    const cost = formatTurnCost(lastTurn, model, subscription); // ~$ last turn (est; cache not counted)
+    if (cost) parts.push(cost);
   } else if (sessionToolCalls != null && sessionToolCalls > 0) {
     parts.push(`tools ${sessionToolCalls}`);
   }
@@ -85,6 +92,19 @@ function formatRunLine(
   if (mcpCount != null && mcpCount > 0) parts.push(`mcp ${mcpCount}`);
 
   return parts.length ? parts.join(" · ") : null;
+}
+
+/**
+ * Last-turn cost estimate, or null when the model isn't in the price table.
+ * Input+output only (TurnStats has no cache fields) → an undercount vs `/usage`;
+ * the `~` flags that. On the account engine the $ is metered-equivalent, not
+ * billed, so it's tagged `sub`.
+ */
+function formatTurnCost(t: TurnStats, model: string | undefined, subscription: boolean | undefined): string | null {
+  if (!model) return null;
+  const usd = estimateCostUsd({ inputTokens: t.inputTokens, outputTokens: t.outputTokens }, model);
+  if (usd == null || usd <= 0) return null;
+  return `~${formatUsd(usd)}${subscription ? " sub" : ""}`;
 }
 
 function formatTokens(t: TurnStats): string | null {

@@ -937,6 +937,17 @@ export function App(props: TuiOptions) {
   const turnElapsedMs =
     busy && turnStartedAt != null ? Date.now() - turnStartedAt : undefined;
   const sessionToolCalls = activityLog.filter((e) => e.kind === "tool" || e.kind === "mcp").length;
+  // Account/subscription engine → the StatusBar cost is metered-equivalent, not billed.
+  const subscription = useMemo(() => {
+    try {
+      const cfg = loadConfig(dir);
+      const provider = props.engine ?? cfg.engine?.provider;
+      const auth = props.auth ?? cfg.engine?.auth;
+      return provider === "claude-agent" && auth === "account";
+    } catch {
+      return false;
+    }
+  }, [dir, props.engine, props.auth]);
 
   return (
     <Box flexDirection="column" width="100%">
@@ -1058,6 +1069,7 @@ export function App(props: TuiOptions) {
         turnElapsedMs={turnElapsedMs}
         mcpCount={mcpView.entries.length}
         sessionToolCalls={sessionToolCalls}
+        subscription={subscription}
       />
     </Box>
   );
