@@ -5,7 +5,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveMemoryRoot, loadConfig } from "../config.js";
 import { iridaMemoryDir, iridaStateDir } from "../env.js";
-import { saveMemory } from "../memory.js";
+import { saveMemory, deleteMemory } from "../memory.js";
+import { MEMORY_ARCHIVE_WINGS } from "../memorySearchPolicy.js";
 import { createMemoryStore, SECURE_WING } from "../memoryStore.js";
 import { MemoryFactValidationError } from "../memoryFactValidate.js";
 import { buildMemorySearchOptions } from "../memorySearchPolicy.js";
@@ -209,10 +210,18 @@ export function registerMemoryMcpTools(server: McpServer, ctx: MemoryMcpContext)
       },
     },
     async ({ name, body, wing }) => {
-      if (wing?.trim() === SECURE_WING) {
+      const w = wing?.trim();
+      if (w === SECURE_WING) {
         // Never mirror secure notes to plaintext .md files.
         await withStore(ctx, (s) => s.upsertNote({ name, body, wing }));
         return textResult(`Saved encrypted note: ${name} (store only)`);
+      }
+      if (w && (MEMORY_ARCHIVE_WINGS as readonly string[]).includes(w)) {
+        // Archive (I-114): re-wing in the store and drop the active .md mirror so the
+        // note also leaves file-based recall (@memory / `*` injection). Reversible in PG.
+        deleteMemory(ctx.dir, name);
+        await withStore(ctx, (s) => s.upsertNote({ name, body, wing }));
+        return textResult(`Archived note: ${name} → ${w}`);
       }
       // File mirror first — read path (@memory, previews) prefers files.
       saveMemory(ctx.dir, name, body);

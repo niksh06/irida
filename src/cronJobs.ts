@@ -23,6 +23,7 @@ export const CRON_BUILTIN_HANDLERS = [
   "claude-session-prune",
   "self-monitor",
   "memory-distill",
+  "memory-consolidate",
 ] as const;
 export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
 

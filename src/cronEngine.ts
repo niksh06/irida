@@ -26,6 +26,7 @@ import { scanPromptText, validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { pruneClaudeSessions, formatBytes } from "./claudeSessionPrune.js";
 import { distillRecentSessions } from "./memoryDistill.js";
+import { consolidateMemory } from "./memoryConsolidate.js";
 import {
   runSelfMonitor,
   decideSelfMonitorEmission,
@@ -248,6 +249,23 @@ export async function executeCronJob(
         ok: false,
         exitCode: EXIT.software,
         message: `memory-distill failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "memory-consolidate") {
+    try {
+      const r = await consolidateMemory(configDir);
+      const message = r.paused
+        ? "memory-consolidate: skipped (background paused)"
+        : r.ran
+          ? `memory-consolidate: ${r.reason} — ${r.summary ?? "done"}`
+          : `memory-consolidate: skipped (${r.reason})`;
+      return withDuration(started, { ok: true, exitCode: EXIT.ok, message, silent: !r.ran });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `memory-consolidate failed: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }

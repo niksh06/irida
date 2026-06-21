@@ -9,6 +9,7 @@ import { createMemoryStore } from "./memoryStore.js";
 import { redact } from "./redact.js";
 import { titleFromOkfOrBody } from "./okf.js";
 import { stalenessNote } from "./memoryStaleness.js";
+import { filterNotesByWings, MEMORY_ARCHIVE_WINGS } from "./memorySearchPolicy.js";
 
 export class MemoryError extends Error {}
 
@@ -164,7 +165,8 @@ export async function sessionStartMemoryBlocks(
     };
 
     if (onStart.length === 1 && onStart[0] === "*") {
-      const notes = await store.listNotes();
+      // `*` lists every wing — drop archive wings so consolidated/archived notes aren't re-injected.
+      const notes = filterNotesByWings(await store.listNotes(), MEMORY_ARCHIVE_WINGS);
       if (notes.length > 0) {
         for (const n of notes) {
           if (total + n.body.length > maxChars) break;
@@ -209,7 +211,7 @@ async function loadMemoriesForToken(dir: string, tokenName: string): Promise<str
     };
 
     if (!tokenName.trim()) {
-      const notes = await store.listNotes();
+      const notes = filterNotesByWings(await store.listNotes(), MEMORY_ARCHIVE_WINGS);
       if (notes.length > 0) {
         let total = 0;
         const blocks: string[] = [];

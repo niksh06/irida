@@ -7,3 +7,7 @@ export const EPISODIC_WING = "episodic";
 export const TPARSER_WING = "tparser";
 export const REDDIT_WING = "reddit";
 export const STYLE_WING = "style";
+/** Auto-distilled durable knowledge (I-113) — in default search. */
+export const DISTILL_WING = "agent-distilled";
+/** Superseded distilled notes archived by consolidation (I-114) — excluded from default search. */
+export const DISTILL_ARCHIVE_WING = "agent-distilled-archive";

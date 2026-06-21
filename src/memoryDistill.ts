@@ -27,9 +27,10 @@ import { formatSessionRunsMarkdown } from "./sessionExport.js";
 import { shouldSkipEpisodicIngest } from "./sessionIngest.js";
 import { isBackgroundPaused } from "./backgroundPause.js";
 import { runPrompt } from "./run.js";
+import { DISTILL_WING } from "./memoryWings.js";
 
-/** Wing for auto-distilled durable notes (provenance tag = agent-created). */
-export const DISTILL_WING = "agent-distilled";
+/** Wing for auto-distilled durable notes (provenance tag = agent-created). Re-exported for callers/tests. */
+export { DISTILL_WING };
 /** Surfaces worth distilling — the autonomous/interactive ones, not local dev TUI. */
 const DISTILL_CHANNELS = new Set(["telegram", "cron"]);
 const DEFAULT_MIN_RUNS = 2;

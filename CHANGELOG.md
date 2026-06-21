@@ -8,6 +8,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Memory consolidation / "dream" (I-114)** — new `memory-consolidate` cron builtin: a forked agent periodically (growth-threshold or weekly cadence) merges near-duplicate auto-distilled notes (`agent-distilled` wing from I-113) into one and archives the superseded originals into `agent-distilled-archive` (excluded from search; reversible, not deleted — there is no delete MCP tool). Scoped to the agent-created wing only; `backgroundPause`-aware; advisory-locked against overlap; reports the active-note delta. Audit subagent found that "archive" leaked through the `.md` file mirror and the `onStart:["*"]`/`@memory:*` injection paths (which list all wings) — both fixed: `memory_save` to an archive wing now drops the file mirror, and `*` injection filters archive wings.
+
+### Added
+
 - **Automatic memory distillation (I-113)** — new `memory-distill` cron builtin: a forked agent reads recent completed gateway/cron sessions and writes only DURABLE knowledge (decisions, corrections, ops lessons → `agent-distilled` wing; preferences/seen-items → facts) — the automatic version of the manual `/memory-update`. Distinct from `session-ingest` (raw episodic dump) and `cursor-distill` (Cursor IDE). State-file cursor for idempotency (re-distill only when a session changes), per-pass agent-run cap, `backgroundPause`-aware, skips trivial/test sessions, and runs with `persistRun:false` so it never distills itself. New `RunOptions.attachMcp` lets a `barePrompt` run keep the memory tools. `src/memoryDistill.ts` + tests; reviewed by an audit subagent (caught + fixed a blocker where bare prompts stripped MCP, plus cursor-durability and cost-cap fixes).
 
 ### Added
