@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import stringWidth from "string-width";
 
 import {
   classifyPetActivity,
@@ -42,9 +43,9 @@ describe("petTerminalFrame", () => {
 
   it("every state keeps a single eye (one consistent character on the eye row)", () => {
     // The eye lives on row 2 (0-indexed), between the box sides │ … │.
-    const EYES = /[◉‿◐◓◑◒◕^╥\-]/gu;
+    const EYES = /[◉‿◐◓◑◒◕◠^╥\-]/gu;
     for (const state of ["idle", "working", "happy", "sad", "sleep"] as const) {
-      for (let tick = 0; tick < 4; tick++) {
+      for (let tick = 0; tick < 6; tick++) {
         const eyeRow = petTerminalFrame(state, tick)[2]!.parts.map((p) => p.t).join("");
         const eyes = eyeRow.match(EYES) ?? [];
         assert.equal(eyes.length, 1, `${state}@${tick} eye row "${eyeRow}" should have exactly one eye`);
@@ -54,8 +55,21 @@ describe("petTerminalFrame", () => {
 
   it("all frames are the same height (no vertical jump)", () => {
     for (const state of ["idle", "working", "happy", "sad", "sleep"] as const) {
-      for (let tick = 0; tick < 4; tick++) {
+      for (let tick = 0; tick < 6; tick++) {
         assert.equal(petTerminalFrame(state, tick).length, 5, `${state}@${tick}`);
+      }
+    }
+  });
+
+  it("every row is exactly 8 DISPLAY columns wide (no horizontal jump)", () => {
+    // Measure with string-width, not code points: a 2-cell glyph (e.g. ⚡) is one
+    // code point but two terminal columns, which would jitter the corner in Ink.
+    for (const state of ["idle", "working", "happy", "sad", "sleep"] as const) {
+      for (let tick = 0; tick < 6; tick++) {
+        for (const [i, line] of petTerminalFrame(state, tick).entries()) {
+          const text = line.parts.map((p) => p.t).join("");
+          assert.equal(stringWidth(text), 8, `${state}@${tick} row${i} "${text}"`);
+        }
       }
     }
   });
@@ -75,6 +89,13 @@ describe("classifyPetActivity", () => {
     assert.equal(petTerminalLabel("working", "read"), "wisp · reading…");
     assert.equal(petTerminalLabel("working"), "wisp · thinking…");
     assert.equal(petTerminalLabel("idle", "read"), "wisp · watching");
+  });
+
+  it("activity thought line stays 8 columns for every tool (incl. 2-cell shell glyph)", () => {
+    for (const activity of ["shell", "read", "edit", "search", "mcp", "tool"] as const) {
+      const thought = petTerminalFrame("working", 0, activity)[0]!.parts.map((p) => p.t).join("");
+      assert.equal(stringWidth(thought), 8, `thought "${thought}" for ${activity}`);
+    }
   });
 
   it("working frame shows the activity glyph as a top thought, stays 5 lines", () => {

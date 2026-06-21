@@ -6,6 +6,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 - **Memory audit backlog (Wave F)** — `Reports/analysis/memory-audit-improvements-2026-06-16.md`; issues I-69…I-82 (P0–P2 hygiene/retrieval/eval)
 
+### Changed
+
+- **Wisp mascot — alive (TUI delight)** — the in-terminal companion gained richer multi-frame animations so it feels alive: it blinks and glances left/right with a drifting sparkle when idle, spins a full eye rotation (◐◓◑◒) with crackling energy when working, bursts confetti then settles when happy, sheds a tear that wells up and falls when sad, and breathes with rising zZz asleep. Same 5-row × 8-column corner invariant (no jitter). Fixed a pre-existing display-width bug where the 2-cell `⚡` made the working frames 9 columns wide (→ 1-cell `ϟ`/`↯`); the width test now measures real display columns (`string-width`), not code points. `npm run pet` shows it off.
+
 ### Added
 
 - **Managed evolution loop — safe v1 (I-98)** — new `evolution-cycle` cron builtin closing the loop signal→reflect→fitness→gate→report WITHOUT autonomous apply. Signals = recent `runs.jsonl` error kinds + lesson-eval gaps + the eval battery as a READ-ONLY fitness baseline (the eval graph is never mutated — Goodhart guard). A forked **read-only** proposer (`disallowedTools` blocks Write/Edit/Bash + all memory-write tools; gated to the claude-agent engine since the cursor SDK can't enforce it) emits at most one proposal as text, which lands in `evolution.proposals.json` as `pending`; a human reviews + applies via the new `/proposals` gateway slash. `backgroundPause`-aware; spends zero LLM budget when there's no signal. L0 auto-apply already lives in memory-distill (I-113) + memory-consolidate (I-114); L1 skill auto-apply is intentionally deferred. New `RunOptions.disallowedTools` threaded through the engine. Audit subagent caught that the read-only guard was unenforced on the cursor engine and that `memory_fact_invalidate` was unblocked — both fixed. Verified live on prod: proposed a startup-failure triage note to the queue without touching memory.

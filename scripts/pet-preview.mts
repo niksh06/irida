@@ -89,7 +89,7 @@ async function main(): Promise<void> {
         const ticks = Math.max(frameCount * cyclesPerState, 4);
         for (let tick = 0; tick < ticks; tick++) {
           clear();
-          console.log(`  csagent pet preview — \x1b[1m${item.label}\x1b[0m`);
+          console.log(`  irida · wisp preview — \x1b[1m${item.label}\x1b[0m`);
           console.log("  (Ctrl+C to quit)\n");
           console.log(renderFrame(item.state, tick, item.activity));
           await sleep(frameMs);

@@ -61,100 +61,168 @@ type PetAnim = readonly PetFrame[];
  * the 8-column body width so they sit centered under the eye despite the
  * right-aligned (flex-end) layout. Each state animates so the pet feels alive.
  */
+// Every frame is exactly 5 rows (aura · top · eye · base · tail) and 8 visual
+// columns wide, so the corner never jumps. Row 2 always carries exactly one eye
+// glyph. Richer multi-frame loops give Wisp real life: it blinks, glances around,
+// trails sparkles when idle, spins + crackles when working, bursts with confetti
+// when happy, sheds a falling tear when sad, and breathes with rising zZz asleep.
 export const PET_WISP_FRAMES: Record<PetState, PetAnim> = {
-  // idle — calm float with an occasional blink and a drifting sparkle trail.
+  // idle — calm float: a drifting sparkle, a blink, and glances left/right.
   idle: [
     [
-      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "accent" }, { t: "  ·  ", c: "muted" }, { t: "✦", c: "accent" }] },
+      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "accent" }, { t: "  ·  ·", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◉", c: "accent" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
       { parts: [{ t: "    ", c: "muted" }, { t: "◇", c: "accent" }, { t: "   ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: "  ·  ", c: "muted" }, { t: "✦", c: "accent" }, { t: "  ", c: "muted" }] },
+      { parts: [{ t: " ·  ", c: "muted" }, { t: "✦", c: "accent" }, { t: "  ·", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◉", c: "accent" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
       { parts: [{ t: "    ", c: "muted" }, { t: "✧", c: "accent" }, { t: "   ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: " ·   ·   ·", c: "muted" }] },
+      { parts: [{ t: " ·  ·  ", c: "muted" }, { t: "✦", c: "accent" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◑", c: "accent" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "     ", c: "muted" }, { t: "✧", c: "accent" }, { t: "  ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  ·  ·", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "‿", c: "accent" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
-      { parts: [{ t: "    ", c: "muted" }, { t: "◇", c: "accent" }, { t: "   ", c: "muted" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "·", c: "muted" }, { t: "   ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: "✦", c: "accent" }, { t: "  ·  · ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◐", c: "accent" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "✧", c: "accent" }, { t: "    ", c: "muted" }] },
     ],
   ],
-  // working — the single eye spins (◐→◓→◑) and energy crackles in the tail.
+  // working — the single eye spins (◐→◓→◑→◒) while energy crackles in the tail.
   working: [
     [
       { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "warn" }, { t: " · · ", c: "muted" }, { t: "✦", c: "warn" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◐", c: "warn" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
-      { parts: [{ t: "   ", c: "muted" }, { t: "⚡", c: "warn" }, { t: "    ", c: "muted" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "ϟ", c: "warn" }, { t: "    ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: " ", c: "muted" }, { t: "·", c: "muted" }, { t: " ✦ ", c: "accent" }, { t: "·", c: "muted" }, { t: " ✦", c: "accent" }] },
+      { parts: [{ t: " · ", c: "muted" }, { t: "✦", c: "accent" }, { t: " · ", c: "muted" }, { t: "✦", c: "accent" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◓", c: "warn" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
-      { parts: [{ t: "    ", c: "muted" }, { t: "⚡", c: "warn" }, { t: "   ", c: "muted" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "↯", c: "warn" }, { t: "   ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: " ✦ · ✦ ·", c: "accent" }] },
+      { parts: [{ t: "✦", c: "accent" }, { t: " · ", c: "muted" }, { t: "✦", c: "accent" }, { t: " · ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◑", c: "warn" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
       { parts: [{ t: "   ", c: "muted" }, { t: "≋≋", c: "warn" }, { t: "   ", c: "muted" }] },
     ],
+    [
+      { parts: [{ t: " · ", c: "muted" }, { t: "✦", c: "warn" }, { t: " · ·", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◒", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "≋", c: "warn" }, { t: "   ", c: "muted" }] },
+    ],
   ],
-  // happy — the single eye beams, a smile on the base, sparkles that pop.
+  // happy — confetti bursts, then the beam settles into a calm arc.
   happy: [
     [
-      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "good" }, { t: " ", c: "muted" }, { t: "✦", c: "accent" }, { t: " ", c: "muted" }, { t: "✦", c: "good" }, { t: " ", c: "muted" }] },
+      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "good" }, { t: " ", c: "muted" }, { t: "✧", c: "accent" }, { t: " ", c: "muted" }, { t: "✦", c: "good" }, { t: "  ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◕", c: "good" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──", c: "primary" }, { t: "▽", c: "good" }, { t: "──╯", c: "primary" }] },
       { parts: [{ t: "    ", c: "muted" }, { t: "✧", c: "good" }, { t: "   ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: "✧", c: "accent" }, { t: " ", c: "muted" }, { t: "✦", c: "good" }, { t: " ", c: "muted" }, { t: "✦", c: "good" }, { t: " ", c: "muted" }, { t: "✧", c: "accent" }] },
+      { parts: [{ t: " ", c: "muted" }, { t: "✧", c: "accent" }, { t: " ", c: "muted" }, { t: "✦", c: "good" }, { t: " ", c: "muted" }, { t: "✦", c: "good" }, { t: " ", c: "muted" }, { t: "✧", c: "accent" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "^", c: "good" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──", c: "primary" }, { t: "▽", c: "good" }, { t: "──╯", c: "primary" }] },
       { parts: [{ t: "   ", c: "muted" }, { t: "✦", c: "good" }, { t: "    ", c: "muted" }] },
     ],
+    [
+      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "good" }, { t: "  ·  ", c: "muted" }, { t: "✦", c: "good" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◠", c: "good" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──", c: "primary" }, { t: "▽", c: "good" }, { t: "──╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "✧", c: "good" }, { t: "   ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  ", c: "muted" }, { t: "✦", c: "good" }, { t: "  ·", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◕", c: "good" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──", c: "primary" }, { t: "▽", c: "good" }, { t: "──╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "·", c: "muted" }, { t: "   ", c: "muted" }] },
+    ],
   ],
-  // sad — droopy eye and a slow falling tear.
+  // sad — a droopy eye and a tear that wells up, falls, and drips away.
   sad: [
     [
-      { parts: [{ t: " ·   ·   ·", c: "muted" }] },
+      { parts: [{ t: " ·  ·  ·", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "╥", c: "error" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰─────╯", c: "primary" }] },
       { parts: [{ t: "        ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: " ·   ·   ·", c: "muted" }] },
+      { parts: [{ t: " ·  ·  ·", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "╥", c: "error" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰─────╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "˙", c: "accent" }, { t: "   ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  ·  ·", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "╥", c: "error" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰─────╯", c: "primary" }] },
       { parts: [{ t: "    ", c: "muted" }, { t: "ˎ", c: "accent" }, { t: "   ", c: "muted" }] },
     ],
+    [
+      { parts: [{ t: " ·  ·  ·", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "╥", c: "error" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰─────╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "‚", c: "accent" }, { t: "   ", c: "muted" }] },
+    ],
   ],
-  // sleep — closed eyes, soft breathing, and zZz rising.
+  // sleep — soft breathing and a zZz that rises and fades.
   sleep: [
     [
-      { parts: [{ t: " z ", c: "muted" }, { t: "·", c: "muted" }, { t: " Z ", c: "accent" }] },
+      { parts: [{ t: " z ", c: "muted" }, { t: "·", c: "muted" }, { t: " Z  ", c: "accent" }] },
       { parts: [{ t: " ╭─────╮", c: "muted" }] },
       { parts: [{ t: " │  ", c: "muted" }, { t: "‿", c: "primary" }, { t: "  │", c: "muted" }] },
       { parts: [{ t: " ╰─────╯", c: "muted" }] },
       { parts: [{ t: "        ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: " Z ", c: "accent" }, { t: "·", c: "muted" }, { t: " z ", c: "muted" }] },
+      { parts: [{ t: " Z ", c: "accent" }, { t: "·", c: "muted" }, { t: " z  ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "muted" }] },
+      { parts: [{ t: " │  ", c: "muted" }, { t: "-", c: "primary" }, { t: "  │", c: "muted" }] },
+      { parts: [{ t: " ╰─────╯", c: "muted" }] },
+      { parts: [{ t: "        ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: "  Z", c: "accent" }, { t: " · ", c: "muted" }, { t: "z ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "muted" }] },
+      { parts: [{ t: " │  ", c: "muted" }, { t: "‿", c: "primary" }, { t: "  │", c: "muted" }] },
+      { parts: [{ t: " ╰─────╯", c: "muted" }] },
+      { parts: [{ t: "        ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " · ", c: "muted" }, { t: "Z", c: "muted" }, { t: "  · ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "muted" }] },
       { parts: [{ t: " │  ", c: "muted" }, { t: "-", c: "primary" }, { t: "  │", c: "muted" }] },
       { parts: [{ t: " ╰─────╯", c: "muted" }] },
@@ -170,7 +238,7 @@ const ACTIVITY_GLYPH: Record<PetActivityKind, string> = {
   edit: "✎",
   search: "⌕",
   mcp: "⇄",
-  tool: "⚡",
+  tool: "ϟ", // 1-cell (⚡ is 2 display cells → would break the 8-col row)
 };
 
 /**
@@ -178,10 +246,14 @@ const ACTIVITY_GLYPH: Record<PetActivityKind, string> = {
  * muted dots, centered so the glyph sits over the eye.
  */
 function activityThoughtParts(glyph: string): PetGlyph[] {
+  // Keep the row exactly 8 cols with the glyph centered over the eye, whatever
+  // the glyph's width (e.g. shell "›_" is 2 cells) — so the corner never jumps.
+  const inner = Math.max(0, 8 - 2 - [...glyph].length); // spaces between the two flanking dots
+  const left = Math.ceil(inner / 2);
   return [
-    { t: " ·  ", c: "muted" },
+    { t: "·" + " ".repeat(left), c: "muted" },
     { t: glyph, c: "warn" },
-    { t: " · ", c: "muted" },
+    { t: " ".repeat(inner - left) + "·", c: "muted" },
   ];
 }
 
