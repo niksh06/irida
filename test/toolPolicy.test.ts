@@ -30,6 +30,12 @@ describe("evaluateToolInput (claude-agent canUseTool gate)", () => {
     assert.equal(evaluateToolInput({ command: "ls -la" }).behavior, "allow");
     assert.equal(evaluateToolInput({ file_path: "/repo/src/index.ts" }).behavior, "allow");
   });
+  it("allow branch echoes updatedInput (SDK Zod requires a record, not undefined)", () => {
+    const input = { command: "ls -la", timeout: 1000 };
+    const d = evaluateToolInput(input);
+    assert.equal(d.behavior, "allow");
+    if (d.behavior === "allow") assert.deepEqual(d.updatedInput, input);
+  });
   it("ignores non-string fields", () => {
     assert.equal(evaluateToolInput({ timeout: 1000, recursive: true }).behavior, "allow");
   });

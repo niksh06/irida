@@ -40,13 +40,22 @@ export interface EngineToolPolicy {
   denyDestructive: boolean;
 }
 
-type ToolDecision = { behavior: "allow" } | { behavior: "deny"; message: string };
+type ToolDecision =
+  | { behavior: "allow"; updatedInput: Record<string, unknown> }
+  | { behavior: "deny"; message: string };
 
 /**
  * Vet a single tool call's input for a destructive shell pattern (I-94). Scans
  * every string field (the Bash `command`, an Edit path, …) with the shared
  * `safety.ts` denylist. Pure + exported for unit tests; the SDK `canUseTool`
  * callback is a thin async wrapper over this.
+ *
+ * The allow branch MUST echo the tool input back as `updatedInput`: the Agent
+ * SDK validates the PermissionResult with a Zod schema that requires
+ * `updatedInput` to be a record for `behavior: "allow"` (the TS type marks it
+ * optional, but the runtime rejects `undefined` — every approval-gated tool
+ * (Write/Edit/curl/WebFetch/non-preapproved Bash) fails with a union ZodError
+ * otherwise, which silently breaks the whole gated agent).
  */
 export function evaluateToolInput(input: Record<string, unknown>): ToolDecision {
   for (const v of Object.values(input)) {
@@ -56,7 +65,7 @@ export function evaluateToolInput(input: Record<string, unknown>): ToolDecision 
       return { behavior: "deny", message: `irida tool-policy: blocked destructive tool input (${hit})` };
     }
   }
-  return { behavior: "allow" };
+  return { behavior: "allow", updatedInput: input };
 }
 
 function restoreEnv(name: string, prev: string | undefined): void {
