@@ -1011,6 +1011,7 @@ export function App(props: TuiOptions) {
               label={activity}
               busy={busy}
               recent={activityLog}
+              tick={petClock}
               bannerActive={activityLog[activityLog.length - 1]?.phase === "call"}
             />
           </Box>

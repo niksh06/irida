@@ -7,6 +7,7 @@ import {
   deriveTuiPetState,
   petTerminalFrame,
   petTerminalLabel,
+  petActivityGlyph,
   PET_WISP_FRAMES,
 } from "../src/petTerminal.js";
 
@@ -114,6 +115,17 @@ describe("classifyPetActivity", () => {
     assert.equal(petTerminalLabel("working", "read"), "wisp · reading…");
     assert.equal(petTerminalLabel("working"), "wisp · thinking…");
     assert.equal(petTerminalLabel("idle", "read"), "wisp · watching");
+  });
+
+  it("petActivityGlyph maps each category to its icon (shared with the activity strip)", () => {
+    assert.equal(petActivityGlyph(classifyPetActivity("Grep", "tool")), "⌕");
+    assert.equal(petActivityGlyph(classifyPetActivity("Edit", "tool")), "✎");
+    assert.equal(petActivityGlyph(classifyPetActivity("Read", "tool")), "▤");
+    assert.equal(petActivityGlyph(classifyPetActivity("run_terminal_cmd", "tool")), "›_");
+    assert.equal(petActivityGlyph(classifyPetActivity("x", "mcp")), "⇄");
+    // generic / unknown tool falls back to the 1-cell energy glyph
+    assert.equal(petActivityGlyph(classifyPetActivity("WeirdTool", "tool")), "ϟ");
+    assert.equal(petActivityGlyph(classifyPetActivity(undefined, "other")), "ϟ");
   });
 
   it("activity thought line stays 8 columns for every tool (incl. 2-cell shell glyph)", () => {

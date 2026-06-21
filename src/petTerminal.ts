@@ -271,6 +271,11 @@ const ACTIVITY_GLYPH: Record<PetActivityKind, string> = {
   tool: "ϟ", // 1-cell (⚡ is 2 display cells → would break the 8-col row)
 };
 
+/** The icon for a tool category — shared with the TUI activity strip so Wisp and the feed speak the same vocabulary. */
+export function petActivityGlyph(kind: PetActivityKind): string {
+  return ACTIVITY_GLYPH[kind];
+}
+
 /**
  * The "thought" line above the pet — shows what it is busy with, flanked by
  * muted dots, centered so the glyph sits over the eye.
