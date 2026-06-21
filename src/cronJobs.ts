@@ -21,6 +21,7 @@ export const CRON_BUILTIN_HANDLERS = [
   "cursor-distill-queue",
   "cursor-distill-backfill-queue",
   "claude-session-prune",
+  "self-monitor",
 ] as const;
 export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
 
@@ -62,6 +63,10 @@ export interface CronJob {
    * digest (no topicDelegates) keep the morning freshness check working.
    */
   recordDigest?: boolean;
+  /** Self-monitor (I-121): watch this job's freshness and alert if it goes stale. */
+  critical?: boolean;
+  /** Max age (hours) before a `critical` job is considered stale. Default 26. */
+  maxAgeHours?: number;
   /** Built-in CLI handler (no SDK prompt). */
   builtin?: CronBuiltinHandler;
   /**
@@ -195,6 +200,10 @@ function validateJob(raw: unknown, index: number): CronJob {
     job.topicWindowHours = Math.min(o.topicWindowHours, 72);
   }
   if (o.recordDigest === true) job.recordDigest = true;
+  if (o.critical === true) job.critical = true;
+  if (typeof o.maxAgeHours === "number" && o.maxAgeHours > 0) {
+    job.maxAgeHours = Math.min(o.maxAgeHours, 24 * 14);
+  }
   if (typeof o.graceMinutes === "number" && o.graceMinutes > 0) {
     job.graceMinutes = Math.min(Math.floor(o.graceMinutes), 24 * 60);
   }

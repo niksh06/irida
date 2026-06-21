@@ -6,6 +6,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 - **Memory audit backlog (Wave F)** — `Reports/analysis/memory-audit-improvements-2026-06-16.md`; issues I-69…I-82 (P0–P2 hygiene/retrieval/eval)
 
+### Added
+
+- **Autonomous self-monitor (I-121)** — `claude-session-prune`-style cron builtin `self-monitor` that asserts the autonomous surfaces are alive and **alerts robustly** when not. Two new detectors — cron freshness for any job flagged `critical` (generalizes the digest freshness check; new `critical`/`maxAgeHours` job fields) and an engine **auth/403 streak** from `runs.jsonl` (surfaces the claude-agent account rate-cap that previously only hit `error.log`) — plus reuse of the existing gateway probes (store/poll/outbox). Delivery rides the normal cron notify path (**direct Telegram + outbox park**, never an agent turn, so the alert can't be taken down by the engine it reports on). Anti-spam via `self-monitor.state.json`: alert on change or every 6h while red; **daily heartbeat** so silence means confirmed-healthy. Detection + alert only (no remediation). `src/selfMonitor.ts` + tests.
+
 ### Changed
 
 - **TParser daily digest → single agent** — the digest ran 5 topic delegates + a synthesizer (6 SDK runs), which on the claude-agent **account** engine tripped a subscription rate cap (`403 Request not allowed`, 4/5 topics then fail) and spawned 6 orphan SDK session transcripts per run. Replaced with one agent that fetches once, buckets the five topics, and emits the digest in a single run (`deploy/prompts/tparser-daily-single.prompt.txt`). New `recordDigest` cron-job flag saves the snapshot + runs digest-QA on the single-prompt path (morning freshness check keeps working, topic coverage derived from the body when per-topic stats are absent).

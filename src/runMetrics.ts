@@ -68,6 +68,15 @@ export function computeRunMetrics(
   };
 }
 
+/** Read current run log + one rotation back as parsed entries. */
+export function loadRunLogEntries(dir: string, stateDir: string): RunLogEntry[] {
+  const path = runLogPath(dir, stateDir);
+  let body = "";
+  if (existsSync(`${path}.1`)) body += readFileSync(`${path}.1`, "utf8");
+  if (existsSync(path)) body += readFileSync(path, "utf8");
+  return parseRunLogLines(body);
+}
+
 /** Read current log + one rotation back. */
 export function loadRunMetrics(
   dir: string,
@@ -75,11 +84,27 @@ export function loadRunMetrics(
   windowHours = 24,
   filter?: RunMetricsFilter
 ): RunMetrics {
-  const path = runLogPath(dir, stateDir);
-  let body = "";
-  if (existsSync(`${path}.1`)) body += readFileSync(`${path}.1`, "utf8");
-  if (existsSync(path)) body += readFileSync(path, "utf8");
-  return computeRunMetrics(parseRunLogLines(body), Date.now() - windowHours * 3600_000, filter);
+  return computeRunMetrics(loadRunLogEntries(dir, stateDir), Date.now() - windowHours * 3600_000, filter);
+}
+
+/**
+ * Count recent runs whose `error_kind` is in `kinds` (I-121 engine-streak detector).
+ * Surfaces an auth/403 streak (e.g. the claude-agent account rate cap) that
+ * otherwise only lands in error.log. Excludes injected/test entries like the metrics.
+ */
+export function countRecentErrorKinds(
+  entries: RunLogEntry[],
+  sinceMs: number,
+  kinds: string[],
+  filter?: RunMetricsFilter
+): number {
+  const set = new Set(kinds);
+  let recent = entries.filter((e) => {
+    const t = Date.parse(e.ts);
+    return Number.isFinite(t) && t >= sinceMs && e.status !== "injected";
+  });
+  if (filter?.prodOnly) recent = recent.filter((e) => e.is_test !== true);
+  return recent.filter((e) => e.error_kind != null && set.has(e.error_kind)).length;
 }
 
 export function formatRunMetrics(

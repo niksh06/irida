@@ -25,6 +25,12 @@ import { loadCronJobPromptText } from "./cronPrompt.js";
 import { scanPromptText, validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { pruneClaudeSessions, formatBytes } from "./claudeSessionPrune.js";
+import {
+  runSelfMonitor,
+  decideSelfMonitorEmission,
+  loadSelfMonitorState,
+  saveSelfMonitorState,
+} from "./selfMonitor.js";
 import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
 import { exportRecentSessions } from "./sessionExport.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
@@ -222,6 +228,36 @@ export async function executeCronJob(
         ok: false,
         exitCode: EXIT.software,
         message: `claude-session-prune failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "self-monitor") {
+    try {
+      const report = await runSelfMonitor(configDir);
+      const state = loadSelfMonitorState(configDir);
+      const { emission, nextState } = decideSelfMonitorEmission(report, state, Date.now());
+      saveSelfMonitorState(configDir, nextState);
+      const summary = report.anyRed ? `RED: ${report.redKeys.join(", ")}` : "all ok";
+      if (!emission) {
+        return withDuration(started, {
+          ok: true,
+          exitCode: EXIT.ok,
+          message: `self-monitor: ${summary} (no emit)`,
+          silent: true,
+        });
+      }
+      // Monitor itself ran fine (ok:true); the alert/heartbeat rides the notify path.
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `self-monitor: ${emission.kind} (${summary})`,
+        output: emission.text,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `self-monitor failed: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }
