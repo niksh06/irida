@@ -2,6 +2,8 @@ import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import type { TranscriptRow } from "../transcript.js";
+import { petTerminalFrame } from "../../petTerminal.js";
+import { WispGlyphLine } from "./wispGlyph.js";
 
 const roleLabel: Record<TranscriptRow["role"], { glyph: string; color: string }> = {
   user: { glyph: "you ›", color: theme.user },
@@ -9,6 +11,34 @@ const roleLabel: Record<TranscriptRow["role"], { glyph: string; color: string }>
   system: { glyph: "·", color: theme.system },
   error: { glyph: "!", color: theme.error },
 };
+
+/** A Wisp greeting card for the empty/booting transcript — the first thing you see. */
+function WispGreeting(props: { subtitle?: string; mood: "idle" | "sad"; hint: string }) {
+  const frame = petTerminalFrame(props.mood, 0);
+  return (
+    <Box flexDirection="column" paddingX={1} paddingY={1}>
+      <Box>
+        <Box flexDirection="column" marginRight={2}>
+          {frame.map((line, i) => (
+            <WispGlyphLine key={i} parts={line.parts} state={props.mood} />
+          ))}
+        </Box>
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={theme.accent} bold>
+            Wisp
+          </Text>
+          {/* keep a pre-conversation error prominent (red) even inside the card */}
+          <Text color={props.mood === "sad" ? theme.error : theme.muted}>
+            {props.subtitle ?? "ready when you are ✦"}
+          </Text>
+        </Box>
+      </Box>
+      <Box marginTop={1}>
+        <Text color={theme.muted}>{props.hint}</Text>
+      </Box>
+    </Box>
+  );
+}
 
 export function MessageList(props: {
   rows: TranscriptRow[];
@@ -30,13 +60,18 @@ export function MessageList(props: {
     totalLines = 0,
   } = props;
 
-  if (rows.length === 0 && hiddenAbove === 0) {
+  const hasConversation = rows.some((r) => r.role === "user" || r.role === "assistant");
+  if (!hasConversation && hiddenAbove === 0) {
+    // Boot / fresh / post-/clear: greet with Wisp. Surface the latest status
+    // (e.g. "Connecting to …") as the subtitle, and frown if it's an error.
+    const status = [...rows].reverse().find((r) => r.role === "system" || r.role === "error");
+    const hint = `Type a message · /help · ${nativeScroll ? "trackpad scroll" : "Ctrl+O scroll"} · Ctrl+C quit`;
     return (
-      <Box flexDirection="column" paddingX={1} paddingY={1}>
-        <Text color={theme.muted}>
-          Type a message. /help · {nativeScroll ? "trackpad scroll" : "Ctrl+O scroll"} · Ctrl+C quit
-        </Text>
-      </Box>
+      <WispGreeting
+        subtitle={status?.text}
+        mood={status?.role === "error" ? "sad" : "idle"}
+        hint={hint}
+      />
     );
   }
 

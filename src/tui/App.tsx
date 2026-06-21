@@ -156,9 +156,16 @@ export function App(props: TuiOptions) {
   }, [dir]);
 
   const [meta, setMeta] = useState<SessionMeta | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    { id: nextId("sys"), role: "system", text: "Connecting to Cursor SDK…" },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    let engineLabel = "the agent";
+    try {
+      const provider = props.engine ?? loadConfig(dir).engine?.provider ?? "cursor";
+      engineLabel = provider === "claude-agent" ? "Claude Agent SDK" : "Cursor SDK";
+    } catch {
+      /* default label */
+    }
+    return [{ id: nextId("sys"), role: "system", text: `Connecting to ${engineLabel}…` }];
+  });
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [fatal, setFatal] = useState<string | null>(null);
