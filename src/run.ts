@@ -47,6 +47,8 @@ export interface RunOptions {
   model?: string;
   /** Skip preTurn, autoRag, session memory, skills — task text only. */
   barePrompt?: boolean;
+  /** With barePrompt: still attach MCP tools (e.g. memory) so the task can write (I-113). */
+  attachMcp?: boolean;
   /** Write session/run to store (default true). */
   persistRun?: boolean;
   /** Suppress stdout/stderr progress logs. */
@@ -136,7 +138,9 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
   try {
     if (opts.barePrompt) {
       finalPrompt = `# Task\n\n${prompt.trim()}`;
-      mcpServers = {};
+      // bare = skip prompt assembly (preTurn/autoRag/skills/session-memory), NOT tools.
+      // Opt back into MCP tools when the task needs them (e.g. memory-distill writes).
+      mcpServers = opts.attachMcp ? resolveMcpServers(cfg, dir) : {};
     } else {
       const skills = opts.skills?.length ? loadSkills(dir, cfg.skillsPath, opts.skills) : [];
       const { taskText, blocks: preTurnBlocks } = await buildPreTurnBlocks({

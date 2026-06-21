@@ -25,6 +25,7 @@ import { loadCronJobPromptText } from "./cronPrompt.js";
 import { scanPromptText, validateCronJobPrompt } from "./cronPromptGuard.js";
 import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { pruneClaudeSessions, formatBytes } from "./claudeSessionPrune.js";
+import { distillRecentSessions } from "./memoryDistill.js";
 import {
   runSelfMonitor,
   decideSelfMonitorEmission,
@@ -228,6 +229,25 @@ export async function executeCronJob(
         ok: false,
         exitCode: EXIT.software,
         message: `claude-session-prune failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "memory-distill") {
+    try {
+      const r = await distillRecentSessions(configDir);
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: r.paused
+          ? "memory-distill: skipped (background paused)"
+          : `memory-distill: distilled ${r.distilled} session(s), skipped ${r.skipped}`,
+        silent: r.distilled === 0,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `memory-distill failed: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }

@@ -22,6 +22,7 @@ export const CRON_BUILTIN_HANDLERS = [
   "cursor-distill-backfill-queue",
   "claude-session-prune",
   "self-monitor",
+  "memory-distill",
 ] as const;
 export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
 

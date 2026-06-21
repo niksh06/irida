@@ -8,6 +8,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Added
 
+- **Automatic memory distillation (I-113)** — new `memory-distill` cron builtin: a forked agent reads recent completed gateway/cron sessions and writes only DURABLE knowledge (decisions, corrections, ops lessons → `agent-distilled` wing; preferences/seen-items → facts) — the automatic version of the manual `/memory-update`. Distinct from `session-ingest` (raw episodic dump) and `cursor-distill` (Cursor IDE). State-file cursor for idempotency (re-distill only when a session changes), per-pass agent-run cap, `backgroundPause`-aware, skips trivial/test sessions, and runs with `persistRun:false` so it never distills itself. New `RunOptions.attachMcp` lets a `barePrompt` run keep the memory tools. `src/memoryDistill.ts` + tests; reviewed by an audit subagent (caught + fixed a blocker where bare prompts stripped MCP, plus cursor-durability and cost-cap fixes).
+
+### Added
+
 - **Memory staleness annotation (I-115)** — recalled/injected memory reflects what was true when written; the model otherwise treats it as current. Notes older than `memory.stalenessDays` (default 7, 0 disables) now get a one-line caution to re-verify code-coupled details (file/function/flag/path) before relying on them. Applied across every recall path: `@memory` injection, session-start injection, AutoRAG silent pre-turn injection, and the `memory_get` MCP tool (full caution); `memory_search` hits get a compact `⚠Nd` marker. Annotation only — never blocks recall. `src/memoryStaleness.ts` + tests.
 
 ### Added
