@@ -49,6 +49,8 @@ export interface RunOptions {
   barePrompt?: boolean;
   /** With barePrompt: still attach MCP tools (e.g. memory) so the task can write (I-113). */
   attachMcp?: boolean;
+  /** Tool names blocked for this run (e.g. read-only evolution proposer in I-98). */
+  disallowedTools?: string[];
   /** Write session/run to store (default true). */
   persistRun?: boolean;
   /** Suppress stdout/stderr progress logs. */
@@ -202,6 +204,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       model: effectiveModel,
       cwd: agentCwd,
       mcpServers,
+      disallowedTools: opts.disallowedTools,
     });
     if (!quiet) console.error(`[run] agentId=${r.agentId ?? "-"} runId=${r.runId ?? "-"} status=${r.status}`);
     const failed = r.status === "error";

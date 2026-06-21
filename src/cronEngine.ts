@@ -27,6 +27,7 @@ import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { pruneClaudeSessions, formatBytes } from "./claudeSessionPrune.js";
 import { distillRecentSessions } from "./memoryDistill.js";
 import { consolidateMemory } from "./memoryConsolidate.js";
+import { runEvolutionCycle } from "./evolutionCycle.js";
 import {
   runSelfMonitor,
   decideSelfMonitorEmission,
@@ -249,6 +250,23 @@ export async function executeCronJob(
         ok: false,
         exitCode: EXIT.software,
         message: `memory-distill failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "evolution-cycle") {
+    try {
+      const r = await runEvolutionCycle(configDir);
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `evolution-cycle: ${r.summary}`,
+        silent: !r.proposed,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `evolution-cycle failed: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }

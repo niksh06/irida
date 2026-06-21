@@ -24,6 +24,7 @@ export const CRON_BUILTIN_HANDLERS = [
   "self-monitor",
   "memory-distill",
   "memory-consolidate",
+  "evolution-cycle",
 ] as const;
 export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
 

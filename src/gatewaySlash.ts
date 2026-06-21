@@ -11,6 +11,7 @@ import { backgroundPauseState, setBackgroundPaused } from "./backgroundPause.js"
 import { createMemoryStore } from "./memoryStore.js";
 import { loadConfig } from "./config.js";
 import { loadRunMetrics, formatRunMetrics, loadSessionUsage, formatSessionUsage } from "./runMetrics.js";
+import { loadProposals } from "./evolutionCycle.js";
 import { createStore } from "./store.js";
 import { searchSessions } from "./sessionSearch.js";
 import { listSkills } from "./skills.js";
@@ -122,6 +123,15 @@ export async function handleGatewaySlash(
         cfg.engine.provider === "claude-agent" && (cfg.engine.auth ?? "api-key") === "account";
       if (account && m.costUsd != null) lines.push("(account/subscription — $ is metered-equivalent, not billed)");
       return lines.join("\n");
+    }
+
+    case "proposals": {
+      const pending = loadProposals(ctx.dir).proposals.filter((p) => p.status === "pending");
+      if (!pending.length) return "evolution: no pending proposals";
+      return [
+        `evolution proposals — ${pending.length} pending (review & apply manually):`,
+        ...pending.map((p) => `• [${p.kind}] ${p.title}\n  ${p.detail.replace(/\s+/g, " ").slice(0, 220)}\n  (${p.id})`),
+      ].join("\n");
     }
 
     case "memory": {

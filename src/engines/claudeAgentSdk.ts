@@ -132,6 +132,7 @@ type QueryOptions = {
   canUseTool?: CanUseTool;
   mcpServers?: Record<string, unknown>;
   resume?: string;
+  disallowedTools?: string[];
 };
 
 /**
@@ -275,6 +276,7 @@ export function createClaudeAgentSdk(opts?: {
           cwd: sdkOpts.local.cwd,
           ...permissionOptions(denyDestructive),
           ...(toAgentMcpServers(sdkOpts.mcpServers) ? { mcpServers: toAgentMcpServers(sdkOpts.mcpServers) } : {}),
+          ...(sdkOpts.disallowedTools?.length ? { disallowedTools: sdkOpts.disallowedTools } : {}),
         });
         return await collectOneShot(q);
       } finally {

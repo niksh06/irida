@@ -27,6 +27,8 @@ export interface SdkLike {
       model: { id: string };
       local: { cwd: string };
       mcpServers?: McpServers;
+      /** Tool names blocked for this run (e.g. read-only proposer in I-98). */
+      disallowedTools?: string[];
     }
   ): Promise<SdkPromptResult>;
 }
@@ -262,7 +264,14 @@ export async function disposeAgent(agent: AgentLike): Promise<void> {
 
 export async function runOneShot(
   sdk: SdkLike,
-  args: { prompt: string; apiKey: string; model: string; cwd: string; mcpServers?: McpServers }
+  args: {
+    prompt: string;
+    apiKey: string;
+    model: string;
+    cwd: string;
+    mcpServers?: McpServers;
+    disallowedTools?: string[];
+  }
 ): Promise<OneShotResult> {
   let res: SdkPromptResult;
   try {
@@ -271,6 +280,7 @@ export async function runOneShot(
       model: { id: args.model },
       local: { cwd: args.cwd },
       ...(args.mcpServers && Object.keys(args.mcpServers).length ? { mcpServers: args.mcpServers } : {}),
+      ...(args.disallowedTools?.length ? { disallowedTools: args.disallowedTools } : {}),
     });
   } catch (e) {
     throw new StartupError((e as Error)?.message ?? String(e));
