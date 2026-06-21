@@ -116,6 +116,21 @@ export type EngineProvider = "cursor" | "claude-agent";
  */
 export type EngineAuth = "api-key" | "account";
 
+/**
+ * Runtime tool-permission policy for the claude-agent engine (I-94). OFF by
+ * default — when unset/false the engine keeps its prior `bypassPermissions`
+ * behavior (no gate). When on, destructive tool inputs (rm -rf, drop table, …)
+ * the agent chooses at runtime are denied via the SDK `canUseTool` callback.
+ * Per-surface so autonomous surfaces (gateway/cron) can be strict while the
+ * interactive TUI stays relaxed.
+ */
+export interface ToolPolicyConfig {
+  /** Deny destructive tool inputs at runtime. Default false. */
+  denyDestructive?: boolean;
+  /** Per-surface override of denyDestructive, keyed by SessionChannel (e.g. "telegram", "cron", "tui"). */
+  bySurface?: Record<string, boolean>;
+}
+
 export interface EngineConfig {
   /** Active runtime: Cursor SDK (default) or Anthropic Claude Agent SDK. */
   provider: EngineProvider;
@@ -123,6 +138,22 @@ export interface EngineConfig {
   auth?: EngineAuth;
   /** Optional model override for the claude-agent engine (default claude-opus-4-8). */
   model?: string;
+  /** Runtime tool-permission policy for the claude-agent engine (I-94). */
+  toolPolicy?: ToolPolicyConfig;
+}
+
+/**
+ * Effective deny-destructive policy for a surface (I-94). A `bySurface` entry for
+ * the channel wins; else the top-level `denyDestructive`; else false. Cursor
+ * engine ignores this (gate lives in the Agent SDK).
+ */
+export function resolveDenyDestructive(engine: EngineConfig, channel?: string): boolean {
+  const p = engine.toolPolicy;
+  if (!p) return false;
+  if (channel && p.bySurface && Object.prototype.hasOwnProperty.call(p.bySurface, channel)) {
+    return Boolean(p.bySurface[channel]);
+  }
+  return Boolean(p.denyDestructive);
 }
 
 /** Default model for the claude-agent engine when none is configured. */
@@ -307,10 +338,16 @@ const hooksSchema = z.object({
 
 const skillPolicySchema = z.object({ allowUnsafe: trimmedStringArray.optional() });
 
+const toolPolicySchema = z.object({
+  denyDestructive: z.boolean().optional(),
+  bySurface: z.record(z.boolean()).optional(),
+});
+
 const engineSchema = z.object({
   provider: z.enum(["cursor", "claude-agent"]).optional(),
   auth: z.enum(["api-key", "account"]).optional(),
   model: nonEmptyString.optional(),
+  toolPolicy: toolPolicySchema.optional(),
 });
 
 const agentConfigSchema = z.object({
@@ -363,6 +400,7 @@ function validate(obj: unknown, dir: string): AgentConfig {
       provider: parsed.engine.provider ?? "cursor",
       ...(parsed.engine.auth !== undefined ? { auth: parsed.engine.auth } : {}),
       ...(parsed.engine.model !== undefined ? { model: parsed.engine.model } : {}),
+      ...(parsed.engine.toolPolicy !== undefined ? { toolPolicy: parsed.engine.toolPolicy } : {}),
     };
   }
   if (parsed.skillsPath !== undefined) cfg.skillsPath = parsed.skillsPath;

@@ -467,6 +467,27 @@ State: SQLite at `<stateDir>/state.sqlite` by default, or Postgres when `IRIDA_D
 
 > Destructive detection is a **regex denylist**, not a sandbox.
 
+### Tool execution guardrails (claude-agent, I-94)
+
+The prompt gate above vets the **user prompt** before the run. On the **claude-agent**
+engine an optional runtime gate also vets the **tool calls the agent chooses**
+(e.g. a `Bash` command), via the Agent SDK `canUseTool` callback with the same
+denylist. Allow-by-default; destructive tool inputs are denied with a logged
+`[tool-policy] deny …` line. **Off by default** (engine keeps `bypassPermissions`);
+opt in per surface so autonomous surfaces are strict while the interactive TUI stays relaxed:
+
+```json
+"engine": {
+  "provider": "claude-agent", "auth": "account",
+  "toolPolicy": { "bySurface": { "telegram": true, "cron": true, "tui": false } }
+}
+```
+
+`bySurface` (by `channel`) wins over the top-level `denyDestructive`; neither set → `false`.
+`gateway status` shows `tool-policy: deny-destructive on|off (telegram)`. Cursor engine
+ignores this (no programmatic hook in `@cursor/sdk` — see I-94/I-95). Sandboxing (OS
+isolation) is a separate future layer.
+
 ## Exit codes
 
 | Code | Meaning |

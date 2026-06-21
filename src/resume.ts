@@ -15,6 +15,7 @@ import {
   loadConfig,
   ConfigError,
   applyEngineOverride,
+  resolveDenyDestructive,
   DEFAULT_CLAUDE_AGENT_MODEL,
   type AgentConfig,
   type EngineProvider,
@@ -60,12 +61,13 @@ export interface ResumeOptions {
 async function resolveSdk(
   provider: EngineProvider,
   authMode: EngineAuth,
+  denyDestructive: boolean,
   injected?: ResumeSdk
 ): Promise<ResumeSdk> {
   if (injected) return injected;
   if (provider === "claude-agent") {
     const { createClaudeAgentSdk } = await import("./engines/claudeAgentSdk.js");
-    return createClaudeAgentSdk({ authMode }) as unknown as ResumeSdk;
+    return createClaudeAgentSdk({ authMode, toolPolicy: { denyDestructive } }) as unknown as ResumeSdk;
   }
   const mod = await import("@cursor/sdk");
   return mod.Agent as unknown as ResumeSdk;
@@ -174,7 +176,8 @@ export async function cmdResume(
 
     let sdk: ResumeSdk;
     try {
-      sdk = await resolveSdk(provider, authMode, opts.sdk);
+      const denyDestructive = resolveDenyDestructive(cfg.engine, session.channel);
+      sdk = await resolveSdk(provider, authMode, denyDestructive, opts.sdk);
     } catch (e) {
       const pkg = provider === "claude-agent" ? "@anthropic-ai/claude-agent-sdk" : "@cursor/sdk";
       console.error(`resume: cannot load ${pkg}: ` + redact((e as Error).message));

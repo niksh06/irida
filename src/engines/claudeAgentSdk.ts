@@ -30,8 +30,34 @@ import type {
 } from "../host.js";
 import type { EngineAuth } from "../config.js";
 import { DEFAULT_CLAUDE_AGENT_MODEL } from "../config.js";
+import { destructiveReason } from "../safety.js";
 
 export type ClaudeAgentSdk = SdkLike & SdkCreateLike & SdkResumeLike;
+
+/** Resolved tool-permission policy handed to the engine (I-94). */
+export interface EngineToolPolicy {
+  /** Deny destructive tool inputs at runtime via `canUseTool`. */
+  denyDestructive: boolean;
+}
+
+type ToolDecision = { behavior: "allow" } | { behavior: "deny"; message: string };
+
+/**
+ * Vet a single tool call's input for a destructive shell pattern (I-94). Scans
+ * every string field (the Bash `command`, an Edit path, …) with the shared
+ * `safety.ts` denylist. Pure + exported for unit tests; the SDK `canUseTool`
+ * callback is a thin async wrapper over this.
+ */
+export function evaluateToolInput(input: Record<string, unknown>): ToolDecision {
+  for (const v of Object.values(input)) {
+    if (typeof v !== "string") continue;
+    const hit = destructiveReason(v);
+    if (hit) {
+      return { behavior: "deny", message: `irida tool-policy: blocked destructive tool input (${hit})` };
+    }
+  }
+  return { behavior: "allow" };
+}
 
 function restoreEnv(name: string, prev: string | undefined): void {
   if (prev === undefined) delete process.env[name];
@@ -82,13 +108,41 @@ export function toAgentMcpServers(mcp?: McpServers): Record<string, unknown> | u
   return Object.keys(out).length ? out : undefined;
 }
 
+type CanUseTool = (
+  toolName: string,
+  input: Record<string, unknown>,
+  options: Record<string, unknown>
+) => Promise<ToolDecision>;
+
 type QueryOptions = {
   model: string;
   cwd: string;
   permissionMode: string;
+  canUseTool?: CanUseTool;
   mcpServers?: Record<string, unknown>;
   resume?: string;
 };
+
+/**
+ * Permission options for a `query()` call (I-94). Gate OFF → keep the prior
+ * `bypassPermissions` (no behavior change). Gate ON → `default` mode so the SDK
+ * routes tool calls through `canUseTool`, which allows everything except
+ * destructive inputs. `canUseTool` runs every turn and survives `resume`.
+ */
+function permissionOptions(denyDestructive: boolean): Pick<QueryOptions, "permissionMode" | "canUseTool"> {
+  if (!denyDestructive) return { permissionMode: "bypassPermissions" };
+  return {
+    permissionMode: "default",
+    canUseTool: async (toolName, input) => {
+      const decision = evaluateToolInput(input);
+      if (decision.behavior === "deny") {
+        // Lands in stderr → gateway.error.log for the autonomous surfaces.
+        console.error(`[tool-policy] deny ${toolName}: ${decision.message}`);
+      }
+      return decision;
+    },
+  };
+}
 
 async function startQuery(message: string, options: QueryOptions): Promise<AsyncIterable<Record<string, unknown>>> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
@@ -110,8 +164,12 @@ async function collectOneShot(q: AsyncIterable<Record<string, unknown>>): Promis
   return { status: isError ? "error" : "finished", result: resultText, id: sessionId, agentId: sessionId };
 }
 
-export function createClaudeAgentSdk(opts?: { authMode?: EngineAuth }): ClaudeAgentSdk {
+export function createClaudeAgentSdk(opts?: {
+  authMode?: EngineAuth;
+  toolPolicy?: EngineToolPolicy;
+}): ClaudeAgentSdk {
   const authMode: EngineAuth = opts?.authMode ?? "api-key";
+  const denyDestructive = opts?.toolPolicy?.denyDestructive ?? false;
 
   /** Interactive agent handle: one Agent SDK session, resumed per turn. */
   function makeAgent(init: {
@@ -132,7 +190,7 @@ export function createClaudeAgentSdk(opts?: { authMode?: EngineAuth }): ClaudeAg
           q = await startQuery(message, {
             model,
             cwd: init.cwd,
-            permissionMode: "bypassPermissions",
+            ...permissionOptions(denyDestructive),
             ...(init.mcpServers ? { mcpServers: init.mcpServers } : {}),
             ...(sessionId ? { resume: sessionId } : {}),
           });
@@ -195,7 +253,7 @@ export function createClaudeAgentSdk(opts?: { authMode?: EngineAuth }): ClaudeAg
         const q = await startQuery(message, {
           model: sdkOpts.model.id,
           cwd: sdkOpts.local.cwd,
-          permissionMode: "bypassPermissions",
+          ...permissionOptions(denyDestructive),
           ...(toAgentMcpServers(sdkOpts.mcpServers) ? { mcpServers: toAgentMcpServers(sdkOpts.mcpServers) } : {}),
         });
         return await collectOneShot(q);

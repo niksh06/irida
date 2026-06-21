@@ -38,6 +38,20 @@ export function isDestructive(prompt: string): boolean {
   return DESTRUCTIVE.some((re) => re.test(prompt));
 }
 
+/**
+ * First destructive-pattern match in `text`, returned as a short reason — or null
+ * when clean. Same denylist as the prompt gate, reused by the claude-agent
+ * tool-deny gate (I-94) to vet runtime tool inputs (a Bash command the agent
+ * chose), not just the user prompt. Patterns are non-global, so `.exec` is safe.
+ */
+export function destructiveReason(text: string): string | null {
+  for (const re of DESTRUCTIVE) {
+    const m = re.exec(text);
+    if (m) return m[0];
+  }
+  return null;
+}
+
 export type Confirmer = (reason: string) => Promise<boolean>;
 
 export async function safetyGate(args: {

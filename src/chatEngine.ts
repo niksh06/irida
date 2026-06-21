@@ -6,6 +6,7 @@ import {
   loadConfig,
   ConfigError,
   applyEngineOverride,
+  resolveDenyDestructive,
   DEFAULT_CLAUDE_AGENT_MODEL,
   type AgentConfig,
   type EngineProvider,
@@ -145,12 +146,13 @@ export interface ChatSession {
 async function resolveSdk(
   provider: EngineProvider,
   authMode: EngineAuth,
+  denyDestructive: boolean,
   injected?: ChatSdk
 ): Promise<ChatSdk> {
   if (injected) return injected;
   if (provider === "claude-agent") {
     const { createClaudeAgentSdk } = await import("./engines/claudeAgentSdk.js");
-    return createClaudeAgentSdk({ authMode }) as unknown as ChatSdk;
+    return createClaudeAgentSdk({ authMode, toolPolicy: { denyDestructive } }) as unknown as ChatSdk;
   }
   const mod = await import("@cursor/sdk");
   return mod.Agent as unknown as ChatSdk;
@@ -235,7 +237,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
   let sdk: ChatSdk;
   try {
-    sdk = await resolveSdk(provider, authMode, opts.sdk);
+    const denyDestructive = resolveDenyDestructive(cfg.engine, opts.channel);
+    sdk = await resolveSdk(provider, authMode, denyDestructive, opts.sdk);
   } catch (e) {
     await store.close();
     const pkg = provider === "claude-agent" ? "@anthropic-ai/claude-agent-sdk" : "@cursor/sdk";

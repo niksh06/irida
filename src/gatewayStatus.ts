@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import { iridaHome } from "./env.js";
 import { backgroundPauseState } from "./backgroundPause.js";
 import { resolve } from "node:path";
-import { loadConfig } from "./config.js";
+import { loadConfig, resolveDenyDestructive } from "./config.js";
 import { gatewayConfigPath, loadGatewayConfig } from "./gatewayConfig.js";
 import { resolveAllowedChatIds, hasPlaintextGatewayAllowlist, gatewayAllowlistHasTestIds } from "./gatewayAllowlist.js";
 import { pgGatewayAllowlistEnabled } from "./gatewayAllowedPg.js";
@@ -171,6 +171,16 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
         ? `claude-agent (auth=${cfg.engine.auth ?? "api-key"}, model=${cfg.engine.model ?? "claude-opus-4-8"})`
         : `cursor (model=${cfg.model})`,
   });
+  if (cfg.engine.provider === "claude-agent") {
+    // Informational (I-94): reflect the runtime tool-deny gate for the gateway
+    // surface. Not a WARN — the gate is opt-in by design.
+    const gateOn = resolveDenyDestructive(cfg.engine, "telegram");
+    rows.push({
+      name: "tool-policy",
+      ok: true,
+      detail: `deny-destructive ${gateOn ? "on" : "off"} (telegram)`,
+    });
+  }
   try {
     const metrics = loadRunMetrics(dir, cfg.stateDir, 24, { prodOnly: true });
     rows.push({
