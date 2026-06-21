@@ -183,10 +183,16 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
   }
   try {
     const metrics = loadRunMetrics(dir, cfg.stateDir, 24, { prodOnly: true });
+    // On the account (subscription) engine the $ is what it WOULD cost metered —
+    // the subscription doesn't pay it. Flag that so the estimate isn't misread.
+    const acct =
+      cfg.engine.provider === "claude-agent" &&
+      (cfg.engine.auth ?? "api-key") === "account" &&
+      metrics.costUsd != null;
     rows.push({
       name: "runs 24h",
       ok: true,
-      detail: formatRunMetrics(metrics, 24, { prodOnly: true }),
+      detail: formatRunMetrics(metrics, 24, { prodOnly: true }) + (acct ? " · subscription (no metered charge)" : ""),
     });
   } catch {
     // metrics are best-effort

@@ -4,6 +4,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { runLogPath, type RunLogEntry } from "./runLog.js";
+import { estimateCostUsd, formatUsd } from "./pricing.js";
 
 export interface RunMetrics {
   runs: number;
@@ -13,6 +14,10 @@ export interface RunMetrics {
   p95Ms: number | null;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  /** Estimated USD over priced runs (I-116); null when no run had a known model. */
+  costUsd: number | null;
 }
 
 export interface RunMetricsFilter {
@@ -57,6 +62,19 @@ export function computeRunMetrics(
     .filter((d): d is number => typeof d === "number" && d >= 0)
     .sort((a, b) => a - b);
   const errors = recent.filter((e) => e.status === "error" || e.error_kind != null).length;
+  let costUsd: number | null = null;
+  for (const e of recent) {
+    const c = estimateCostUsd(
+      {
+        inputTokens: e.input_tokens,
+        outputTokens: e.output_tokens,
+        cacheReadTokens: e.cache_read_tokens,
+        cacheCreationTokens: e.cache_creation_tokens,
+      },
+      e.model
+    );
+    if (c != null) costUsd = (costUsd ?? 0) + c;
+  }
   return {
     runs: recent.length,
     errors,
@@ -65,6 +83,9 @@ export function computeRunMetrics(
     p95Ms: percentile(durations, 95),
     inputTokens: recent.reduce((n, e) => n + (e.input_tokens ?? 0), 0),
     outputTokens: recent.reduce((n, e) => n + (e.output_tokens ?? 0), 0),
+    cacheReadTokens: recent.reduce((n, e) => n + (e.cache_read_tokens ?? 0), 0),
+    cacheCreationTokens: recent.reduce((n, e) => n + (e.cache_creation_tokens ?? 0), 0),
+    costUsd,
   };
 }
 
@@ -119,6 +140,11 @@ export function formatRunMetrics(
   const fmtMs = (v: number | null) => (v == null ? "—" : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${v}ms`);
   const tokens =
     m.inputTokens || m.outputTokens ? ` · tokens in/out ${m.inputTokens}/${m.outputTokens}` : "";
+  const cache =
+    m.cacheReadTokens || m.cacheCreationTokens
+      ? ` · cache r/w ${m.cacheReadTokens}/${m.cacheCreationTokens}`
+      : "";
+  const cost = m.costUsd != null ? ` · ${formatUsd(m.costUsd)} est` : "";
   const scope = filter?.prodOnly ? " · prod only" : "";
-  return `${m.runs} run(s) · err ${(m.errorRate * 100).toFixed(0)}% · p50 ${fmtMs(m.p50Ms)} · p95 ${fmtMs(m.p95Ms)}${tokens}${scope}`;
+  return `${m.runs} run(s) · err ${(m.errorRate * 100).toFixed(0)}% · p50 ${fmtMs(m.p50Ms)} · p95 ${fmtMs(m.p95Ms)}${tokens}${cache}${cost}${scope}`;
 }
