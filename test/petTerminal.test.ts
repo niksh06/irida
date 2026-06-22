@@ -50,6 +50,20 @@ describe("petTerminalFrame", () => {
     assert.match(eye, /[◉◎◐◑‿]/); // idle's eye glances/blinks, so don't pin one glyph
   });
 
+  it("working spins, then locks a focused ◉ at the energy peak (parity with idle's depth)", () => {
+    const frames = PET_WISP_FRAMES.working;
+    const eyes = frames.map((f) => f[2]!.parts.map((p) => p.t).join(""));
+    const tails = frames.map((f) => f[f.length - 1]!.parts.map((p) => p.t).join(""));
+    // the spin uses all four quadrants...
+    for (const q of ["◐", "◓", "◑", "◒"]) {
+      assert.ok(eyes.some((e) => e.includes(q)), `working should rotate through ${q}`);
+    }
+    // ...and exactly one frame is the focused lock ◉, which sits on the energy peak ≋≋
+    const focus = eyes.findIndex((e) => e.includes("◉"));
+    assert.ok(focus >= 0, "working should have a focus-lock ◉ beat");
+    assert.match(tails[focus]!, /≋≋/, "the focus beat should land on the energy peak");
+  });
+
   it("idle eye TRACKS the sparkle (left→◐, right→◑) and blinks + peeks", () => {
     let sawLeft = false;
     let sawRight = false;

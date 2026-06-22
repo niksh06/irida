@@ -135,35 +135,66 @@ export const PET_WISP_FRAMES: Record<PetState, PetAnim> = {
       { parts: [{ t: "    ", c: "muted" }, { t: "◇", c: "accent" }, { t: "   ", c: "muted" }] },
     ],
   ],
-  // working — the single eye spins (◐→◓→◑→◒) while energy crackles in the tail.
+  // working — Wisp locks in: the eye spins ◐◓◑◒, snaps to a focused ◉ as the
+  // energy peaks, then winds down — a "concentrating" rhythm with the same
+  // crafted depth as idle's watching. (The top row is swapped for the active
+  // tool's thought glyph when a specific tool runs; eye + tail always show.)
   working: [
     [
-      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "warn" }, { t: " · · ", c: "muted" }, { t: "✦", c: "warn" }] },
+      { parts: [{ t: "✦", c: "warn" }, { t: "  ·  · ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◐", c: "warn" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
       { parts: [{ t: "   ", c: "muted" }, { t: "ϟ", c: "warn" }, { t: "    ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: " · ", c: "muted" }, { t: "✦", c: "accent" }, { t: " · ", c: "muted" }, { t: "✦", c: "accent" }] },
+      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "warn" }, { t: " ·  · ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◓", c: "warn" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
-      { parts: [{ t: "    ", c: "muted" }, { t: "↯", c: "warn" }, { t: "   ", c: "muted" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "↯", c: "warn" }, { t: "    ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: "✦", c: "accent" }, { t: " · ", c: "muted" }, { t: "✦", c: "accent" }, { t: " · ", c: "muted" }] },
+      { parts: [{ t: " ·  ", c: "muted" }, { t: "✦", c: "accent" }, { t: " · ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◑", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "≋", c: "warn" }, { t: "    ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  · ", c: "muted" }, { t: "✦", c: "accent" }, { t: " ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◒", c: "warn" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
       { parts: [{ t: "   ", c: "muted" }, { t: "≋≋", c: "warn" }, { t: "   ", c: "muted" }] },
     ],
     [
-      { parts: [{ t: " · ", c: "muted" }, { t: "✦", c: "warn" }, { t: " · ·", c: "muted" }] },
+      { parts: [{ t: "✦", c: "warn" }, { t: " ·  · ", c: "muted" }, { t: "✦", c: "warn" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◉", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "≋≋", c: "warn" }, { t: "   ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  ", c: "muted" }, { t: "✦", c: "accent" }, { t: " · ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◓", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "≋", c: "warn" }, { t: "    ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ", c: "muted" }, { t: "✦", c: "warn" }, { t: " ·  · ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◑", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "↯", c: "warn" }, { t: "    ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  · ", c: "muted" }, { t: "✦", c: "accent" }, { t: " ", c: "muted" }] },
       { parts: [{ t: " ╭─────╮", c: "primary" }] },
       { parts: [{ t: " │  ", c: "primary" }, { t: "◒", c: "warn" }, { t: "  │", c: "primary" }] },
       { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
-      { parts: [{ t: "    ", c: "muted" }, { t: "≋", c: "warn" }, { t: "   ", c: "muted" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "ϟ", c: "warn" }, { t: "    ", c: "muted" }] },
     ],
   ],
   // happy — confetti bursts, then the beam settles into a calm arc.
@@ -301,7 +332,7 @@ export function petTerminalFrame(
   const idx = frames.length > 1 ? tick % frames.length : 0;
   const lines = frames[idx]!.map((line) => ({ parts: [...line.parts] }));
   // Surface the active tool as a "thought" in the top line; the tail keeps its
-  // baked ⚡/≋ energy pulse. "tool" is generic, so leave the sparkles alone.
+  // baked ϟ/↯/≋ energy pulse. "tool" is generic, so leave the sparkles alone.
   if (state === "working" && activity && activity !== "tool" && lines.length > 0) {
     lines[0] = { parts: activityThoughtParts(ACTIVITY_GLYPH[activity]) };
   }
