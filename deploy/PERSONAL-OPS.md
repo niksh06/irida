@@ -170,10 +170,19 @@ Reference: `deploy/agent.config.example.json` (conservative: `limit: 2`, `semant
 4. Deploy + restart:
 
 ```bash
-cd "/path/to/csagent-clone"
-npm test && npm run build && bash deploy/setup-home.sh
+cd "/path/to/irida-clone"
+npm test                                   # green before deploy
+bash deploy/sync-to-prod.sh                # dry-run: review what changes
+bash deploy/sync-to-prod.sh --apply        # mirror repo → $IRIDA_ROOT (code+docs+tests+specs)
 launchctl kickstart -k gui/$(id -u)/ai.irida.gateway
 ```
+
+`sync-to-prod.sh` is an **additive** rsync (replaces the old piecemeal `cp src/*`
+that left the prod tree drifting). It excludes prod-owned state that the repo never
+has — `.agent/` (cron jobs/state, creds, memory, proposals), `agent.config.json`
+(engine + toolPolicy), `node_modules`, `Reports/` the agent writes — so a deploy
+can't clobber them. Cron builtins pick up new `src/` on their next tick (tsx runs
+from source); only the long-lived gateway needs the kickstart.
 
 5. `doctor` — row `autoRag` should show `enabled · limit=2 · wings=default`.
 
