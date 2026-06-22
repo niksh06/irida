@@ -3,6 +3,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { homedir } from "node:os";
 import { iridaHome, iridaAllowProdStateWrite } from "./env.js";
 import { loadConfig } from "./config.js";
 import { writeFileAtomic } from "./util.js";
@@ -290,6 +291,7 @@ export function loadCronState(dir: string = process.cwd()): CronStateFile {
 export function saveCronState(dir: string, state: CronStateFile): void {
   const cfg = loadConfig(dir);
   const root = resolve(dir, cfg.stateDir);
+  guardProdStateWrite(root); // tests must not clobber a live cron.state.json (I-38)
   mkdirSync(root, { recursive: true });
   writeFileAtomic(statePath(dir), JSON.stringify(state, null, 2) + "\n");
 }
@@ -356,21 +358,37 @@ export { jobsPath as cronJobsPath, statePath as cronStatePath };
 function isTestRun(): boolean {
   return (
     process.env.npm_lifecycle_event === "test" ||
+    process.env.NODE_TEST_CONTEXT != null || // node:test worker (covers `npx tsx --test` too)
     process.argv.includes("--test") ||
     process.execArgv.some((a) => a.includes("test"))
   );
 }
 
-/** Block writes to CSAGENT_HOME/.agent during npm test (I-38). */
+/**
+ * Block cron-state writes to a LIVE home during a test run (I-38, hardened).
+ * The original compared only against `resolve(iridaHome(), ".agent")`, so if the
+ * test process resolved `iridaHome()` to a different path than the actual write
+ * target, the guard silently passed — that gap let `npm test` clobber
+ * ~/.irida/.agent/cron.jobs.json on 2026-06-22. Now we refuse a write whose
+ * resolved path lands under ANY real home (IRIDA_HOME, CSAGENT_HOME, ~/.irida,
+ * ~/.csagent), however env resolves. No-op outside test runs, so the real
+ * cron-tick writes normally; `IRIDA_ALLOW_PROD_STATE_WRITE=1` overrides.
+ */
 function guardProdStateWrite(stateRoot: string): void {
-  const home = iridaHome();
-  if (!home || !isTestRun()) return;
-  if (iridaAllowProdStateWrite() === "1") return;
-  const prodAgent = resolve(home, ".agent");
-  if (resolve(stateRoot) === resolve(prodAgent)) {
-    throw new CronJobsError(
-      `refusing to write ${CRON_JOBS_FILE} under CSAGENT_HOME/.agent during npm test — use a temp directory`
-    );
+  if (!isTestRun() || iridaAllowProdStateWrite() === "1") return;
+  const target = resolve(stateRoot);
+  // env-resolved home (via the env layer) + the literal default homes — the
+  // literals catch a write to ~/.irida/.agent even when iridaHome() resolves
+  // elsewhere in this process (the gap that clobbered prod 2026-06-22).
+  const homes = [iridaHome(), resolve(homedir(), ".irida"), resolve(homedir(), ".csagent")].filter(
+    (h): h is string => Boolean(h)
+  );
+  for (const h of homes) {
+    if (target === resolve(h, ".agent")) {
+      throw new CronJobsError(
+        `refusing to write cron state under a live home (${resolve(h, ".agent")}) during a test run — use a temp directory (set IRIDA_ALLOW_PROD_STATE_WRITE=1 to override)`
+      );
+    }
   }
 }
 

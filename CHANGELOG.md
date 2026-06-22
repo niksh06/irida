@@ -12,6 +12,8 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 ### Fixed
 
+- **Cron-state clobber guard hardened (I-38)** — on 2026-06-22 a test run against the live prod home overwrote `~/.irida/.agent/cron.jobs.json` with a test fixture (`{id:"x"}`), wiping the autonomous job definitions; the I-38 guard didn't fire. Root causes fixed: (1) the guard compared only against `resolve(iridaHome(), ".agent")`, so a write to `~/.irida/.agent` slipped through when `iridaHome()` resolved elsewhere — it now refuses a write under the env-resolved home **or** the literal `~/.irida` / `~/.csagent` (via `homedir()`); (2) `isTestRun()` missed the `node:test` worker context (`npx tsx --test` set `npm_lifecycle_event=npx`, no `--test` in the worker argv) — now also keys off `NODE_TEST_CONTEXT`, which removed the long-standing test flakiness; (3) `saveCronState` is now guarded too, not just `saveCronJobs`. Jobs restored from backup (15 jobs).
+
 - **Deploy scripts resolved the retired `~/.csagent` home** — the re-revision audit (`Reports/analysis/2026-06-22-audit-rerevision-tests-security.md`) found `csagent-watchdog.sh` defaulting `HOME_DIR` to `~/.csagent`; the same drift was in `digest-qa.sh` / `prod-check.sh` (`HOME_DIR` **and** `ROOT`) and `bootstrap-agent-config.sh`. Since the launchd plists pass `IRIDA_HOME`/`IRIDA_ROOT` (not `CSAGENT_*`), the morning QA/health scripts were silently pointing at the retired prod. All now read `${IRIDA_HOME:-${CSAGENT_HOME:-…/.irida}}` / `${IRIDA_ROOT:-…/irida}`. Verified: `prod-check.sh` resolves cwd `~/.irida/irida`, exit 0. Also fixed the `~/.irida/csagent` (no-slash) layout mentions the first rename pass missed in `deploy/README.md`.
 
 ### Changed

@@ -70,14 +70,22 @@ test("gatherGatewayStatus FAIL when cron jobs invalid", () => {
   assert.match(row!.detail, /not valid cron|invalid/i);
 });
 
-test("refuses cron jobs write under CSAGENT_HOME/.agent during npm test", () => {
+test("refuses cron jobs write under the live home/.agent during a test run", () => {
   const home = tmp();
   const agent = join(home, ".agent");
   mkdirSync(agent, { recursive: true });
   writeFileSync(join(agent, "cron.jobs.json"), '{"version":1,"jobs":[]}\n', "utf8");
-  const prevHome = process.env.CSAGENT_HOME;
-  const prevAllow = process.env.CSAGENT_ALLOW_PROD_STATE_WRITE;
+  // Make iridaHome() resolve to our fake home deterministically (IRIDA_HOME wins
+  // over CSAGENT_HOME), and ensure no ALLOW override is set in either prefix.
+  const prev = {
+    IRIDA_HOME: process.env.IRIDA_HOME,
+    CSAGENT_HOME: process.env.CSAGENT_HOME,
+    IRIDA_ALLOW: process.env.IRIDA_ALLOW_PROD_STATE_WRITE,
+    CSAGENT_ALLOW: process.env.CSAGENT_ALLOW_PROD_STATE_WRITE,
+  };
+  process.env.IRIDA_HOME = home;
   process.env.CSAGENT_HOME = home;
+  delete process.env.IRIDA_ALLOW_PROD_STATE_WRITE;
   delete process.env.CSAGENT_ALLOW_PROD_STATE_WRITE;
   try {
     assert.throws(
@@ -85,10 +93,15 @@ test("refuses cron jobs write under CSAGENT_HOME/.agent during npm test", () => 
       (e: unknown) => e instanceof CronJobsError && /refusing to write/.test(e.message)
     );
   } finally {
-    if (prevHome === undefined) delete process.env.CSAGENT_HOME;
-    else process.env.CSAGENT_HOME = prevHome;
-    if (prevAllow === undefined) delete process.env.CSAGENT_ALLOW_PROD_STATE_WRITE;
-    else process.env.CSAGENT_ALLOW_PROD_STATE_WRITE = prevAllow;
+    for (const [k, v] of Object.entries({
+      IRIDA_HOME: prev.IRIDA_HOME,
+      CSAGENT_HOME: prev.CSAGENT_HOME,
+      IRIDA_ALLOW_PROD_STATE_WRITE: prev.IRIDA_ALLOW,
+      CSAGENT_ALLOW_PROD_STATE_WRITE: prev.CSAGENT_ALLOW,
+    })) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
     rmSync(home, { recursive: true, force: true });
   }
 });
