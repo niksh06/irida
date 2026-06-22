@@ -6,6 +6,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 - **Memory audit backlog (Wave F)** — `Reports/analysis/memory-audit-improvements-2026-06-16.md`; issues I-69…I-82 (P0–P2 hygiene/retrieval/eval)
 
+### Security
+
+- **Tool-deny gate ON for autonomous surfaces (I-94/N5)** — `engine.toolPolicy.bySurface` now enables `denyDestructive` for `telegram` / `webhook` / `cron` (interactive `tui`/`cli` stay off — a human is present). The forked autonomous agents (gateway chat, cron digest/distill/consolidate/evolution) route tool calls through `canUseTool`, which allows normal work but blocks the destructive denylist (`rm -rf`, drop table, force-push, mkfs, fork-bomb) — defense-in-depth against prompt-injection from fetched web/file content. The earlier `canUseTool` ZodError (allow branch needed `updatedInput`) was fixed, so the gate runs clean; verified live (gated cron agent completed, normal read tools allowed). Shipped as the default in `agent.config.json`; a no-op on the cursor engine (which lacks tool hooks).
+
 ### Fixed
 
 - **Deploy scripts resolved the retired `~/.csagent` home** — the re-revision audit (`Reports/analysis/2026-06-22-audit-rerevision-tests-security.md`) found `csagent-watchdog.sh` defaulting `HOME_DIR` to `~/.csagent`; the same drift was in `digest-qa.sh` / `prod-check.sh` (`HOME_DIR` **and** `ROOT`) and `bootstrap-agent-config.sh`. Since the launchd plists pass `IRIDA_HOME`/`IRIDA_ROOT` (not `CSAGENT_*`), the morning QA/health scripts were silently pointing at the retired prod. All now read `${IRIDA_HOME:-${CSAGENT_HOME:-…/.irida}}` / `${IRIDA_ROOT:-…/irida}`. Verified: `prod-check.sh` resolves cwd `~/.irida/irida`, exit 0. Also fixed the `~/.irida/csagent` (no-slash) layout mentions the first rename pass missed in `deploy/README.md`.
