@@ -5,8 +5,13 @@ import {
   hasSignalToPropose,
   parseProposal,
   buildProposerPrompt,
+  isDuplicateProposal,
+  type EvolutionProposal,
 } from "../src/evolutionCycle.js";
 import type { RunLogEntry } from "../src/runLog.js";
+
+const proposal = (title: string, status: EvolutionProposal["status"] = "pending"): EvolutionProposal =>
+  ({ id: "x", at: "t", kind: "memory", title, detail: "", status });
 
 const NOW = Date.parse("2026-06-21T12:00:00Z");
 const entry = (over: Partial<RunLogEntry>): RunLogEntry =>
@@ -74,5 +79,45 @@ describe("buildProposerPrompt (I-98)", () => {
     assert.match(p, /evolution proposer/i);
     assert.match(p, /do NOT write memory/i);
     assert.match(p, /runs: 3 failed/);
+  });
+
+  it("surfaces pending proposals with a do-not-duplicate instruction", () => {
+    const p = buildProposerPrompt("signals", ["Add a startup-failure note", "Cache embeddings"]);
+    assert.match(p, /already proposed/i);
+    assert.match(p, /do not re-propose/i);
+    assert.match(p, /Add a startup-failure note/);
+    assert.match(p, /Cache embeddings/);
+  });
+  it("omits the pending section when the queue is empty", () => {
+    assert.doesNotMatch(buildProposerPrompt("signals", []), /already proposed/i);
+  });
+});
+
+describe("isDuplicateProposal (I-98 dedup — high-precision backstop)", () => {
+  it("flags a proposal whose concept is contained in a pending one", () => {
+    const pending = [proposal("Add a startup-failure triage note for gateway runs")]; // {startup,failure,triage}
+    // fully contains the pending concept tokens → coverage 1.0
+    assert.equal(isDuplicateProposal(proposal("Expand ops stub into a startup-failure triage checklist"), pending), true);
+    // near-identical (shares 3 of ~4 significant tokens)
+    assert.equal(isDuplicateProposal(proposal("startup failure triage playbook"), pending), true);
+  });
+  it("does NOT silently drop a lexically-similar but distinct proposal (left to the prompt)", () => {
+    // differ-by-one-token pairs (Jaccard 0.5, coverage 0.67) stay BELOW the backstop bar
+    assert.equal(isDuplicateProposal(proposal("memory search ranking"), [proposal("memory search latency")]), false);
+    assert.equal(
+      isDuplicateProposal(
+        proposal("Add a startup-failure preflight note"),
+        [proposal("Add a startup-failure triage note")]
+      ),
+      false
+    );
+  });
+  it("lets a genuinely distinct proposal through", () => {
+    const pending = [proposal("Add a startup-failure triage note for gateway runs")];
+    assert.equal(isDuplicateProposal(proposal("Cache pgvector embeddings for faster recall"), pending), false);
+  });
+  it("ignores non-pending proposals and needs ≥2 shared significant tokens", () => {
+    assert.equal(isDuplicateProposal(proposal("startup failure triage"), [proposal("startup failure triage", "applied")]), false);
+    assert.equal(isDuplicateProposal(proposal("memory search ranking"), [proposal("memory dedup pass")]), false);
   });
 });
