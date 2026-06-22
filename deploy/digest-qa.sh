@@ -3,8 +3,8 @@
 # Usage: bash deploy/digest-qa.sh [job-id]
 set -euo pipefail
 
-HOME_DIR="${CSAGENT_HOME:-$HOME/.csagent}"
-ROOT="${CSAGENT_ROOT:-$HOME_DIR/csagent}"
+HOME_DIR="${IRIDA_HOME:-${CSAGENT_HOME:-$HOME/.irida}}"
+ROOT="${IRIDA_ROOT:-${CSAGENT_ROOT:-$HOME_DIR/irida}}"
 RUN="$ROOT/scripts/csagent-run.sh"
 JOB_ID="${1:-tparser-daily-digest}"
 

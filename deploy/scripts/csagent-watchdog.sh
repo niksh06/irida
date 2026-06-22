@@ -4,7 +4,7 @@
 # Wire as: { "id": "watchdog", "cron": "*/30 * * * *", "script": "deploy/scripts/csagent-watchdog.sh", "notify": { ... } }
 set -u
 
-HOME_DIR="${CSAGENT_HOME:-$HOME/.csagent}"
+HOME_DIR="${IRIDA_HOME:-${CSAGENT_HOME:-$HOME/.irida}}"
 LOG_DIR="$HOME_DIR/logs"
 AGENT_DIR="$HOME_DIR/.agent"
 PROBLEMS=()

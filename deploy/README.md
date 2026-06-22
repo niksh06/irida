@@ -1,6 +1,6 @@
 # irida macOS deployment (Variant A)
 
-Hermes-style home: **`~/.irida`**. Code in **`~/.irida/csagent`**, runtime in **`~/.irida/.agent`**.
+Hermes-style home: **`~/.irida`**. Code in **`~/.irida/irida`**, runtime in **`~/.irida/.agent`**.
 
 Внутренние runbook'и (фазы, TParser cron, memory alignment): **`docs/deploy/`** — локально, не в git.
 
@@ -96,7 +96,7 @@ source ~/.irida/irida.env
 
 ## Dev from Downloads repo
 
-Работать можно из клона в Downloads; для launchd нужен `setup-home.sh` (копия в `~/.irida/csagent`). Runtime всегда в `~/.irida/.agent`:
+Работать можно из клона в Downloads; для launchd нужен `setup-home.sh` (копия в `~/.irida/irida`). Runtime всегда в `~/.irida/.agent`:
 
 ```bash
 export IRIDA_HOME=~/.irida

@@ -6,6 +6,10 @@ All notable changes to **csagent** are documented here. Format loosely follows [
 
 - **Memory audit backlog (Wave F)** — `Reports/analysis/memory-audit-improvements-2026-06-16.md`; issues I-69…I-82 (P0–P2 hygiene/retrieval/eval)
 
+### Fixed
+
+- **Deploy scripts resolved the retired `~/.csagent` home** — the re-revision audit (`Reports/analysis/2026-06-22-audit-rerevision-tests-security.md`) found `csagent-watchdog.sh` defaulting `HOME_DIR` to `~/.csagent`; the same drift was in `digest-qa.sh` / `prod-check.sh` (`HOME_DIR` **and** `ROOT`) and `bootstrap-agent-config.sh`. Since the launchd plists pass `IRIDA_HOME`/`IRIDA_ROOT` (not `CSAGENT_*`), the morning QA/health scripts were silently pointing at the retired prod. All now read `${IRIDA_HOME:-${CSAGENT_HOME:-…/.irida}}` / `${IRIDA_ROOT:-…/irida}`. Verified: `prod-check.sh` resolves cwd `~/.irida/irida`, exit 0. Also fixed the `~/.irida/csagent` (no-slash) layout mentions the first rename pass missed in `deploy/README.md`.
+
 ### Changed
 
 - **Docs: finish the csagent→irida rename** — fixed the doc-rot the introspection audit (`Reports/analysis/2026-06-22-audit-docs-vs-code.md`) surfaced: the architecture blurb in README/AGENTS/REFERENCE now describes the real **two engines** (Cursor SDK default / Anthropic Claude Agent SDK via `engine.provider`) instead of the stale "single runtime, no second loop"; install/ops paths corrected (`~/.irida/csagent/…` → `~/.irida/irida/…`, `cd csagent` → `cd irida`); Postgres backup creds aligned to the actual `csagent` user/db; README title `# csagent` → `# Irida`; repo/name line + skills list (4→10) + test count made accurate; `scripts/irida.mjs` made executable. Legitimate `csagent` references (the `csagent-run.sh` script, retired `~/.csagent` prod, `CSAGENT_*` env fallback) left intact.
