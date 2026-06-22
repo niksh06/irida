@@ -56,14 +56,14 @@ During development: `npm run dev -- <subcommand>` (same as above).
 
 ## Skills
 
-Bundled: `memory-ops`, `browser-ops`, `obsidian-ops`, `cron-ops` (see `skills/`). Drop more under `skills/<name>.md` with frontmatter.
+Bundled (10): `memory-ops`, `browser-ops`, `cron-ops`, `cursor-lesson-ops`, `gateway-ops`, `introspection-ops`, `kb-ops`, `obsidian-ops`, `profile-ops`, `tool-economy` (see `skills/`). Drop more under `skills/<name>.md` with frontmatter.
 
 **Where skills live:** one directory on disk, resolved by `resolveSkillsRoot()`:
 
 | Layout | Skills root |
 |--------|-------------|
 | Dev (repo checkout) | `<repo>/skills/` |
-| Prod (`~/.irida` home) | **`$IRIDA_ROOT/skills`** (typically `~/.irida/csagent/skills`) |
+| Prod (`~/.irida` home) | **`$IRIDA_ROOT/skills`** (typically `~/.irida/irida/skills`) |
 
 Resolution order: `IRIDA_HOME` + `skillsPath` → **`IRIDA_ROOT`** + `skillsPath` → `cwd` + `skillsPath`. Gateway uses `IRIDA_HOME` for state (`.agent/gateway.json`) but loads skills from the install copy. `irida doctor` prints `skills root: …`; `irida skills list` prints `Skills root: …`. There is no separate `~/.irida/skills/` unless you create an overlay.
 
@@ -523,7 +523,7 @@ Idle sessions: `IRIDA_AGENT_IDLE_MS` (default `1200000` = 20 min) proactively re
 
 ## Architecture
 
-Cursor SDK is the sole agent runtime (no parallel model/provider loop). Shared chat engine powers CLI, TUI, cron, and gateway.
+Two interchangeable agent runtimes selected via `engine.provider`: `cursor` (default, Cursor SDK) or `claude-agent` (Anthropic Claude Agent SDK; `engine.auth` = `api-key` or `account`). Both resolve behind `src/host.ts`, so one shared chat engine powers CLI, TUI, cron, and gateway regardless of the selected engine.
 
 | Module | Role |
 |--------|------|

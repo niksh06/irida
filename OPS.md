@@ -27,7 +27,7 @@ export CURSOR_API_KEY="cursor_..."   # Dashboard → Integrations
 Shared steps (both options):
 
 ```bash
-git clone <repo-url> irida && cd csagent
+git clone <repo-url> irida && cd irida
 npm install
 npm run build      # compile to dist/ (also runs on npm install via prepare)
 npm link           # optional: global `irida` command
@@ -48,7 +48,7 @@ Sessions, runs, and memory notes live in **SQLite** under `.agent/`. **Do not se
 Good for hacking on the code and TUI without `~/.irida`:
 
 ```bash
-cd csagent
+cd irida
 printf '%s' "cursor_..." | npx tsx src/cli.ts auth login --stdin
 npx tsx src/cli.ts doctor
 npx tsx src/cli.ts tui
@@ -61,14 +61,14 @@ State: `./.agent/state.sqlite`, `./.agent/credentials.json`, `./.agent/memory/*.
 Same runtime layout as launchd, but SQLite-only store:
 
 ```bash
-cd csagent
+cd irida
 bash deploy/setup-home.sh
 # Ensure ~/.irida/irida.env has NO IRIDA_DATABASE_URL line
 # (setup-home.sh preserves an existing URL; remove the export manually for SQLite)
 
-printf '%s' "cursor_..." | ~/.irida/csagent/scripts/csagent-run.sh auth login --stdin
-~/.irida/csagent/scripts/csagent-run.sh doctor
-~/.irida/csagent/scripts/csagent-run.sh tui
+printf '%s' "cursor_..." | ~/.irida/irida/scripts/csagent-run.sh auth login --stdin
+~/.irida/irida/scripts/csagent-run.sh doctor
+~/.irida/irida/scripts/csagent-run.sh tui
 ```
 
 Optional Telegram gateway + cron (macOS):
@@ -76,7 +76,7 @@ Optional Telegram gateway + cron (macOS):
 ```bash
 # TELEGRAM_BOT_TOKEN in irida.env or: auth telegram login --stdin
 cp deploy/gateway.json.example ~/.irida/.agent/gateway.json   # edit allowedChatIds
-bash ~/.irida/csagent/deploy/install-launchd.sh
+bash ~/.irida/irida/deploy/install-launchd.sh
 ```
 
 Verify: `launchctl list | grep csagent`, logs in `~/.irida/logs/`.
@@ -92,7 +92,7 @@ Verify: `launchctl list | grep csagent`, logs in `~/.irida/logs/`.
 From the repo clone (default port **5435**, avoids TParser on :5433):
 
 ```bash
-cd csagent
+cd irida
 docker compose -f deploy/docker-compose.csagent-postgres.yml up -d
 docker compose -f deploy/docker-compose.csagent-postgres.yml ps   # healthy
 ```
@@ -114,9 +114,9 @@ export IRIDA_SECRETS_KEY="..."   # pgcrypto key for credentials + secure notes
 Re-run launchd install if services already exist — plists pick up env from `install-launchd.sh`:
 
 ```bash
-printf '%s' "cursor_..." | ~/.irida/csagent/scripts/csagent-run.sh auth login --stdin
-~/.irida/csagent/scripts/csagent-run.sh doctor   # should report postgres store
-bash ~/.irida/csagent/deploy/install-launchd.sh
+printf '%s' "cursor_..." | ~/.irida/irida/scripts/csagent-run.sh auth login --stdin
+~/.irida/irida/scripts/csagent-run.sh doctor   # should report postgres store
+bash ~/.irida/irida/deploy/install-launchd.sh
 ```
 
 Migrations (`deploy/postgres/migrations/*.sql`) run on first connect.
@@ -161,7 +161,7 @@ Cron (TParser **daily** digest at `59 23 * * *`): copy `deploy/cron.jobs.example
 
 ```bash
 docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-postgres \
-  pg_dump -U irida -Fc irida > ~/backups/csagent-$(date +%Y%m%d).dump
+  pg_dump -U csagent -Fc csagent > ~/backups/csagent-$(date +%Y%m%d).dump
 ```
 
 Weekly launchd backup: `ai.irida.backup-weekly` (Sun 05:00) via `deploy/backup-personal.sh`.
@@ -203,10 +203,10 @@ Defense in depth after the "bot silent, 6-char token in PG" incident:
 cd /path/to/csagent-clone
 npm test && npm run build && npm run pack:check
 bash deploy/setup-home.sh                                  # never copies credentials.json
-~/.irida/csagent/scripts/csagent-run.sh doctor           # MUST: format ok + API probe
-~/.irida/csagent/scripts/csagent-run.sh auth status
-bash ~/.irida/csagent/deploy/install-launchd.sh
-~/.irida/csagent/scripts/csagent-run.sh gateway status
+~/.irida/irida/scripts/csagent-run.sh doctor           # MUST: format ok + API probe
+~/.irida/irida/scripts/csagent-run.sh auth status
+bash ~/.irida/irida/deploy/install-launchd.sh
+~/.irida/irida/scripts/csagent-run.sh gateway status
 tail -20 ~/.irida/logs/gateway.error.log                 # no "Not Found"
 ```
 

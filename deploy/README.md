@@ -26,14 +26,14 @@ Runbook: **[deploy/PERSONAL-OPS.md](PERSONAL-OPS.md)** (digest, backup, weekly c
 After deploy or `setup-home.sh`:
 
 ```bash
-bash ~/.irida/csagent/deploy/prod-check.sh
-bash ~/.irida/csagent/deploy/backup-personal.sh   # optional snapshot
+bash ~/.irida/irida/deploy/prod-check.sh
+bash ~/.irida/irida/deploy/backup-personal.sh   # optional snapshot
 ```
 
 Manual digest smoke (before trusting 23:59 cron):
 
 ```bash
-~/.irida/csagent/scripts/csagent-run.sh cron run tparser-daily-digest
+~/.irida/irida/scripts/csagent-run.sh cron run tparser-daily-digest
 ```
 
 Telegram: `/status`, `/doctor` — no laptop required.
@@ -46,13 +46,13 @@ bash deploy/setup-home.sh
 
 # 2. Auth (once) — writes ~/.irida/.agent/credentials.json
 IRIDA_HOME=~/.irida IRIDA_ROOT=~/.irida/irida \
-  ~/.irida/csagent/scripts/csagent-run.sh auth login --stdin
+  ~/.irida/irida/scripts/csagent-run.sh auth login --stdin
 
 # 3. Doctor
-~/.irida/csagent/scripts/csagent-run.sh doctor
+~/.irida/irida/scripts/csagent-run.sh doctor
 
 # 4. Install launchd
-bash ~/.irida/csagent/deploy/install-launchd.sh
+bash ~/.irida/irida/deploy/install-launchd.sh
 ```
 
 ## Services
@@ -125,7 +125,7 @@ export IRIDA_DATABASE_URL="postgresql://csagent:csagent@127.0.0.1:5435/csagent"
 
 bash deploy/setup-home.sh
 bash deploy/install-launchd.sh
-~/.irida/csagent/scripts/csagent-run.sh doctor
+~/.irida/irida/scripts/csagent-run.sh doctor
 ```
 
 Without `IRIDA_DATABASE_URL` — fallback to `~/.irida/.agent/state.sqlite` (Variant A unchanged).
@@ -136,11 +136,11 @@ Migrations run automatically on first connect (`deploy/postgres/migrations/*.sql
 
 ```bash
 docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-postgres \
-  pg_dump -U irida -Fc irida > ~/backups/csagent-$(date +%Y%m%d).dump
+  pg_dump -U csagent -Fc csagent > ~/backups/csagent-$(date +%Y%m%d).dump
 
 # restore (from host, with pg client)
 docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-postgres \
-  pg_restore -U irida -d irida --clean --if-exists < ~/backups/csagent-YYYYMMDD.dump
+  pg_restore -U csagent -d csagent --clean --if-exists < ~/backups/csagent-YYYYMMDD.dump
 ```
 
 ## Memory (Phase 2, MCP-first)
@@ -149,7 +149,7 @@ Default: **`memory.mcp: true`**, no `memory.onStart` — agent pulls notes via M
 
 ```bash
 # First-time agent.config (also created by setup-home.sh if missing):
-cp deploy/agent.config.example.json ~/.irida/csagent/agent.config.json
+cp deploy/agent.config.example.json ~/.irida/irida/agent.config.json
 
 # Telegram: memory-ops + kb-ops in gateway.json (see deploy/gateway.json.example)
 ```

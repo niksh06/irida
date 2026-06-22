@@ -1,8 +1,8 @@
-# csagent
+# Irida
 
-Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Hermes-inspired UX (sessions, skills, MCP, safety) without a second model/provider/tool loop — Cursor's own agent runtime executes the work.
+Local-first personal agent — **one interface, two engines**: pick the runtime via `engine.provider` — the [Cursor SDK](https://cursor.com/docs/sdk/typescript) (default) or the [Anthropic Claude Agent SDK](https://docs.anthropic.com/en/api/agent-sdk) (`account` or `api-key` auth). Hermes-inspired UX (sessions, skills, MCP, safety); `src/host.ts` is the shared boundary over whichever engine is selected.
 
-> **Local-first** by design. **Cron** · **Gateway** (webhook + Telegram) · **Browser MCP** · **Memory** (notes + facts, FTS, pgcrypto) · **Ink TUI** · **530+ tests** green.
+> **Local-first** by design. **Cron** · **Gateway** (webhook + Telegram) · **Browser MCP** · **Memory** (notes + facts, FTS, pgcrypto) · **Ink TUI** · **700+ tests** green.
 
 ## What you get
 
@@ -21,7 +21,7 @@ Local-first personal agent powered by the [Cursor SDK](https://cursor.com/docs/s
 Needs **Node.js ≥ 20** and a **Cursor API key** (Dashboard → Integrations).
 
 ```bash
-git clone <repo-url> irida && cd csagent
+git clone <repo-url> irida && cd irida
 npm install && npm run build
 npm link                                   # global `irida`
 

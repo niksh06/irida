@@ -5,9 +5,9 @@
 ## Автоматически (`cron qa`)
 
 ```bash
-~/.irida/csagent/scripts/csagent-run.sh cron qa
+~/.irida/irida/scripts/csagent-run.sh cron qa
 # или
-bash ~/.irida/csagent/deploy/digest-qa.sh
+bash ~/.irida/irida/deploy/digest-qa.sh
 ```
 
 Проверяет `cron.state.json` (`lastResult`) и сохранённое тело digest (`.agent/cron.last-digest.tparser-daily-digest.txt`).

@@ -30,7 +30,7 @@
 ### Digest QA (после первого ночного digest)
 
 ```bash
-bash ~/.irida/csagent/deploy/digest-qa.sh
+bash ~/.irida/irida/deploy/digest-qa.sh
 ```
 
 Чеклист: [deploy/DIGEST-QA.md](DIGEST-QA.md). Команда: `irida cron qa`.
@@ -39,18 +39,18 @@ bash ~/.irida/csagent/deploy/digest-qa.sh
 
 ```bash
 # health pass (includes gateway-smoke I-88)
-bash ~/.irida/csagent/deploy/prod-check.sh
+bash ~/.irida/irida/deploy/prod-check.sh
 
 # gateway-only smoke after restart
-bash ~/.irida/csagent/deploy/gateway-smoke.sh
+bash ~/.irida/irida/deploy/gateway-smoke.sh
 
 # ручной digest (smoke)
-~/.irida/csagent/scripts/csagent-run.sh cron run tparser-daily-digest
+~/.irida/irida/scripts/csagent-run.sh cron run tparser-daily-digest
 
 # Reddit digest (I-77): fetch RSS → context artifact → SDK summarize + memory_save
-bash ~/.irida/csagent/deploy/scripts/reddit-rss-fetch.sh | head
-~/.irida/csagent/scripts/csagent-run.sh cron run reddit-rss-fetch
-~/.irida/csagent/scripts/csagent-run.sh cron run reddit-digest-daily
+bash ~/.irida/irida/deploy/scripts/reddit-rss-fetch.sh | head
+~/.irida/irida/scripts/csagent-run.sh cron run reddit-rss-fetch
+~/.irida/irida/scripts/csagent-run.sh cron run reddit-digest-daily
 
 # логи
 tail -f ~/.irida/logs/gateway.log
@@ -91,7 +91,7 @@ launchd `ai.irida.digest-qa-morning` → `cron qa --morning --alert`.
 Если ночной digest не прошёл QA (или не было run) — **🌅 morning QA FAIL** в Telegram.
 
 ```bash
-bash ~/.irida/csagent/deploy/digest-qa-morning.sh   # ручной прогон
+bash ~/.irida/irida/deploy/digest-qa-morning.sh   # ручной прогон
 ```
 
 ### Утренний cron health (08:05)
@@ -101,7 +101,7 @@ launchd `ai.irida.prod-check-morning` → `doctor morning-alert`.
 Если `cron.jobs.json` missing/invalid — **🌅 morning cron health FAIL** в Telegram (с `fix:` из doctor).
 
 ```bash
-bash ~/.irida/csagent/deploy/prod-check-morning.sh   # ручной прогон
+bash ~/.irida/irida/deploy/prod-check-morning.sh   # ручной прогон
 ```
 
 ### Digest follow-up (H2)
@@ -124,8 +124,8 @@ Tech reference KB: skill **`kb-ops`**, path `~/.irida/knowledge-space` (`git pul
 ### Memory audit
 
 ```bash
-~/.irida/csagent/scripts/csagent-run.sh memory audit
-~/.irida/csagent/scripts/csagent-run.sh memory audit --links   # HEAD-check URLs in ops notes
+~/.irida/irida/scripts/csagent-run.sh memory audit
+~/.irida/irida/scripts/csagent-run.sh memory audit --links   # HEAD-check URLs in ops notes
 ```
 
 Проверяет: notes vs `.md`, stale ops notes, `seen_post` facts, silo alignment, stub notes. Результат: `.agent/memory-audit.last.json`. Exit 70 = FAIL/WARN критичные пункты.
@@ -139,13 +139,13 @@ Tech reference KB: skill **`kb-ops`**, path `~/.irida/knowledge-space` (`git pul
 Переустановка после обновления кода:
 
 ```bash
-bash ~/.irida/csagent/deploy/install-launchd.sh
+bash ~/.irida/irida/deploy/install-launchd.sh
 ```
 
 **Вручную:**
 
 ```bash
-bash ~/.irida/csagent/deploy/backup-personal.sh
+bash ~/.irida/irida/deploy/backup-personal.sh
 ```
 
 Создаёт `~/backups/csagent-YYYYMMDD-HHMM/`:
@@ -164,7 +164,7 @@ Reference: `deploy/agent.config.example.json` (conservative: `limit: 2`, `semant
 
 ### Enable (after HITL sign-off)
 
-1. Edit `~/.irida/csagent/agent.config.json` — merge `memory.autoRag` from example; set `"enabled": true`.
+1. Edit `~/.irida/irida/agent.config.json` — merge `memory.autoRag` from example; set `"enabled": true`.
 2. **Do not** add wing `meta` without separate approval.
 3. Optional observability: `export IRIDA_LOG=1` in `irida.env`.
 4. Deploy + restart:
@@ -198,8 +198,8 @@ Inspect: `tail -f ~/.irida/logs/gateway.log | grep autoRag`, `/status` runs 24h 
 cd "/path/to/csagent-clone"
 npm test && npm run build
 bash deploy/setup-home.sh
-~/.irida/csagent/scripts/csagent-run.sh doctor          # format секретов + API probe — обязательно
-bash ~/.irida/csagent/deploy/install-launchd.sh
+~/.irida/irida/scripts/csagent-run.sh doctor          # format секретов + API probe — обязательно
+bash ~/.irida/irida/deploy/install-launchd.sh
 bash deploy/prod-check.sh
 ```
 
