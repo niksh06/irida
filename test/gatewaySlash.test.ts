@@ -42,3 +42,74 @@ test("isGatewaySlashCommand recognizes catalog + /mem alias", () => {
   assert.equal(isGatewaySlashCommand("/mem list"), true);
   assert.equal(isGatewaySlashCommand("/unknown"), false);
 });
+
+import { handleGatewaySlash, type GatewaySlashContext } from "../src/gatewaySlash.js";
+import type { GatewayConfig } from "../src/gatewayConfig.js";
+import { applyAgentSkill } from "../src/skillApply.js";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve as r2, join as j2 } from "node:path";
+
+function slashSandbox(): { dir: string; ctx: GatewaySlashContext; restore: () => void } {
+  const dir = mkdtempSync(r2(tmpdir(), "gw-prop-"));
+  mkdirSync(j2(dir, "skills"), { recursive: true });
+  writeFileSync(j2(dir, "agent.config.json"), JSON.stringify({ stateDir: ".agent" }) + "\n");
+  const prev = { H: process.env.IRIDA_HOME, R: process.env.IRIDA_ROOT };
+  process.env.IRIDA_HOME = dir;
+  process.env.IRIDA_ROOT = dir;
+  const ctx: GatewaySlashContext = {
+    dir,
+    adapter: "test",
+    chatId: "c1",
+    cfg: {} as unknown as GatewayConfig,
+    skills: [],
+  };
+  return {
+    dir,
+    ctx,
+    restore: () => {
+      prev.H === undefined ? delete process.env.IRIDA_HOME : (process.env.IRIDA_HOME = prev.H);
+      prev.R === undefined ? delete process.env.IRIDA_ROOT : (process.env.IRIDA_ROOT = prev.R);
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+const GOOD_SKILL = "---\nname: retry-flaky\ndescription: bounded retry\n---\nUse a bounded retry with backoff.";
+
+test("/proposals surfaces auto-applied skills with fitness + undo hint", async () => {
+  const sb = slashSandbox();
+  try {
+    applyAgentSkill(sb.dir, "skills", "retry-flaky", GOOD_SKILL, { evalScore: 0.5 });
+    const out = await handleGatewaySlash("/proposals", sb.ctx);
+    assert.match(out!, /auto-applied skills/);
+    assert.match(out!, /retry-flaky/);
+    assert.match(out!, /fitness 0\.50/);
+    assert.match(out!, /rollback <skill>/);
+  } finally {
+    sb.restore();
+  }
+});
+
+test("/proposals rollback <skill> undoes an auto-applied skill", async () => {
+  const sb = slashSandbox();
+  try {
+    applyAgentSkill(sb.dir, "skills", "retry-flaky", GOOD_SKILL, { evalScore: 0.5 });
+    assert.ok(existsSync(j2(sb.dir, "skills", "retry-flaky.md")));
+    const out = await handleGatewaySlash("/proposals rollback retry-flaky", sb.ctx);
+    assert.match(out!, /rolled back skill "retry-flaky"/);
+    assert.equal(existsSync(j2(sb.dir, "skills", "retry-flaky.md")), false, "skill file removed");
+  } finally {
+    sb.restore();
+  }
+});
+
+test("/proposals with nothing pending or applied says so", async () => {
+  const sb = slashSandbox();
+  try {
+    const out = await handleGatewaySlash("/proposals", sb.ctx);
+    assert.match(out!, /no pending proposals or auto-applied skills/);
+  } finally {
+    sb.restore();
+  }
+});

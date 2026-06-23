@@ -38,7 +38,7 @@ export const SLASH_REGISTRY: SlashRegistryEntry[] = [
   { cmd: "exit", desc: "Quit TUI", surfaces: ["tui"] },
   { cmd: "status", desc: "Gateway and launchd status", descGateway: "Статус gateway и launchd", surfaces: ["gateway"] },
   { cmd: "usage", desc: "Token + cost usage", descGateway: "Расход токенов и $ (24ч + сессия)", surfaces: ["gateway"] },
-  { cmd: "proposals", desc: "Evolution approve-queue", descGateway: "Очередь предложений эволюции (pending)", surfaces: ["gateway"] },
+  { cmd: "proposals", desc: "Evolution queue + auto-applied skills (rollback <skill>)", descGateway: "Очередь эволюции + авто-скиллы (rollback <skill>)", surfaces: ["gateway"] },
   { cmd: "approve", desc: "Approve pairing code", descGateway: "Подтвердить pairing-код", args: "<код>", surfaces: ["gateway"] },
   { cmd: "schedule", desc: "Cron schedule ops", descGateway: "Cron: list/add/approve", args: "[subcommand]", surfaces: ["gateway"] },
   { cmd: "undo", desc: "Undo last reversible mutation", descGateway: "Отменить последнее действие", surfaces: ["tui", "gateway"] },

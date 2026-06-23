@@ -12,6 +12,7 @@ import { createMemoryStore } from "./memoryStore.js";
 import { loadConfig } from "./config.js";
 import { loadRunMetrics, formatRunMetrics, loadSessionUsage, formatSessionUsage } from "./runMetrics.js";
 import { loadProposals } from "./evolutionCycle.js";
+import { loadSkillLedger, rollbackAgentSkill } from "./skillApply.js";
 import { createStore } from "./store.js";
 import { searchSessions } from "./sessionSearch.js";
 import { listSkills } from "./skills.js";
@@ -126,12 +127,36 @@ export async function handleGatewaySlash(
     }
 
     case "proposals": {
+      const arg = p.arg.trim();
+      // `proposals rollback <skill>` — human-owned undo of an auto-applied skill (I-98 L1).
+      const rb = arg.match(/^rollback\s+(.+)$/i);
+      if (rb) {
+        const name = rb[1].trim();
+        const res = rollbackAgentSkill(ctx.dir, loadConfig(ctx.dir).skillsPath, name);
+        return res.ok ? `rolled back skill "${name}": ${res.reason}` : `rollback failed: ${res.reason}`;
+      }
+
+      const out: string[] = [];
       const pending = loadProposals(ctx.dir).proposals.filter((p) => p.status === "pending");
-      if (!pending.length) return "evolution: no pending proposals";
-      return [
-        `evolution proposals — ${pending.length} pending (review & apply manually):`,
-        ...pending.map((p) => `• [${p.kind}] ${p.title}\n  ${p.detail.replace(/\s+/g, " ").slice(0, 220)}\n  (${p.id})`),
-      ].join("\n");
+      if (pending.length) {
+        out.push(
+          `evolution proposals — ${pending.length} pending (review & apply manually):`,
+          ...pending.map((p) => `• [${p.kind}] ${p.title}\n  ${p.detail.replace(/\s+/g, " ").slice(0, 220)}\n  (${p.id})`)
+        );
+      }
+      // Auto-applied skills (I-98 L1) — what the loop changed on its own + how to undo.
+      const applied = loadSkillLedger(ctx.dir).applied.slice(0, 8);
+      if (applied.length) {
+        if (out.length) out.push("");
+        out.push("auto-applied skills (evolution L1):");
+        for (const s of applied) {
+          const score = s.evalScore != null ? ` fitness ${s.evalScore.toFixed(2)}` : "";
+          const flag = s.status === "rolled-back" ? " [rolled-back]" : "";
+          out.push(`• ${s.name}${score}${flag} — ${s.at.slice(0, 10)}`);
+        }
+        out.push("undo: /proposals rollback <skill>");
+      }
+      return out.length ? out.join("\n") : "evolution: no pending proposals or auto-applied skills";
     }
 
     case "memory": {
