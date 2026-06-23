@@ -9,12 +9,17 @@ import { resolve, join, basename } from "node:path";
 import { scanThreatPatterns } from "./promptThreatScan.js";
 import { iridaRoot } from "./env.js";
 
+/** Where a skill came from. Absent frontmatter ⇒ undefined (treated as hand-authored). */
+export type SkillProvenance = "bundled" | "user" | "agent";
+
 export interface Skill {
   name: string;
   description: string;
   tags: string[];
   content: string;
   path: string;
+  /** `agent` = auto-applied by the evolution loop (I-98 L1); used by curator/rollback scoping. */
+  provenance?: SkillProvenance;
 }
 
 export class SkillError extends Error {}
@@ -23,6 +28,7 @@ interface ParsedFrontmatter {
   name?: string;
   description?: string;
   tags: string[];
+  provenance?: SkillProvenance;
   body: string;
 }
 
@@ -40,6 +46,10 @@ function parseFrontmatter(md: string): ParsedFrontmatter {
     if (key === "name") fm.name = stripQuotes(val);
     else if (key === "description") fm.description = stripQuotes(val);
     else if (key === "tags") fm.tags = parseTags(val);
+    else if (key === "provenance") {
+      const p = stripQuotes(val).toLowerCase();
+      if (p === "bundled" || p === "user" || p === "agent") fm.provenance = p;
+    }
   }
   return fm;
 }
@@ -103,6 +113,7 @@ function toSkill(path: string): Skill {
     tags: fm.tags,
     content: fm.body.trim(),
     path,
+    provenance: fm.provenance,
   };
 }
 
