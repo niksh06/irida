@@ -5,8 +5,8 @@ import { existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig, resolveMemoryRoot } from "./config.js";
 import { listMemories, memoryDir } from "./memory.js";
-import { CURSOR_TRANSCRIPT_WING } from "./memoryWings.js";
-import { createMemoryStore, type MemoryNote } from "./memoryStore.js";
+import { CURSOR_TRANSCRIPT_WING, CURSOR_LESSON_WING, DISTILL_WING, DISTILL_ARCHIVE_WING } from "./memoryWings.js";
+import { createMemoryStore, type MemoryNote, type IMemoryStore } from "./memoryStore.js";
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
 import { EXIT } from "./exit.js";
 import type { CronExecuteResult } from "./cronRunRecord.js";
@@ -84,6 +84,47 @@ function daysSince(iso: string): number {
 function isStubNote(note: MemoryNote): boolean {
   const body = note.body.replace(/^#.+$/m, "").trim();
   return body.length < 80;
+}
+
+/** Default-recall wings the distill pipeline writes into — where degenerate fragments hurt. */
+const DEGENERATE_SCAN_WINGS = [DISTILL_WING, CURSOR_LESSON_WING];
+
+const DEGENERATE_MARKERS = [
+  /distill worker output/i,
+  /no useful (text|output|content)/i,
+  /без полезного текста/i,
+  /map-?reduce fragment/i,
+];
+
+/**
+ * A distill pipeline ARTIFACT carrying no real knowledge (I-124) — either it
+ * announces its own emptiness (markers) or, after stripping frontmatter + all
+ * non-alphanumerics, has almost no content. Conservative on length (<12 chars)
+ * so a genuinely short-but-real note is never flagged.
+ */
+export function isDegenerateFragment(note: MemoryNote): boolean {
+  const body = note.body ?? "";
+  if (DEGENERATE_MARKERS.some((re) => re.test(body))) return true;
+  const residual = body.replace(/^---[\s\S]*?\n---\s*/m, "").replace(/[^\p{L}\p{N}]+/gu, "");
+  return residual.length < 12;
+}
+
+/**
+ * Archive degenerate distill fragments out of default recall (I-124). Reversible
+ * (re-wing to the distilled archive, never delete — same semantics as I-114).
+ */
+export async function pruneDegenerateFragments(store: IMemoryStore): Promise<{ archived: string[] }> {
+  const archived: string[] = [];
+  for (const wing of DEGENERATE_SCAN_WINGS) {
+    const notes = await store.listNotes(wing);
+    for (const n of notes) {
+      if (isDegenerateFragment(n)) {
+        await store.upsertNote({ name: n.name, title: n.title, body: n.body, wing: DISTILL_ARCHIVE_WING });
+        archived.push(n.name);
+      }
+    }
+  }
+  return { archived };
 }
 
 export async function checkUrlReachable(
@@ -206,6 +247,18 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
       )
     );
 
+    const scanWings = new Set<string>(DEGENERATE_SCAN_WINGS);
+    const degenerate = notes.filter((n) => scanWings.has(n.wing) && isDegenerateFragment(n));
+    checks.push(
+      warn(
+        "degenerate fragments",
+        degenerate.length === 0,
+        degenerate.length
+          ? `${degenerate.length} no-content distill fragment(s): ${degenerate.slice(0, 5).map((n) => n.name).join(", ")} — archived by the weekly cron`
+          : "no degenerate distill fragments"
+      )
+    );
+
     const seen = factStats.subjects.find((s) => s.subject === "seen_post");
     checks.push(
       check(
@@ -301,11 +354,25 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
   return { at: new Date().toISOString(), ok, checks };
 }
 
-/** Deterministic cron handler — audit notes/facts (no seen_post writes). */
+/** Deterministic cron handler — audit notes/facts (no seen_post writes), then
+ * archive degenerate distill fragments out of recall (I-124, reversible). */
 export async function executeMemoryAuditBuiltin(dir: string): Promise<CronExecuteResult> {
   const report = await evaluateMemoryAudit({ dir, staleDays: DEFAULT_STALE_DAYS, opsOnly: true });
   saveMemoryAuditResult(dir, report);
-  const body = formatMemoryAuditReport(report);
+
+  // Active hygiene: archive degenerate fragments the audit just reported.
+  let archivedLine = "";
+  const store = createMemoryStore(dir, loadConfig(dir).stateDir);
+  try {
+    const { archived } = await pruneDegenerateFragments(store);
+    if (archived.length) archivedLine = `\narchived ${archived.length} degenerate fragment(s): ${archived.slice(0, 5).join(", ")}`;
+  } catch {
+    /* best-effort hygiene — never fail the audit on it */
+  } finally {
+    await store.close();
+  }
+
+  const body = formatMemoryAuditReport(report) + archivedLine;
   return {
     ok: report.ok,
     exitCode: report.ok ? EXIT.ok : EXIT.software,

@@ -73,3 +73,41 @@ test("factAuditSummary counts current and invalidated", async () => {
     await store.close();
   }
 });
+
+import { isDegenerateFragment, pruneDegenerateFragments } from "../src/memoryAudit.js";
+import { DISTILL_WING, DISTILL_ARCHIVE_WING, CURSOR_LESSON_WING } from "../src/memoryWings.js";
+import type { MemoryNote, IMemoryStore } from "../src/memoryStore.js";
+
+const dnote = (name: string, wing: string, body: string): MemoryNote =>
+  ({ name, wing, title: name, body, created_at: "t", updated_at: "t" });
+
+test("isDegenerateFragment flags marker artifacts + near-empty, keeps real notes (I-124)", () => {
+  assert.equal(isDegenerateFragment(dnote("a", DISTILL_WING, "Map-reduce fragment 2/3 — distill worker output без полезного текста")), true);
+  assert.equal(isDegenerateFragment(dnote("b", DISTILL_WING, "no useful output")), true);
+  assert.equal(isDegenerateFragment(dnote("c", DISTILL_WING, "---\nname: c\n---\n   ")), true); // empty after frontmatter
+  // real notes (even short) are kept
+  assert.equal(isDegenerateFragment(dnote("d", DISTILL_WING, "Use a bounded retry with backoff for transient shell failures.")), false);
+  assert.equal(isDegenerateFragment(dnote("e", DISTILL_WING, "engine.model sets the claude-agent runtime model.")), false);
+});
+
+test("pruneDegenerateFragments archives degenerates from scan wings, keeps the rest (I-124)", async () => {
+  const notes = [
+    dnote("junk1", DISTILL_WING, "no useful text"),
+    dnote("good1", DISTILL_WING, "TParser is a Telegram parser writing to Postgres pgvector."),
+    dnote("junk2", CURSOR_LESSON_WING, "map-reduce fragment 1/4"),
+    dnote("good2", CURSOR_LESSON_WING, "Hoist inline imports to module top under the no-inline-imports rule."),
+  ];
+  const store = {
+    async listNotes(wing?: string) { return notes.filter((n) => !wing || n.wing === wing); },
+    async upsertNote(input: { name: string; wing?: string }) {
+      const n = notes.find((x) => x.name === input.name)!; n.wing = input.wing ?? n.wing; return n;
+    },
+  } as unknown as IMemoryStore;
+
+  const { archived } = await pruneDegenerateFragments(store);
+  assert.deepEqual(archived.sort(), ["junk1", "junk2"]);
+  assert.equal(notes.find((n) => n.name === "junk1")!.wing, DISTILL_ARCHIVE_WING);
+  assert.equal(notes.find((n) => n.name === "junk2")!.wing, DISTILL_ARCHIVE_WING);
+  assert.equal(notes.find((n) => n.name === "good1")!.wing, DISTILL_WING);
+  assert.equal(notes.find((n) => n.name === "good2")!.wing, CURSOR_LESSON_WING);
+});
