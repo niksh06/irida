@@ -1,14 +1,19 @@
 /**
- * Managed evolution loop — safe v1 (I-98). Closes signal → reflect → fitness →
- * gate → report WITHOUT any autonomous apply: the proposer agent only WRITES to
- * an approve-queue (evolution.proposals.json); a human applies. L0 auto-apply
- * already lives in memory-distill (I-113) + memory-consolidate (I-114); L1
- * (agent-created skills) auto-apply is intentionally deferred per the I-98 spec
- * (needs prod-under-git rollback + paired lesson-eval).
+ * Managed evolution loop (I-98). Closes signal → reflect → fitness → gate →
+ * report. By default the proposer agent only WRITES to an approve-queue
+ * (evolution.proposals.json) and a human applies; L0 auto-apply lives in
+ * memory-distill (I-113) + memory-consolidate (I-114).
  *
- * Invariants honored here: the eval/fitness graph is READ-ONLY to the loop (run
- * as a baseline, never mutated — Goodhart guard); every mutation is a `pending`
- * proposal (nothing applied); respects backgroundPause; one agent run per cycle.
+ * L1 (agent-created skills) auto-apply is now implemented but OPT-IN
+ * (engine.evolution.autoApplySkills, claude-agent only). When enabled, a drafted
+ * skill that clears the turnkey fitness gate (skillFitness.ts) AND a fail-closed
+ * safety review is applied via skillApply.ts (provenance-tagged, backed up,
+ * rollback-able); anything short falls to the human queue. The earlier
+ * pre-conditions (rollback without prod-git, a turnkey paired eval) are met by
+ * phases 1-2. Default OFF.
+ *
+ * Invariants: the eval/fitness graph is READ-ONLY to the loop (Goodhart guard);
+ * respects backgroundPause; one proposal per cycle.
  */
 import { resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
