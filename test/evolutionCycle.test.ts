@@ -6,9 +6,16 @@ import {
   parseProposal,
   buildProposerPrompt,
   isDuplicateProposal,
+  tryAutoApplySkill,
   type EvolutionProposal,
 } from "../src/evolutionCycle.js";
 import type { RunLogEntry } from "../src/runLog.js";
+import type { SkillRunner, SkillJudge, SkillEvalTask } from "../src/skillFitness.js";
+import { loadConfig } from "../src/config.js";
+import { loadSkillLedger } from "../src/skillApply.js";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve as pathResolve, join as pathJoin } from "node:path";
 
 const proposal = (title: string, status: EvolutionProposal["status"] = "pending"): EvolutionProposal =>
   ({ id: "x", at: "t", kind: "memory", title, detail: "", status });
@@ -119,5 +126,136 @@ describe("isDuplicateProposal (I-98 dedup — high-precision backstop)", () => {
   it("ignores non-pending proposals and needs ≥2 shared significant tokens", () => {
     assert.equal(isDuplicateProposal(proposal("startup failure triage"), [proposal("startup failure triage", "applied")]), false);
     assert.equal(isDuplicateProposal(proposal("memory search ranking"), [proposal("memory dedup pass")]), false);
+  });
+});
+
+describe("parseProposal — skill NAME/BODY (I-98 L1 ph.3)", () => {
+  it("captures NAME and BODY for a skill draft without leaking BODY into DETAIL", () => {
+    const reply = [
+      "KIND: skill",
+      "NAME: retry-flaky",
+      "TITLE: retry flaky shell steps",
+      "DETAIL: shell steps fail transiently; a bounded retry reduces failures.",
+      "BODY: ---",
+      "name: retry-flaky",
+      "description: bounded retry",
+      "---",
+      "Wrap transient commands in a bounded retry with backoff.",
+    ].join("\n");
+    const p = parseProposal(reply, "id1", "t1");
+    assert.ok(p);
+    assert.equal(p!.kind, "skill");
+    assert.equal(p!.name, "retry-flaky");
+    assert.match(p!.detail, /transiently/);
+    assert.doesNotMatch(p!.detail, /backoff/, "BODY must not bleed into DETAIL");
+    assert.match(p!.body!, /Wrap transient commands/);
+  });
+
+  it("does not attach name/body for non-skill kinds", () => {
+    const p = parseProposal("KIND: memory\nNAME: x\nTITLE: t\nDETAIL: d\nBODY: b", "id", "at");
+    assert.equal(p!.kind, "memory");
+    assert.equal(p!.name, undefined);
+    assert.equal(p!.body, undefined);
+  });
+});
+
+describe("tryAutoApplySkill — fitness gate orchestration (I-98 L1 ph.3)", () => {
+  const TASKS: SkillEvalTask[] = [
+    { id: "t1", prompt: "p1", rubric: "r1" },
+    { id: "t2", prompt: "p2", rubric: "r2" },
+  ];
+  const runner: SkillRunner = async (_p, skill) => (skill ? "WITH" : "BASE");
+  const judge = (v: Record<string, "better" | "worse" | "same">): SkillJudge =>
+    async (task) => ({ verdict: v[task.id] ?? "same", note: "n" });
+
+  function sandbox() {
+    const dir = mkdtempSync(pathResolve(tmpdir(), "evo-l1-"));
+    mkdirSync(pathJoin(dir, "skills"), { recursive: true });
+    writeFileSync(pathJoin(dir, "agent.config.json"), JSON.stringify({ stateDir: ".agent", engine: { provider: "claude-agent" } }) + "\n");
+    const prev = { H: process.env.IRIDA_HOME, R: process.env.IRIDA_ROOT };
+    process.env.IRIDA_HOME = dir;
+    process.env.IRIDA_ROOT = dir;
+    return {
+      dir,
+      restore: () => {
+        prev.H === undefined ? delete process.env.IRIDA_HOME : (process.env.IRIDA_HOME = prev.H);
+        prev.R === undefined ? delete process.env.IRIDA_ROOT : (process.env.IRIDA_ROOT = prev.R);
+        rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  const skillProposal = (): EvolutionProposal => ({
+    id: "ev1", at: "t", kind: "skill", status: "pending",
+    title: "retry flaky", name: "retry-flaky",
+    body: "---\nname: retry-flaky\ndescription: bounded retry\n---\nUse a bounded retry with backoff.",
+  });
+
+  it("applies the skill when the gate passes", async () => {
+    const sb = sandbox();
+    try {
+      const cfg = loadConfig(sb.dir);
+      const out = await tryAutoApplySkill(sb.dir, cfg, skillProposal(), {
+        tasks: TASKS, runner, judge: judge({ t1: "better", t2: "better" }),
+      });
+      assert.equal(out.applied, true);
+      assert.match(out.fitness, /PASS/);
+      assert.ok(existsSync(pathJoin(sb.dir, "skills", "retry-flaky.md")), "skill written");
+      const ledger = loadSkillLedger(sb.dir);
+      assert.equal(ledger.applied[0]!.name, "retry-flaky");
+    } finally {
+      sb.restore();
+    }
+  });
+
+  it("does NOT apply when the gate fails (regression) → routes to queue", async () => {
+    const sb = sandbox();
+    try {
+      const cfg = loadConfig(sb.dir);
+      const out = await tryAutoApplySkill(sb.dir, cfg, skillProposal(), {
+        tasks: TASKS, runner, judge: judge({ t1: "better", t2: "worse" }),
+      });
+      assert.equal(out.applied, false);
+      assert.match(out.fitness, /FAIL/);
+      assert.equal(existsSync(pathJoin(sb.dir, "skills", "retry-flaky.md")), false, "skill not written");
+    } finally {
+      sb.restore();
+    }
+  });
+
+  it("returns applied:false when the proposal has no body", async () => {
+    const sb = sandbox();
+    try {
+      const cfg = loadConfig(sb.dir);
+      const p = { ...skillProposal(), body: undefined };
+      const out = await tryAutoApplySkill(sb.dir, cfg, p, { tasks: TASKS, runner, judge: judge({}) });
+      assert.equal(out.applied, false);
+      assert.match(out.summary, /lacks a body/);
+    } finally {
+      sb.restore();
+    }
+  });
+});
+
+describe("engine.evolution.autoApplySkills config flag (I-98 L1 ph.3)", () => {
+  function cfgDir(engineJson: unknown): { dir: string; restore: () => void } {
+    const dir = mkdtempSync(pathResolve(tmpdir(), "evo-cfg-"));
+    writeFileSync(pathJoin(dir, "agent.config.json"), JSON.stringify({ engine: engineJson }) + "\n");
+    return { dir, restore: () => rmSync(dir, { recursive: true, force: true }) };
+  }
+  it("round-trips true and defaults to off when absent", () => {
+    const on = cfgDir({ provider: "claude-agent", evolution: { autoApplySkills: true } });
+    try {
+      assert.equal(loadConfig(on.dir).engine.evolution?.autoApplySkills, true);
+    } finally {
+      on.restore();
+    }
+    const off = cfgDir({ provider: "claude-agent" });
+    try {
+      assert.equal(loadConfig(off.dir).engine.evolution?.autoApplySkills, undefined);
+      assert.ok(!loadConfig(off.dir).engine.evolution?.autoApplySkills, "absent ⇒ falsy ⇒ off");
+    } finally {
+      off.restore();
+    }
   });
 });

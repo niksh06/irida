@@ -117,6 +117,23 @@ function toSkill(path: string): Skill {
   };
 }
 
+/**
+ * Parse raw skill markdown (e.g. an agent-drafted body not yet on disk) into a
+ * Skill, exactly as it would load from a file — so a fitness eval sees the same
+ * content the agent will see once applied.
+ */
+export function skillFromMarkdown(raw: string, fallbackName: string): Skill {
+  const fm = parseFrontmatter(raw);
+  return {
+    name: fm.name || fallbackName,
+    description: fm.description || "",
+    tags: fm.tags,
+    content: fm.body.trim(),
+    path: "",
+    provenance: fm.provenance,
+  };
+}
+
 export function listSkills(dir: string, skillsPath: string): Skill[] {
   const out: Skill[] = [];
   for (const p of candidateFiles(dir, skillsPath)) {

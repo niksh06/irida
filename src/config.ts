@@ -133,6 +133,15 @@ export interface ToolPolicyConfig {
   bySurface?: Record<string, boolean>;
 }
 
+export interface EvolutionConfig {
+  /**
+   * Opt-in: let the evolution loop auto-apply agent-drafted skills that clear the
+   * fitness gate (I-98 L1). Default false — skills are queued for human approval.
+   * Only honored on the claude-agent engine (read-only eval enforcement).
+   */
+  autoApplySkills?: boolean;
+}
+
 export interface EngineConfig {
   /** Active runtime: Cursor SDK (default) or Anthropic Claude Agent SDK. */
   provider: EngineProvider;
@@ -142,6 +151,8 @@ export interface EngineConfig {
   model?: string;
   /** Runtime tool-permission policy for the claude-agent engine (I-94). */
   toolPolicy?: ToolPolicyConfig;
+  /** Managed-evolution autonomy switches (I-98). */
+  evolution?: EvolutionConfig;
 }
 
 /**
@@ -346,11 +357,16 @@ const toolPolicySchema = z.object({
   bySurface: z.record(z.boolean()).optional(),
 });
 
+const evolutionSchema = z.object({
+  autoApplySkills: z.boolean().optional(),
+});
+
 const engineSchema = z.object({
   provider: z.enum(["cursor", "claude-agent"]).optional(),
   auth: z.enum(["api-key", "account"]).optional(),
   model: nonEmptyString.optional(),
   toolPolicy: toolPolicySchema.optional(),
+  evolution: evolutionSchema.optional(),
 });
 
 const agentConfigSchema = z.object({
@@ -404,6 +420,7 @@ function validate(obj: unknown, dir: string): AgentConfig {
       ...(parsed.engine.auth !== undefined ? { auth: parsed.engine.auth } : {}),
       ...(parsed.engine.model !== undefined ? { model: parsed.engine.model } : {}),
       ...(parsed.engine.toolPolicy !== undefined ? { toolPolicy: parsed.engine.toolPolicy } : {}),
+      ...(parsed.engine.evolution !== undefined ? { evolution: parsed.engine.evolution } : {}),
     };
   }
   if (parsed.skillsPath !== undefined) cfg.skillsPath = parsed.skillsPath;

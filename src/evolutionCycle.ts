@@ -18,7 +18,13 @@ import { runPrompt } from "./run.js";
 import { loadRunLogEntries } from "./runMetrics.js";
 import { summarizeLessonEval } from "./cursorLessonEval.js";
 import { runEvalBattery, evalRoot } from "./eval_cmd.js";
+import { evaluateSkillFitness, loadSkillEvalTasks } from "./skillFitness.js";
+import type { SkillRunner, SkillJudge, SkillEvalTask } from "./skillFitness.js";
+import { makeSkillRunner, makeSkillJudge } from "./skillFitnessRunner.js";
+import { applyAgentSkill } from "./skillApply.js";
+import { skillFromMarkdown } from "./skills.js";
 import type { RunLogEntry } from "./runLog.js";
+import type { AgentConfig } from "./config.js";
 
 const DEFAULT_WINDOW_HOURS = 48;
 const MAX_PROPOSALS = 50; // ledger cap (FIFO trim of resolved entries)
@@ -36,6 +42,12 @@ export interface EvolutionProposal {
   title: string;
   detail: string;
   status: "pending" | "applied" | "rejected";
+  /** Skill slug (kind=skill only). */
+  name?: string;
+  /** Full skill markdown drafted by the proposer (kind=skill, when auto-apply is in play). */
+  body?: string;
+  /** Fitness verdict summary recorded when the auto-apply gate ran. */
+  fitness?: string;
 }
 
 export interface EvolutionLedger {
@@ -74,8 +86,11 @@ const PROPOSER_INSTRUCTION = [
   "Use memory_search / memory_fact_query (read-only) to check what already exists; do NOT write memory.",
   "Reply in this exact shape:",
   "KIND: memory | skill | other",
+  "NAME: <kebab-case slug, skill only>",
   "TITLE: <one line>",
   "DETAIL: <2-5 lines: what to change, why it helps, how to verify>",
+  "BODY: <skill only — a COMPLETE skill markdown: frontmatter (name, description, tags)",
+  "then the guidance body. Keep it focused and safe; it may be auto-applied after a fitness eval.>",
   'If nothing is worth changing, reply exactly "NO PROPOSAL".',
 ].join("\n");
 
@@ -137,11 +152,17 @@ export function parseProposal(text: string, id: string, at: string): EvolutionPr
   const t = text.trim();
   if (!t || /^NO PROPOSAL/i.test(t)) return null;
   const kindM = t.match(/KIND:\s*(memory|skill|other)/i);
+  const nameM = t.match(/NAME:\s*(.+)/i);
   const titleM = t.match(/TITLE:\s*(.+)/i);
-  const detailM = t.match(/DETAIL:\s*([\s\S]+)/i);
+  // DETAIL stops at BODY (lazy) so a drafted skill body doesn't leak into the detail.
+  const detailM = t.match(/DETAIL:\s*([\s\S]+?)(?:\n\s*BODY:|$)/i);
+  // Line-anchored (mirrors DETAIL) so an inline "BODY:" inside DETAIL can't mis-capture.
+  const bodyM = t.match(/(?:^|\n)\s*BODY:\s*([\s\S]+)$/i);
   if (!titleM) return null; // not in expected shape → treat as no usable proposal
   const kind = (kindM?.[1]?.toLowerCase() as EvolutionProposal["kind"]) || "other";
-  return {
+  const name = nameM?.[1]?.trim().slice(0, 80);
+  const body = bodyM?.[1]?.trim();
+  const proposal: EvolutionProposal = {
     id,
     at,
     kind,
@@ -149,6 +170,9 @@ export function parseProposal(text: string, id: string, at: string): EvolutionPr
     detail: (detailM?.[1] ?? t).trim().slice(0, 1000),
     status: "pending",
   };
+  if (kind === "skill" && name) proposal.name = name;
+  if (kind === "skill" && body) proposal.body = body;
+  return proposal;
 }
 
 function ledgerPath(dir: string): string {
@@ -174,6 +198,55 @@ export function saveProposals(dir: string, ledger: EvolutionLedger): void {
   const resolved = ledger.proposals.filter((x) => x.status !== "pending");
   const trimmed = [...pending, ...resolved.slice(0, Math.max(0, MAX_PROPOSALS - pending.length))];
   writeFileSync(p, JSON.stringify({ proposals: trimmed }, null, 2));
+}
+
+export interface AutoApplyOutcome {
+  applied: boolean;
+  /** Human-readable fitness verdict, recorded on the proposal either way. */
+  fitness: string;
+  summary: string;
+}
+
+/**
+ * L1 auto-apply attempt for a drafted skill (I-98). Runs the fitness gate; on a
+ * clear pass, applies the skill (which re-scans it for safety). Anything short of
+ * a pass returns applied:false so the caller routes it to the human approve-queue.
+ * Engine MUST already be gated to claude-agent (read-only eval enforcement).
+ */
+export async function tryAutoApplySkill(
+  dir: string,
+  cfg: AgentConfig,
+  proposal: EvolutionProposal,
+  deps: { runner?: SkillRunner; judge?: SkillJudge; tasks?: SkillEvalTask[] } = {}
+): Promise<AutoApplyOutcome> {
+  if (!proposal.name || !proposal.body) {
+    return { applied: false, fitness: "no drafted skill body", summary: `skill "${proposal.title}" lacks a body → queued` };
+  }
+  let tasks = deps.tasks;
+  if (!tasks) {
+    try {
+      tasks = loadSkillEvalTasks().tasks;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { applied: false, fitness: `fitness skipped: ${msg}`, summary: `skill "${proposal.title}" not gated (no eval graph) → queued` };
+    }
+  }
+
+  const skill = skillFromMarkdown(proposal.body, proposal.name);
+  const ctx = { dir, engine: "claude-agent", auth: cfg.engine.auth, model: cfg.engine.model };
+  const runner = deps.runner ?? makeSkillRunner(ctx);
+  const judge = deps.judge ?? makeSkillJudge(ctx);
+  const verdict = await evaluateSkillFitness(skill, tasks, runner, judge);
+  const fitness = `fitness ${verdict.pass ? "PASS" : "FAIL"} (score ${verdict.score.toFixed(2)}): ${verdict.reason}`;
+
+  if (!verdict.pass) {
+    return { applied: false, fitness, summary: `skill "${proposal.title}" below gate → queued for review (${verdict.reason})` };
+  }
+  const res = applyAgentSkill(dir, cfg.skillsPath, proposal.name, proposal.body, { evalScore: verdict.score });
+  if (!res.applied) {
+    return { applied: false, fitness: `${fitness}; apply refused: ${res.reason}`, summary: `skill "${proposal.title}" cleared gate but apply refused (${res.reason}) → queued` };
+  }
+  return { applied: true, fitness, summary: `auto-applied skill "${proposal.name}" — ${verdict.reason}; ${res.reason}` };
 }
 
 export interface EvolutionResult {
@@ -282,6 +355,21 @@ export async function runEvolutionCycle(dir: string, opts: { windowHours?: numbe
       signals,
       summary: `skipped duplicate proposal "${proposal.title}" (already pending)`,
     };
+  }
+
+  // L1 auto-apply (opt-in, claude-agent only — already gated above). A drafted
+  // skill that clears the fitness gate is applied directly; anything short of a
+  // pass is annotated and falls through to the human approve-queue.
+  if (proposal.kind === "skill" && proposal.body && proposal.name && cfg.engine.evolution?.autoApplySkills) {
+    const outcome = await tryAutoApplySkill(dir, cfg, proposal);
+    proposal.fitness = outcome.fitness;
+    if (outcome.applied) {
+      proposal.status = "applied";
+      ledger.proposals.unshift(proposal);
+      saveProposals(dir, ledger);
+      return { paused: false, proposed: true, evalOk, signals, summary: outcome.summary };
+    }
+    proposal.detail = `${proposal.detail}\n\n[auto-apply gate] ${outcome.fitness}`.slice(0, 1000);
   }
 
   ledger.proposals.unshift(proposal);
