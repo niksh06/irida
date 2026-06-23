@@ -197,12 +197,29 @@ describe("tryAutoApplySkill — fitness gate orchestration (I-98 L1 ph.3)", () =
       const cfg = loadConfig(sb.dir);
       const out = await tryAutoApplySkill(sb.dir, cfg, skillProposal(), {
         tasks: TASKS, runner, judge: judge({ t1: "better", t2: "better" }),
+        safety: async () => ({ safe: true, reason: "ok" }),
       });
       assert.equal(out.applied, true);
       assert.match(out.fitness, /PASS/);
-      assert.ok(existsSync(pathJoin(sb.dir, "skills", "retry-flaky.md")), "skill written");
+      assert.ok(existsSync(pathJoin(sb.dir, "skills", "agent", "retry-flaky.md")), "skill written");
       const ledger = loadSkillLedger(sb.dir);
       assert.equal(ledger.applied[0]!.name, "retry-flaky");
+    } finally {
+      sb.restore();
+    }
+  });
+
+  it("does NOT apply when fitness passes but the safety reviewer blocks it", async () => {
+    const sb = sandbox();
+    try {
+      const cfg = loadConfig(sb.dir);
+      const out = await tryAutoApplySkill(sb.dir, cfg, skillProposal(), {
+        tasks: TASKS, runner, judge: judge({ t1: "better", t2: "better" }),
+        safety: async () => ({ safe: false, reason: "exfiltrates tokens to /tmp" }),
+      });
+      assert.equal(out.applied, false);
+      assert.match(out.fitness, /SAFETY BLOCK/);
+      assert.equal(existsSync(pathJoin(sb.dir, "skills", "agent", "retry-flaky.md")), false, "unsafe skill not written");
     } finally {
       sb.restore();
     }
@@ -217,7 +234,7 @@ describe("tryAutoApplySkill — fitness gate orchestration (I-98 L1 ph.3)", () =
       });
       assert.equal(out.applied, false);
       assert.match(out.fitness, /FAIL/);
-      assert.equal(existsSync(pathJoin(sb.dir, "skills", "retry-flaky.md")), false, "skill not written");
+      assert.equal(existsSync(pathJoin(sb.dir, "skills", "agent", "retry-flaky.md")), false, "skill not written");
     } finally {
       sb.restore();
     }

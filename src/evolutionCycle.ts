@@ -19,8 +19,8 @@ import { loadRunLogEntries } from "./runMetrics.js";
 import { summarizeLessonEval } from "./cursorLessonEval.js";
 import { runEvalBattery, evalRoot } from "./eval_cmd.js";
 import { evaluateSkillFitness, loadSkillEvalTasks } from "./skillFitness.js";
-import type { SkillRunner, SkillJudge, SkillEvalTask } from "./skillFitness.js";
-import { makeSkillRunner, makeSkillJudge } from "./skillFitnessRunner.js";
+import type { SkillRunner, SkillJudge, SkillSafetyReviewer, SkillEvalTask } from "./skillFitness.js";
+import { makeSkillRunner, makeSkillJudge, makeSkillSafetyReviewer } from "./skillFitnessRunner.js";
 import { applyAgentSkill } from "./skillApply.js";
 import { skillFromMarkdown } from "./skills.js";
 import type { RunLogEntry } from "./runLog.js";
@@ -161,7 +161,7 @@ export function parseProposal(text: string, id: string, at: string): EvolutionPr
   if (!titleM) return null; // not in expected shape → treat as no usable proposal
   const kind = (kindM?.[1]?.toLowerCase() as EvolutionProposal["kind"]) || "other";
   const name = nameM?.[1]?.trim().slice(0, 80);
-  const body = bodyM?.[1]?.trim();
+  const body = bodyM?.[1]?.trim().slice(0, 8000); // cap drafted body (title/detail/name already sliced)
   const proposal: EvolutionProposal = {
     id,
     at,
@@ -217,7 +217,7 @@ export async function tryAutoApplySkill(
   dir: string,
   cfg: AgentConfig,
   proposal: EvolutionProposal,
-  deps: { runner?: SkillRunner; judge?: SkillJudge; tasks?: SkillEvalTask[] } = {}
+  deps: { runner?: SkillRunner; judge?: SkillJudge; safety?: SkillSafetyReviewer; tasks?: SkillEvalTask[] } = {}
 ): Promise<AutoApplyOutcome> {
   if (!proposal.name || !proposal.body) {
     return { applied: false, fitness: "no drafted skill body", summary: `skill "${proposal.title}" lacks a body → queued` };
@@ -242,6 +242,19 @@ export async function tryAutoApplySkill(
   if (!verdict.pass) {
     return { applied: false, fitness, summary: `skill "${proposal.title}" below gate → queued for review (${verdict.reason})` };
   }
+
+  // Safety axis (distinct from the helpfulness judge) — fail-closed. A skill can
+  // be rubric-helpful yet carry a harmful instruction; refuse + queue if so.
+  const safety = deps.safety ?? makeSkillSafetyReviewer(ctx);
+  const verdictSafety = await safety(skill);
+  if (!verdictSafety.safe) {
+    return {
+      applied: false,
+      fitness: `${fitness}; SAFETY BLOCK: ${verdictSafety.reason}`,
+      summary: `skill "${proposal.title}" cleared fitness but failed safety review → queued (${verdictSafety.reason})`,
+    };
+  }
+
   const res = applyAgentSkill(dir, cfg.skillsPath, proposal.name, proposal.body, { evalScore: verdict.score });
   if (!res.applied) {
     return { applied: false, fitness: `${fitness}; apply refused: ${res.reason}`, summary: `skill "${proposal.title}" cleared gate but apply refused (${res.reason}) → queued` };

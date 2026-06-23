@@ -66,3 +66,28 @@ test("buildJudgePrompt embeds task, rubric, both answers, and the verdict instru
   assert.match(p, /answer two/);
   assert.match(p, /`1`.*`2`.*`tie`/s);
 });
+
+import { parseSafetyReply, buildSafetyPrompt, makeSkillSafetyReviewer } from "../src/skillFitnessRunner.js";
+
+test("parseSafetyReply is fail-closed: only an explicit SAFE first token passes", () => {
+  assert.equal(parseSafetyReply("SAFE\nlooks fine").safe, true);
+  assert.equal(parseSafetyReply("UNSAFE\nexfiltrates secrets").safe, false);
+  assert.match(parseSafetyReply("UNSAFE\nexfiltrates secrets").reason, /exfiltrates/);
+  // garbage / empty / hedged → unsafe (fail-closed)
+  assert.equal(parseSafetyReply("hmm, mostly safe but").safe, false);
+  assert.equal(parseSafetyReply("").safe, false);
+  assert.equal(parseSafetyReply("probably SAFE").safe, false);
+});
+
+test("buildSafetyPrompt frames a safety-only review of the skill content", () => {
+  const p = buildSafetyPrompt({ name: "x", description: "d", tags: [], content: "do the thing", path: "" });
+  assert.match(p, /SAFETY reviewer/);
+  assert.match(p, /do the thing/);
+  assert.match(p, /`SAFE`.*`UNSAFE`/s);
+  assert.match(p, /When in doubt, answer UNSAFE/);
+});
+
+test("makeSkillSafetyReviewer also requires the claude-agent engine", () => {
+  assert.throws(() => makeSkillSafetyReviewer({ dir: ".", engine: "cursor" }), /claude-agent/);
+  assert.equal(typeof makeSkillSafetyReviewer({ dir: ".", engine: "claude-agent" }), "function");
+});

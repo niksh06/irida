@@ -39,6 +39,7 @@ EXCLUDES=(
   --exclude '.github/'
   --exclude 'repos/'               # dev working copies, not needed on prod
   --exclude 'desktop/'             # local electron prototype
+  --exclude 'skills/agent/'        # agent-applied skills (I-98 L1) — prod-local, never from dev
 )
 
 echo "sync repo → prod   ${MODE:-APPLY}"

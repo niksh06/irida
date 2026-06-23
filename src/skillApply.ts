@@ -13,17 +13,21 @@ import { loadConfig } from "./config.js";
 import { scanThreatPatterns } from "./promptThreatScan.js";
 import { isDestructive } from "./safety.js";
 import { writeFileAtomic } from "./util.js";
+import { AGENT_SKILLS_SUBDIR } from "./skills.js";
 
 /** Cap the apply ledger so an autonomous loop can't grow it unbounded. */
 const LEDGER_CAP = 100;
 
 /**
- * Deterministic WRITE root for agent skills: always `<dir>/<skillsPath>`, never
- * the cwd fall-through that `resolveSkillsRoot` allows for *reads* — writing a
- * net-new skill must never land in some other repo's skills/ (audit, phase 1).
+ * Deterministic WRITE root for agent skills: always `<dir>/<skillsPath>/agent`,
+ * never the cwd fall-through that `resolveSkillsRoot` allows for *reads* (a write
+ * must never land in some other repo's skills/), and a dedicated subdir so
+ * agent-applied skills (a) can't collide with a repo skill name and (b) are
+ * excluded from sync-to-prod.sh — so a dev deploy can never clobber them or make
+ * rollback operate on a deploy-overwritten file (holistic audit, finding A).
  */
 function skillWriteRoot(dir: string, skillsPath: string): string {
-  return resolve(dir, skillsPath);
+  return resolve(dir, skillsPath, AGENT_SKILLS_SUBDIR);
 }
 
 export interface AppliedSkill {

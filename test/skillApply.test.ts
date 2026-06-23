@@ -14,7 +14,7 @@ import { loadSkill } from "../src/skills.js";
 /** Isolated temp home so the ledger + skills/ resolve under the sandbox, never prod. */
 function sandbox(): { dir: string; restore: () => void } {
   const dir = mkdtempSync(resolve(tmpdir(), "skillapply-"));
-  mkdirSync(join(dir, "skills"), { recursive: true });
+  mkdirSync(join(dir, "skills", "agent"), { recursive: true });
   writeFileSync(join(dir, "agent.config.json"), JSON.stringify({ stateDir: ".agent" }) + "\n");
   const prev = { H: process.env.IRIDA_HOME, R: process.env.IRIDA_ROOT };
   process.env.IRIDA_HOME = dir;
@@ -54,7 +54,7 @@ test("applyAgentSkill writes a net-new skill, tags provenance:agent, ledgers it"
 test("apply over an existing skill backs up the prior version", () => {
   const sb = sandbox();
   try {
-    writeFileSync(join(sb.dir, "skills", "retry-helper.md"), "---\nname: retry-helper\n---\nOLD");
+    writeFileSync(join(sb.dir, "skills", "agent", "retry-helper.md"), "---\nname: retry-helper\n---\nOLD");
     const r = applyAgentSkill(sb.dir, "skills", "retry-helper", SKILL);
     assert.equal(r.applied, true);
     assert.ok(r.backup && existsSync(r.backup), "prior version backed up");
@@ -68,7 +68,7 @@ test("rollback removes a net-new skill and marks the ledger", () => {
   const sb = sandbox();
   try {
     applyAgentSkill(sb.dir, "skills", "retry-helper", SKILL);
-    const target = join(sb.dir, "skills", "retry-helper.md");
+    const target = join(sb.dir, "skills", "agent", "retry-helper.md");
     assert.ok(existsSync(target));
     const rb = rollbackAgentSkill(sb.dir, "skills", "retry-helper");
     assert.equal(rb.ok, true);
@@ -82,7 +82,7 @@ test("rollback removes a net-new skill and marks the ledger", () => {
 test("rollback restores the prior version when one was backed up", () => {
   const sb = sandbox();
   try {
-    const target = join(sb.dir, "skills", "retry-helper.md");
+    const target = join(sb.dir, "skills", "agent", "retry-helper.md");
     writeFileSync(target, "---\nname: retry-helper\n---\nOLD BODY");
     applyAgentSkill(sb.dir, "skills", "retry-helper", SKILL);
     assert.match(readFileSync(target, "utf8"), /Wrap flaky/);
@@ -100,7 +100,7 @@ test("refuses to write a skill whose body fails the threat scan", () => {
     const r = applyAgentSkill(sb.dir, "skills", "nuke", evil);
     assert.equal(r.applied, false);
     assert.match(r.reason, /refused|destructive|threat/i);
-    assert.equal(existsSync(join(sb.dir, "skills", "nuke.md")), false, "unsafe skill not written");
+    assert.equal(existsSync(join(sb.dir, "skills", "agent", "nuke.md")), false, "unsafe skill not written");
     assert.equal(loadSkillLedger(sb.dir).applied.length, 0);
   } finally {
     sb.restore();
@@ -120,7 +120,7 @@ test("ensureAgentProvenance injects provenance into existing frontmatter and wra
 test("rollback with a missing backup does NOT delete the current skill (no lossy rm)", () => {
   const sb = sandbox();
   try {
-    const target = join(sb.dir, "skills", "retry-helper.md");
+    const target = join(sb.dir, "skills", "agent", "retry-helper.md");
     writeFileSync(target, "---\nname: retry-helper\n---\nOLD BODY");
     const r = applyAgentSkill(sb.dir, "skills", "retry-helper", SKILL);
     rmSync(r.backup!); // simulate a lost backup

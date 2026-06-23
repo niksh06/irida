@@ -24,6 +24,9 @@ export interface Skill {
 
 export class SkillError extends Error {}
 
+/** Subdir under skills/ where agent-applied skills live (deploy-excluded, collision-free). */
+export const AGENT_SKILLS_SUBDIR = "agent";
+
 interface ParsedFrontmatter {
   name?: string;
   description?: string;
@@ -93,6 +96,13 @@ function candidateFiles(dir: string, skillsPath: string): string[] {
     }
     if (st.isFile() && entry.toLowerCase().endsWith(".md")) out.push(p);
     else if (st.isDirectory()) {
+      if (entry.toLowerCase() === AGENT_SKILLS_SUBDIR) {
+        // Auto-applied skills (I-98 L1) live in their own subdir — deploy-excluded
+        // and collision-free with repo skills — but still load as normal skills.
+        for (const sub of readdirSync(p)) {
+          if (sub.toLowerCase().endsWith(".md")) out.push(join(p, sub));
+        }
+      }
       const skillMd = join(p, "SKILL.md");
       if (existsSync(skillMd)) out.push(skillMd);
     }

@@ -9,8 +9,13 @@
  * the real SDK-backed runner/judge are wired in on prod (claude-agent engine).
  *
  * Goodhart guard: the task set is human-curated and repo-owned
- * (`eval/cases/skill-fitness/tasks.json`). The evolution loop cannot add eval
- * tasks (its disallowedTools block Write/Edit) — it can only be measured by them.
+ * (`eval/cases/skill-fitness/tasks.json`). The evolution loop cannot WRITE eval
+ * tasks (its disallowedTools block Write/Edit/Bash). The proposer CAN read them
+ * (Read/Grep stay enabled, and the file ships to prod) — this is intentional: the
+ * tasks encode generic best practices, so "overfitting" to them is just learning
+ * the practice. They are a fitness barrier, not a secret. A separate, fail-closed
+ * safety reviewer (SkillSafetyReviewer) gates the harmful-content axis the
+ * helpfulness judge does not cover.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -65,6 +70,13 @@ export type SkillJudge = (
   baseline: string,
   withSkill: string
 ) => Promise<{ verdict: PairedVerdict; note: string }>;
+
+/**
+ * Safety axis (distinct from the rubric judge, which only scores helpfulness):
+ * does the skill content contain harmful/deceptive/exfiltrating/destructive
+ * instructions? Fail-closed — an inconclusive verdict must return safe:false.
+ */
+export type SkillSafetyReviewer = (skill: Skill) => Promise<{ safe: boolean; reason: string }>;
 
 export interface SkillFitnessTaskResult {
   id: string;

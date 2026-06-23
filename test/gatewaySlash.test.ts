@@ -95,10 +95,10 @@ test("/proposals rollback <skill> undoes an auto-applied skill", async () => {
   const sb = slashSandbox();
   try {
     applyAgentSkill(sb.dir, "skills", "retry-flaky", GOOD_SKILL, { evalScore: 0.5 });
-    assert.ok(existsSync(j2(sb.dir, "skills", "retry-flaky.md")));
+    assert.ok(existsSync(j2(sb.dir, "skills", "agent", "retry-flaky.md")));
     const out = await handleGatewaySlash("/proposals rollback retry-flaky", sb.ctx);
     assert.match(out!, /rolled back skill "retry-flaky"/);
-    assert.equal(existsSync(j2(sb.dir, "skills", "retry-flaky.md")), false, "skill file removed");
+    assert.equal(existsSync(j2(sb.dir, "skills", "agent", "retry-flaky.md")), false, "skill file removed");
   } finally {
     sb.restore();
   }
