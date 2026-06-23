@@ -28,6 +28,7 @@ import type { SkillRunner, SkillJudge, SkillSafetyReviewer, SkillEvalTask } from
 import { makeSkillRunner, makeSkillJudge, makeSkillSafetyReviewer } from "./skillFitnessRunner.js";
 import { applyAgentSkill } from "./skillApply.js";
 import { skillFromMarkdown } from "./skills.js";
+import { isNearDuplicate } from "./textSimilarity.js";
 import type { RunLogEntry } from "./runLog.js";
 import type { AgentConfig } from "./config.js";
 
@@ -107,47 +108,17 @@ export function buildProposerPrompt(signalsText: string, pendingTitles: string[]
   return `${PROPOSER_INSTRUCTION}\n\n=== signals ===\n\n${signalsText}${dedup}`;
 }
 
-const TITLE_STOPWORDS = new Set([
-  "a", "an", "the", "to", "for", "of", "into", "on", "in", "and", "or", "its", "is", "with",
-  "that", "when", "add", "note", "runs", "run", "irida", "gateway",
-]);
-
-/** Significant lowercased tokens of a proposal title (stopwords + short words dropped). */
-function titleTokens(title: string): string[] {
-  return [
-    ...new Set(
-      title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, " ")
-        .split(" ")
-        .filter((w) => w.length > 2 && !TITLE_STOPWORDS.has(w))
-    ),
-  ];
-}
-
 /**
- * Pure: is `candidate` a near-duplicate of any PENDING proposal? Deliberately a
- * HIGH-PRECISION backstop — a false positive would silently drop a distinct, real
- * improvement (the worst outcome), so it fires only on strong lexical overlap:
- * ≥2 shared significant title words AND either Jaccard ≥0.6 (near-identical) or
- * coverage ≥0.8 (one title's concepts almost fully inside the other). Looser
- * semantic near-dupes are left to the proposer prompt (which lists the pending
- * queue and is told to reply "NO PROPOSAL" on overlap) and to the human reviewer.
+ * Pure: is `candidate` a near-duplicate of any PENDING proposal? Uses the shared
+ * high-precision lexical backstop ({@link isNearDuplicate}) — it fires only on
+ * strong title overlap, so a distinct improvement is never silently dropped.
+ * Looser semantic near-dupes are left to the proposer prompt (which lists the
+ * pending queue and is told to reply "NO PROPOSAL" on overlap) and the reviewer.
  */
 export function isDuplicateProposal(candidate: EvolutionProposal, existing: EvolutionProposal[]): boolean {
-  const a = titleTokens(candidate.title);
-  if (a.length < 2) return false; // too little signal to judge similarity
-  const aset = new Set(a);
   for (const e of existing) {
     if (e.status !== "pending") continue;
-    const b = titleTokens(e.title);
-    if (b.length === 0) continue;
-    const inter = b.filter((t) => aset.has(t)).length;
-    if (inter < 2) continue;
-    const union = new Set([...a, ...b]).size;
-    const jaccard = inter / union;
-    const coverage = inter / Math.min(a.length, b.length);
-    if (jaccard >= 0.6 || coverage >= 0.8) return true;
+    if (isNearDuplicate(candidate.title, e.title)) return true;
   }
   return false;
 }

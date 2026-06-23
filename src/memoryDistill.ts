@@ -27,7 +27,9 @@ import { formatSessionRunsMarkdown } from "./sessionExport.js";
 import { shouldSkipEpisodicIngest } from "./sessionIngest.js";
 import { isBackgroundPaused } from "./backgroundPause.js";
 import { runPrompt } from "./run.js";
-import { DISTILL_WING } from "./memoryWings.js";
+import { createMemoryStore, type IMemoryStore, type MemoryNote } from "./memoryStore.js";
+import { DISTILL_WING, DISTILL_ARCHIVE_WING } from "./memoryWings.js";
+import { isNearDuplicate } from "./textSimilarity.js";
 
 /** Wing for auto-distilled durable notes (provenance tag = agent-created). Re-exported for callers/tests. */
 export { DISTILL_WING };
@@ -48,6 +50,45 @@ export interface MemoryDistillResult {
   skipped: number;
   paused: boolean;
   names: string[];
+  /** Near-duplicate distilled notes archived this pass (I-122 dedup-on-write). */
+  deduped: number;
+}
+
+/**
+ * Dedup-on-write backstop (I-122): the distiller's prompt-level "don't duplicate"
+ * is soft and lets near-dupes through (observed on prod). After a pass, collapse
+ * lexical near-duplicate `agent-distilled` notes — keep the richest (longest body)
+ * of each cluster, archive the rest to `agent-distilled-archive` (reversible, out
+ * of default recall). High-precision (shared `isNearDuplicate`), so a genuinely
+ * distinct note is never archived. Proper semantic merge stays with consolidation.
+ *
+ * Similarity is over the note's full text (title + body), NOT the title alone:
+ * distilled titles carry too few ascii tokens to clear the high-precision bar
+ * (the real prod dupes had Cyrillic/slug titles), whereas same-fact bodies overlap
+ * heavily and distinct notes' bodies do not — the body is the reliable signal.
+ */
+function noteText(n: MemoryNote): string {
+  return `${n.title || n.name}\n${n.body || ""}`;
+}
+
+export async function dedupDistilledNotes(store: IMemoryStore): Promise<{ archived: string[] }> {
+  // O(n²) over body tokens — fine for the L0 wing (bounded by consolidation, ~hundreds);
+  // add an n-cap / recency window only if the distilled wing ever grows to thousands.
+  const notes = await store.listNotes(DISTILL_WING);
+  // Richest first, so the kept representative of each cluster is the most complete.
+  const ordered = [...notes].sort((a, b) => (b.body?.length ?? 0) - (a.body?.length ?? 0));
+  const kept: MemoryNote[] = [];
+  const archived: string[] = [];
+  for (const note of ordered) {
+    const dupOf = kept.find((k) => isNearDuplicate(noteText(note), noteText(k)));
+    if (dupOf) {
+      await store.upsertNote({ name: note.name, title: note.title, body: note.body, wing: DISTILL_ARCHIVE_WING });
+      archived.push(note.name);
+    } else {
+      kept.push(note);
+    }
+  }
+  return { archived };
 }
 
 /** Pure: a non-trivial, non-test, distillable session on a real surface. */
@@ -128,7 +169,7 @@ export async function distillRecentSessions(
   dir: string,
   opts: DistillOptions = {}
 ): Promise<MemoryDistillResult> {
-  if (isBackgroundPaused(dir)) return { distilled: 0, skipped: 0, paused: true, names: [] };
+  if (isBackgroundPaused(dir)) return { distilled: 0, skipped: 0, paused: true, names: [], deduped: 0 };
 
   const cfg = loadConfig(dir);
   const windowMs = Math.max(1, opts.windowHours ?? DEFAULT_WINDOW_HOURS) * 3600_000;
@@ -181,5 +222,17 @@ export async function distillRecentSessions(
     await store.close();
   }
 
-  return { distilled, skipped, paused: false, names };
+  // Dedup-on-write backstop (I-122) — collapse lexical near-dupe distilled notes.
+  let deduped = 0;
+  const memStore = createMemoryStore(dir, cfg.stateDir);
+  try {
+    const { archived } = await dedupDistilledNotes(memStore);
+    deduped = archived.length;
+  } catch {
+    /* dedup is best-effort hygiene — never fail the distill pass on it */
+  } finally {
+    await memStore.close();
+  }
+
+  return { distilled, skipped, paused: false, names, deduped };
 }
