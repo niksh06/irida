@@ -44,9 +44,26 @@ export function isEpisodicNoiseCwd(cwd: string): boolean {
   return EPISODIC_NOISE_CWD_RE.test(basename(resolved));
 }
 
-/** Skip test/temp cwd sessions from nightly episodic ingest (I-68 / I-27 extension). */
+/** One-word greetings/acks/test pings that, with no real work, are pure recall noise. */
+const TRIVIAL_TITLE_RE = /^(hello|hi|hey|yo|ok|okay|k|test|testing|ping|once|q|x|t|\.|\?|)$/i;
+
+/**
+ * Trivial = a junk/greeting title AND no substantive work (≥2 finished non-test
+ * runs). Catches the "hello"/"t"/"once" sessions that polluted episodic recall
+ * (memory quality review 2026-06-23: 82/246 episodic notes were junk-titled),
+ * while a junk-titled session that DID real multi-turn work is still kept.
+ */
+export function isTrivialSession(session: SessionRecord, runs: RunRecord[]): boolean {
+  const title = (session.title ?? "").trim();
+  if (!TRIVIAL_TITLE_RE.test(title)) return false;
+  const substantive = runs.filter((r) => r.is_test !== true && r.status === "finished").length;
+  return substantive < 2;
+}
+
+/** Skip test/temp cwd + trivial sessions from nightly episodic ingest (I-68 / I-27 / I-123). */
 export function shouldSkipEpisodicIngest(session: SessionRecord, runs: RunRecord[]): boolean {
   if (isEpisodicNoiseCwd(session.cwd)) return true;
+  if (isTrivialSession(session, runs)) return true;
   return runs.some((r) => r.is_test === true && isEpisodicNoiseCwd(r.cwd));
 }
 

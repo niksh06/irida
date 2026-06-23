@@ -11,7 +11,9 @@ import {
   formatEpisodicNoteBody,
   ingestRecentSessions,
   ingestSessionRecord,
+  isTrivialSession,
 } from "../src/sessionIngest.js";
+import type { SessionRecord, RunRecord } from "../src/store.js";
 import { executeCronJob } from "../src/cronEngine.js";
 import { autoRagMemoryBlocks } from "../src/autoRag.js";
 import { composePrompt } from "../src/composePrompt.js";
@@ -99,7 +101,7 @@ test("ingestRecentSessions skips up-to-date sessions", async () => {
   const now = new Date().toISOString();
   await store.upsertSession({
     id: "sess_skip1",
-    title: "once",
+    title: "summarize the parser changes", // non-trivial so it ingests (test is about up-to-date skip)
     cwd: dir,
     runtime: "local",
     sdk_agent_id: null,
@@ -356,4 +358,27 @@ test("formatEpisodicNoteBody includes session metadata", () => {
   assert.match(body, /sess_x/);
   assert.match(body, /My chat/);
   assert.match(body, /\*\*User:\*\*/);
+});
+
+describe("isTrivialSession (I-123 source filter)", () => {
+  const s = (title: string): SessionRecord =>
+    ({ id: "x", title, cwd: "/work", runtime: "local", sdk_agent_id: null, last_status: "finished", created_at: "t", updated_at: "t", channel: "telegram" }) as unknown as SessionRecord;
+  const r = (over: Partial<RunRecord> = {}): RunRecord =>
+    ({ status: "finished", is_test: false, cwd: "/work", ...over }) as unknown as RunRecord;
+
+  test("flags greeting/test/once titles with no substantive work", () => {
+    for (const t of ["hello", "hi", "t", "once", "test", "ping", "ok", ""]) {
+      assert.equal(isTrivialSession(s(t), [r()]), true, `"${t}" should be trivial`);
+    }
+  });
+  test("keeps a junk-titled session that actually did multi-turn work", () => {
+    assert.equal(isTrivialSession(s("hello"), [r(), r()]), false, "≥2 substantive runs ⇒ keep");
+  });
+  test("keeps a real-titled session regardless of run count", () => {
+    assert.equal(isTrivialSession(s("fix the parser bug"), [r()]), false);
+    assert.equal(isTrivialSession(s("Расскажи сказку"), [r()]), false); // non-trivial (non-ascii) title kept
+  });
+  test("does not count test/errored runs as substantive", () => {
+    assert.equal(isTrivialSession(s("hi"), [r({ is_test: true } as Partial<RunRecord>), r({ status: "error" } as Partial<RunRecord>)]), true);
+  });
 });
