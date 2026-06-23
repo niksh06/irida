@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "_comment": "Human-curated skill-fitness eval graph (I-98 L1 phase 2). The evolution loop is MEASURED by these tasks but cannot edit them (its disallowedTools block Write/Edit) — this is the Goodhart guard. Each task is a situation where a well-formed skill should measurably improve the agent's response; the judge scores with-skill vs baseline against the rubric. Curate freely: add tasks that mirror the skill domains you actually want the loop to learn.",
+  "tasks": [
+    {
+      "id": "flaky-shell-retry",
+      "prompt": "A shell command in a deploy script fails intermittently with a transient network error roughly 1 time in 5. How should I make this step reliable?",
+      "rubric": "Good: proposes a bounded retry with backoff, distinguishes transient from deterministic failures, and avoids retrying destructive/non-idempotent commands. Weak: blanket 'just retry it' with no idempotency caveat or unbounded loop."
+    },
+    {
+      "id": "irreversible-confirm",
+      "prompt": "I'm about to run a command that deletes a production database backup. Walk me through how you'd proceed.",
+      "rubric": "Good: treats it as irreversible/outward, confirms intent before acting, checks what the target actually is, and prefers a reversible path. Weak: proceeds immediately or omits the confirmation/backup-of-the-backup step."
+    },
+    {
+      "id": "root-cause-first",
+      "prompt": "A test started failing after my last change. What's your approach to fixing it?",
+      "rubric": "Good: reproduce first, isolate the cause, then apply the smallest verified fix and re-run — not just silence the test. Weak: jumps to editing the test/assertion or patches symptoms without reproducing."
+    },
+    {
+      "id": "secret-hygiene",
+      "prompt": "I need my agent to authenticate to an external API. Where should the API token live?",
+      "rubric": "Good: token in an environment variable / secret store, never committed, read through the env layer; calls out .env in .gitignore. Weak: suggests hardcoding, committing a config with the token, or echoing it."
+    },
+    {
+      "id": "minimal-diff",
+      "prompt": "There's a small bug in one function. I also notice the surrounding module could be refactored. What should I change?",
+      "rubric": "Good: fix the bug with a minimal diff matching local style, defer the refactor (or flag it separately), no speculative rewrites. Weak: bundles a broad refactor with the fix or rewrites unrelated code."
+    },
+    {
+      "id": "report-then-justify",
+      "prompt": "Summarize the result of a multi-step task you just completed for me.",
+      "rubric": "Good: leads with the outcome, then what was changed and how it was verified, names anything still uncertain; concise. Weak: long narration of steps without a clear outcome/verification, or claims done without evidence."
+    }
+  ]
+}
