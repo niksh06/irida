@@ -8,6 +8,7 @@ import {
   ConfigError,
   applyEngineOverride,
   resolveDenyDestructive,
+  resolveSanitizeInput,
   DEFAULT_CLAUDE_AGENT_MODEL,
   type EngineProvider,
   type EngineAuth,
@@ -75,12 +76,13 @@ async function resolveSdk(
   provider: EngineProvider,
   authMode: EngineAuth,
   denyDestructive: boolean,
-  injected?: SdkLike
+  injected?: SdkLike,
+  sanitizeInput = false
 ): Promise<SdkLike> {
   if (injected) return injected;
   if (provider === "claude-agent") {
     const { createClaudeAgentSdk } = await import("./engines/claudeAgentSdk.js");
-    return createClaudeAgentSdk({ authMode, toolPolicy: { denyDestructive } });
+    return createClaudeAgentSdk({ authMode, toolPolicy: { denyDestructive, sanitizeInput } });
   }
   const mod = await import("@cursor/sdk");
   return mod.Agent as unknown as SdkLike;
@@ -194,7 +196,8 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
 
   try {
     const denyDestructive = resolveDenyDestructive(cfg.engine, runChannel);
-    const sdk = await resolveSdk(provider, authMode, denyDestructive, opts.sdk).catch((e) => {
+    const sanitizeInput = resolveSanitizeInput(cfg.engine);
+    const sdk = await resolveSdk(provider, authMode, denyDestructive, opts.sdk, sanitizeInput).catch((e) => {
       const pkg = provider === "claude-agent" ? "@anthropic-ai/claude-agent-sdk" : "@cursor/sdk";
       throw new StartupError(`cannot load ${pkg}: ` + (e as Error).message);
     });

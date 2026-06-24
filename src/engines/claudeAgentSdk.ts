@@ -40,11 +40,48 @@ export type ClaudeAgentSdk = SdkLike & SdkCreateLike & SdkResumeLike;
 export interface EngineToolPolicy {
   /** Deny destructive tool inputs at runtime via `canUseTool`. */
   denyDestructive: boolean;
+  /** I-117: rewrite borderline inputs to a safer form instead of allowing as-is (opt-in). */
+  sanitizeInput?: boolean;
 }
 
 type ToolDecision =
-  | { behavior: "allow"; updatedInput: Record<string, unknown> }
+  | { behavior: "allow"; updatedInput: Record<string, unknown>; rewrites?: string[] }
   | { behavior: "deny"; message: string };
+
+/**
+ * Curated, reversible shell-command hardenings (I-117). Each rule is conservative
+ * — it only fires on an unambiguous shape and never changes a command into
+ * something surprising in a destructive direction. Returns the (possibly)
+ * rewritten command + a human-readable note per rewrite for logging. Pure.
+ *
+ * NOTE: under the agent's non-interactive Bash, `rm -i` reads EOF → declines, so
+ * the rm rule effectively makes a bare `rm` a no-op-unless-forced. That is the
+ * intended conservative posture for a surface that opted into sanitization.
+ */
+export function sanitizeCommand(cmd: string): { command: string; rewrites: string[] } {
+  let out = cmd;
+  const rewrites: string[] = [];
+  // 1. bare `rm <path>` with NO flags → add -i (interactive). Anchored to COMMAND
+  //    position (start, or after a `; && || | ( newline` separator) so an `rm`
+  //    inside a quoted string or as an argument (e.g. `git commit -m "rm x"`,
+  //    `grep rm f`) is NOT touched; global so every rm in a compound is hardened.
+  //    Flagged forms (`rm -rf`/`-r`/`-f`) are left untouched / denied upstream.
+  const afterRm = out.replace(/(^|[\n;&|(]\s*)rm\s+(?=[^-\s])/g, "$1rm -i ");
+  if (afterRm !== out) {
+    out = afterRm;
+    rewrites.push("rm → rm -i (interactive; non-interactive shell ⇒ declines)");
+  }
+  // 2. strip --no-verify (re-enable git hooks).
+  if (/--no-verify\b/.test(out)) {
+    out = out.replace(/\s*--no-verify\b/g, "");
+    rewrites.push("stripped --no-verify (git hooks re-enabled)");
+  }
+  // NOTE: `git push --force` is NOT rewritten here — it stays hard-DENIED by the
+  // safety denylist (stronger than a rewrite, and the deny gate runs first / even
+  // when sanitize is off). The safe `--force-with-lease` is allowed directly
+  // (the denylist lookahead was widened in I-117 so it no longer blocks it).
+  return { command: out, rewrites };
+}
 
 /**
  * Vet a single tool call's input for a destructive shell pattern (I-94). Scans
@@ -59,12 +96,29 @@ type ToolDecision =
  * (Write/Edit/curl/WebFetch/non-preapproved Bash) fails with a union ZodError
  * otherwise, which silently breaks the whole gated agent).
  */
-export function evaluateToolInput(input: Record<string, unknown>): ToolDecision {
+export function evaluateToolInput(
+  input: Record<string, unknown>,
+  opts?: { sanitize?: boolean }
+): ToolDecision {
   for (const v of Object.values(input)) {
     if (typeof v !== "string") continue;
     const hit = destructiveReason(v);
     if (hit) {
       return { behavior: "deny", message: `irida tool-policy: blocked destructive tool input (${hit})` };
+    }
+  }
+  // I-117: not destructive — optionally rewrite a borderline shell command to a
+  // safer form (the Bash `command` field) instead of allowing it verbatim.
+  if (opts?.sanitize && typeof input.command === "string") {
+    const { command, rewrites } = sanitizeCommand(input.command);
+    if (rewrites.length) {
+      // Defense-in-depth: never hand back a rewritten command that itself trips
+      // the denylist (current rules can't, but this keeps future rules honest).
+      const hit = destructiveReason(command);
+      if (hit) {
+        return { behavior: "deny", message: `irida tool-policy: blocked destructive tool input (${hit})` };
+      }
+      return { behavior: "allow", updatedInput: { ...input, command }, rewrites };
     }
   }
   return { behavior: "allow", updatedInput: input };
@@ -141,15 +195,20 @@ type QueryOptions = {
  * routes tool calls through `canUseTool`, which allows everything except
  * destructive inputs. `canUseTool` runs every turn and survives `resume`.
  */
-function permissionOptions(denyDestructive: boolean): Pick<QueryOptions, "permissionMode" | "canUseTool"> {
+function permissionOptions(
+  denyDestructive: boolean,
+  sanitizeInput = false
+): Pick<QueryOptions, "permissionMode" | "canUseTool"> {
   if (!denyDestructive) return { permissionMode: "bypassPermissions" };
   return {
     permissionMode: "default",
     canUseTool: async (toolName, input) => {
-      const decision = evaluateToolInput(input);
+      const decision = evaluateToolInput(input, { sanitize: sanitizeInput });
+      // Both land in stderr → gateway.error.log for the autonomous surfaces.
       if (decision.behavior === "deny") {
-        // Lands in stderr → gateway.error.log for the autonomous surfaces.
         console.error(`[tool-policy] deny ${toolName}: ${decision.message}`);
+      } else if (decision.rewrites?.length) {
+        console.error(`[tool-policy] rewrote ${toolName}: ${decision.rewrites.join("; ")}`);
       }
       return decision;
     },
@@ -191,6 +250,7 @@ export function createClaudeAgentSdk(opts?: {
 }): ClaudeAgentSdk {
   const authMode: EngineAuth = opts?.authMode ?? "api-key";
   const denyDestructive = opts?.toolPolicy?.denyDestructive ?? false;
+  const sanitizeInput = opts?.toolPolicy?.sanitizeInput ?? false;
 
   /** Interactive agent handle: one Agent SDK session, resumed per turn. */
   function makeAgent(init: {
@@ -211,7 +271,7 @@ export function createClaudeAgentSdk(opts?: {
           q = await startQuery(message, {
             model,
             cwd: init.cwd,
-            ...permissionOptions(denyDestructive),
+            ...permissionOptions(denyDestructive, sanitizeInput),
             ...(init.mcpServers ? { mcpServers: init.mcpServers } : {}),
             ...(sessionId ? { resume: sessionId } : {}),
           });
@@ -274,7 +334,7 @@ export function createClaudeAgentSdk(opts?: {
         const q = await startQuery(message, {
           model: sdkOpts.model.id,
           cwd: sdkOpts.local.cwd,
-          ...permissionOptions(denyDestructive),
+          ...permissionOptions(denyDestructive, sanitizeInput),
           ...(toAgentMcpServers(sdkOpts.mcpServers) ? { mcpServers: toAgentMcpServers(sdkOpts.mcpServers) } : {}),
           ...(sdkOpts.disallowedTools?.length ? { disallowedTools: sdkOpts.disallowedTools } : {}),
         });

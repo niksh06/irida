@@ -23,7 +23,7 @@ export interface SafetyDecision {
 const DESTRUCTIVE: RegExp[] = [
   /\brm\s+-[a-z]*r[a-z]*f?\b/i, // rm -rf
   /\brm\s+-[a-z]*f[a-z]*r?\b/i,
-  /\bgit\s+push\s+.*--force\b/i,
+  /\bgit\s+push\s+.*(?:--force(?!-with-lease)|-f)\b/i, // deny --force AND short -f; ALLOW safe --force-with-lease (I-117)
   /\bgit\s+reset\s+--hard\b/i,
   /\bgit\s+clean\s+-[a-z]*f/i,
   /\bdrop\s+(table|database|schema)\b/i,

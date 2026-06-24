@@ -9,6 +9,7 @@ describe("destructiveReason (shared denylist)", () => {
     assert.equal(destructiveReason("rm -rf /tmp/x"), "rm -rf");
     assert.match(destructiveReason("psql -c 'DROP TABLE users'") ?? "", /drop table/i);
     assert.ok(destructiveReason("git push origin main --force"));
+    assert.ok(destructiveReason("git push -f")); // S3: short force-push also denied
   });
   it("returns null for benign text", () => {
     assert.equal(destructiveReason("ls -la && cat README.md"), null);
@@ -62,5 +63,60 @@ describe("resolveDenyDestructive (per-surface policy)", () => {
     assert.equal(resolveDenyDestructive(e, "cron"), true);
     assert.equal(resolveDenyDestructive(e, "tui"), false); // relaxed interactive surface
     assert.equal(resolveDenyDestructive(e, "unknown"), false); // falls back to top-level
+  });
+});
+
+import { sanitizeCommand } from "../src/engines/claudeAgentSdk.js";
+
+describe("sanitizeCommand (I-117 input sanitizer)", () => {
+  it("adds -i to a bare rm (no flags)", () => {
+    assert.equal(sanitizeCommand("rm a && rm b").command, "rm -i a && rm -i b"); // S2: every rm in a compound
+    assert.equal(sanitizeCommand(`git commit -m "rm temp"`).command, `git commit -m "rm temp"`); // S1: not in a quoted arg
+    assert.equal(sanitizeCommand("grep rm foo").command, "grep rm foo"); // S1: not an argument
+    const r = sanitizeCommand("rm notes.txt");
+    assert.equal(r.command, "rm -i notes.txt");
+    assert.equal(r.rewrites.length, 1);
+  });
+  it("leaves flagged rm untouched (too risky to parse; -rf is denied upstream)", () => {
+    assert.equal(sanitizeCommand("rm -i notes.txt").rewrites.length, 0);
+    assert.equal(sanitizeCommand("rm -f notes.txt").command, "rm -f notes.txt");
+  });
+  it("strips --no-verify", () => {
+    const r = sanitizeCommand("git commit --no-verify -m 'x'");
+    assert.equal(r.command, "git commit -m 'x'");
+    assert.match(r.rewrites[0]!, /no-verify/);
+  });
+  it("no-ops a benign command", () => {
+    assert.deepEqual(sanitizeCommand("ls -la && git status").rewrites, []);
+  });
+});
+
+describe("evaluateToolInput sanitize path (I-117)", () => {
+  it("rewrites a borderline command when sanitize is on, carrying the rewrite log", () => {
+    const d = evaluateToolInput({ command: "git commit --no-verify -m x" }, { sanitize: true });
+    assert.equal(d.behavior, "allow");
+    if (d.behavior === "allow") {
+      assert.equal(d.updatedInput.command, "git commit -m x");
+      assert.ok(d.rewrites && d.rewrites.length === 1);
+    }
+  });
+  it("allows verbatim (no rewrites) when sanitize is off — default", () => {
+    const d = evaluateToolInput({ command: "rm notes.txt" });
+    assert.equal(d.behavior, "allow");
+    if (d.behavior === "allow") {
+      assert.equal(d.updatedInput.command, "rm notes.txt");
+      assert.equal(d.rewrites, undefined);
+    }
+  });
+  it("deny still wins over sanitize for genuinely destructive input", () => {
+    const d = evaluateToolInput({ command: "rm -rf /tmp/x" }, { sanitize: true });
+    assert.equal(d.behavior, "deny");
+  });
+});
+
+describe("denylist: --force-with-lease allowed, --force denied (I-117)", () => {
+  it("denies bare force-push but allows the safe lease form", () => {
+    assert.ok(destructiveReason("git push origin main --force"));
+    assert.equal(destructiveReason("git push --force-with-lease origin main"), null);
   });
 });

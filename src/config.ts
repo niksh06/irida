@@ -131,6 +131,13 @@ export interface ToolPolicyConfig {
   denyDestructive?: boolean;
   /** Per-surface override of denyDestructive, keyed by SessionChannel (e.g. "telegram", "cron", "tui"). */
   bySurface?: Record<string, boolean>;
+  /**
+   * I-117: rewrite borderline inputs to a safer form (rm→rm -i, strip --no-verify)
+   * instead of allowing verbatim. Default false. Only acts on surfaces where the
+   * deny gate is on (it runs inside the same canUseTool). (git push --force stays
+   * hard-denied; --force-with-lease is allowed directly.)
+   */
+  sanitizeInput?: boolean;
 }
 
 export interface EvolutionConfig {
@@ -167,6 +174,11 @@ export function resolveDenyDestructive(engine: EngineConfig, channel?: string): 
     return Boolean(p.bySurface[channel]);
   }
   return Boolean(p.denyDestructive);
+}
+
+/** Effective input-sanitizer policy (I-117). Global opt-in; only acts where the deny gate runs. */
+export function resolveSanitizeInput(engine: EngineConfig): boolean {
+  return Boolean(engine.toolPolicy?.sanitizeInput);
 }
 
 /** Default model for the claude-agent engine when none is configured. */
@@ -355,6 +367,7 @@ const skillPolicySchema = z.object({ allowUnsafe: trimmedStringArray.optional() 
 const toolPolicySchema = z.object({
   denyDestructive: z.boolean().optional(),
   bySurface: z.record(z.boolean()).optional(),
+  sanitizeInput: z.boolean().optional(),
 });
 
 const evolutionSchema = z.object({
