@@ -73,6 +73,20 @@ export function formatSdkError(e: unknown): FormattedSdkError {
     };
   }
 
+  // Transient capacity/permission errors — account/subscription bursts return
+  // `403 Request not allowed`, plus 429/529/503/overloaded. Rotating the session
+  // NEVER helps (the fresh agent hits the same upstream state) and just sheds
+  // context + spawns a session. Mark non-rotatable + recoverable so chat retries
+  // in place instead. (I-127)
+  if (!auth && /\b(403 request not allowed|429|503|529)\b|overloaded|rate.?limit|too many requests|service unavailable/i.test(raw)) {
+    return {
+      message: redact(`Upstream busy — ${raw}. Transient; retry shortly.`),
+      errorKind: "overload",
+      recoverable: true,
+      rotatable: false,
+    };
+  }
+
   const message = redact(raw || "SDK request failed");
   return {
     message: auth ? `Authentication failed — ${message}` : message,

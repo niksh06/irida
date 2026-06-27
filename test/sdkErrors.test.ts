@@ -136,3 +136,31 @@ describe("openChatSession sendTurn errors", () => {
     }
   });
 });
+
+describe("formatSdkError — transient capacity errors are non-rotatable (I-127)", () => {
+  const cases = [
+    "Failed to authenticate. API Error: 403 Request not allowed", // the prod account burst 403
+    "API Error: 429 rate limit exceeded",
+    "Overloaded: the model is overloaded",
+    "API Error: 529 overloaded_error",
+    "503 service unavailable",
+  ];
+  for (const msg of cases) {
+    it(`does NOT rotate on: ${msg.slice(0, 40)}`, () => {
+      const r = formatSdkError(new Error(msg));
+      assert.equal(r.rotatable, false, "must not rotate the session");
+      assert.equal(r.recoverable, true);
+      assert.equal(r.errorKind, "overload");
+    });
+  }
+  it("still rotates a genuine non-transient SDK error", () => {
+    const r = formatSdkError(new Error("some unexpected sdk failure"));
+    assert.equal(r.rotatable, true);
+    assert.equal(r.errorKind, "sdk");
+  });
+  it("still classifies auth errors as auth / non-rotatable", () => {
+    const r = formatSdkError(new Error("invalid api key"));
+    assert.equal(r.errorKind, "auth");
+    assert.equal(r.rotatable, false);
+  });
+});
