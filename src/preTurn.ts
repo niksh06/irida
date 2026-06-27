@@ -7,7 +7,21 @@ import type { AgentConfig } from "./config.js";
 
 export type TurnMode = "advice" | "do" | "debug" | "sync";
 
+/** All turn modes (I-91 — /mode slash + per-chat persistence). */
+export const TURN_MODES: readonly TurnMode[] = ["advice", "do", "debug", "sync"];
+
 const MODE_PREFIX_RE = /^(ADVICE|DO|DEBUG|SYNC):\s*/i;
+
+/** True if the message already carries an explicit mode prefix (ADVICE:/DO:/…). */
+export function hasModePrefix(text: string): boolean {
+  return MODE_PREFIX_RE.test(text.trim());
+}
+
+/** Parse a /mode argument into a TurnMode, or undefined if not a valid mode. */
+export function parseModeArg(raw: string): TurnMode | undefined {
+  const v = raw.trim().toLowerCase();
+  return (TURN_MODES as readonly string[]).includes(v) ? (v as TurnMode) : undefined;
+}
 
 const MODE_LINES: Record<TurnMode, string> = {
   advice: "Mode: ADVICE — discuss options and trade-offs; do not implement unless asked.",

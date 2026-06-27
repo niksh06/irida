@@ -13,6 +13,7 @@ import type { SessionChannel } from "./sessionChannel.js";
 import { buildDigestFollowupTurn, parseDigestFollowup } from "./gatewayDigestFollowup.js";
 import { loadLastDigestContext } from "./digestQa.js";
 import { handleGatewaySlash, isGatewaySlashCommand } from "./gatewaySlash.js";
+import { getChatMode, applyChatModePrefix } from "./gatewayModeStore.js";
 import { loadGatewayConfig, type GatewayConfig } from "./gatewayConfig.js";
 import { defaultServiceLogSink } from "./serviceLog.js";
 
@@ -150,6 +151,9 @@ export class GatewaySessionRouter {
         this.onLog(`[gateway] digest follow-up ${followup.label} chat=${chatId}`);
         turnText = buildDigestFollowupTurn(turnText, loadLastDigestContext(this.dir));
       }
+      // Sticky per-chat mode (I-91): prepend the mode prefix unless the message
+      // already carries an explicit one. parseTurnMode then applies it.
+      turnText = applyChatModePrefix(turnText, getChatMode(this.dir, this.adapter, chatId));
       const out = await session.sendTurn(turnText, hooks);
       if (out.kind === "ok") return { reply: out.assistantText };
       if (out.kind === "blocked") throw new GatewayRouterError(out.reason, "blocked");

@@ -13,6 +13,8 @@ import { loadConfig } from "./config.js";
 import { loadRunMetrics, formatRunMetrics, loadSessionUsage, formatSessionUsage } from "./runMetrics.js";
 import { loadProposals } from "./evolutionCycle.js";
 import { loadSkillLedger, rollbackAgentSkill } from "./skillApply.js";
+import { getChatMode, setChatMode, clearChatMode } from "./gatewayModeStore.js";
+import { parseModeArg, TURN_MODES } from "./preTurn.js";
 import { createStore } from "./store.js";
 import { searchSessions } from "./sessionSearch.js";
 import { listSkills } from "./skills.js";
@@ -157,6 +159,24 @@ export async function handleGatewaySlash(
         out.push("undo: /proposals rollback <skill>");
       }
       return out.length ? out.join("\n") : "evolution: no pending proposals or auto-applied skills";
+    }
+
+    case "mode": {
+      const arg = p.arg.trim().toLowerCase();
+      if (!arg) {
+        const cur = getChatMode(ctx.dir, ctx.adapter, ctx.chatId);
+        return cur
+          ? `mode: **${cur}** (sticky). Change: /mode ${TURN_MODES.join("|")} · clear: /mode off`
+          : `mode: none (per-message prefix or default). Set sticky: /mode ${TURN_MODES.join("|")}`;
+      }
+      if (arg === "off" || arg === "clear" || arg === "none") {
+        const had = clearChatMode(ctx.dir, ctx.adapter, ctx.chatId);
+        return had ? "mode cleared — back to per-message / default" : "mode was not set";
+      }
+      const mode = parseModeArg(arg);
+      if (!mode) return `unknown mode «${arg}». Use: ${TURN_MODES.join(" | ")} (or off)`;
+      setChatMode(ctx.dir, ctx.adapter, ctx.chatId, mode);
+      return `mode → **${mode}** (sticky; applies to messages without an explicit ADVICE:/DO:/… prefix)`;
     }
 
     case "memory": {

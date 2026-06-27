@@ -113,3 +113,17 @@ test("/proposals with nothing pending or applied says so", async () => {
     sb.restore();
   }
 });
+
+test("/mode sets, shows, and clears a sticky per-chat mode (I-91)", async () => {
+  const sb = slashSandbox();
+  try {
+    assert.match((await handleGatewaySlash("/mode", sb.ctx))!, /mode: none/);
+    assert.match((await handleGatewaySlash("/mode do", sb.ctx))!, /mode → \*\*do\*\*/);
+    assert.match((await handleGatewaySlash("/mode", sb.ctx))!, /mode: \*\*do\*\*/);
+    assert.match((await handleGatewaySlash("/mode bogus", sb.ctx))!, /unknown mode/);
+    assert.match((await handleGatewaySlash("/mode off", sb.ctx))!, /mode cleared/);
+    assert.match((await handleGatewaySlash("/mode", sb.ctx))!, /mode: none/);
+  } finally {
+    sb.restore();
+  }
+});
