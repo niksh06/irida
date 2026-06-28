@@ -48,5 +48,21 @@ echo "  dest: $DEST"
 echo
 # -a archive (perms/exec bits/timestamps), -i itemize changes, -h human sizes.
 rsync -aih $MODE "${EXCLUDES[@]}" "$SRC" "$DEST"
+
+# Rebuild dist on prod after an apply. The gateway and cron-tick run from src/ via
+# tsx (always current), but the in-process MCP servers (memory/cron/ask) run from
+# dist/ — and dist/ is EXCLUDED from the sync (prod-owned build artifact). Without
+# this, dist drifts behind the synced source and the MCP servers run stale code
+# (I-128: cron_list threw on a stale builtin enum baked into dist/cronJobs.js).
+if [[ -z "$MODE" ]]; then
+  echo
+  echo "rebuilding dist on prod (tsc)…"
+  if ( cd "$DEST" && npm run build ); then
+    echo "dist rebuilt — MCP servers match the synced source"
+  else
+    echo "WARN: dist build failed — MCP servers may run stale code until rebuilt" >&2
+  fi
+fi
+
 echo
-[[ -n "$MODE" ]] && echo "(dry-run — re-run with --apply to sync)" || echo "synced. Restart gateway if src changed: launchctl kickstart -k gui/\$(id -u)/ai.irida.gateway"
+[[ -n "$MODE" ]] && echo "(dry-run — re-run with --apply to sync)" || echo "synced + dist built. Restart gateway to pick up src/MCP changes: launchctl kickstart -k gui/\$(id -u)/ai.irida.gateway"

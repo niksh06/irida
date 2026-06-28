@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   CRON_JOBS_BACKUP_PREFIX,
+  CRON_BUILTIN_HANDLERS,
   CronJobsError,
   loadCronJobs,
   saveCronJobs,
@@ -23,6 +24,23 @@ import { gatherGatewayStatus } from "../src/gatewayStatus.js";
 function tmp(): string {
   return mkdtempSync(resolve(tmpdir(), "cron-guard-"));
 }
+
+test("every CRON_BUILTIN_HANDLERS entry round-trips save→load (I-128 enum drift guard)", () => {
+  // The cron read-path (loadCronJobs, used by the cron_list MCP tool) validates
+  // each job's builtin against CRON_BUILTIN_HANDLERS. I-128: a stale enum (built
+  // dist behind src) dropped the 5 newer builtins → loadCronJobs threw on them →
+  // the whole listing failed even though the jobs ran. Lock the enum: every entry
+  // must load without throwing, so dropping one breaks the test, not prod.
+  const dir = tmp();
+  const jobs = CRON_BUILTIN_HANDLERS.map((b) => ({ id: `b-${b}`, cron: "0 0 * * *", builtin: b }));
+  saveCronJobs(dir, jobs); // validates on write
+  const loaded = loadCronJobs(dir); // validates on read — the cron_list path
+  assert.equal(loaded.length, CRON_BUILTIN_HANDLERS.length);
+  assert.deepEqual(
+    new Set(loaded.map((j) => j.builtin)),
+    new Set(CRON_BUILTIN_HANDLERS)
+  );
+});
 
 test("saveCronJobs rejects invalid jobs and leaves file unchanged", () => {
   const dir = tmp();
