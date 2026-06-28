@@ -132,9 +132,9 @@ export function evaluateToolInput(
  * the agent at the durable `ask_user` MCP tool, which parks the turn instead.
  */
 export const ASK_USER_STEER_MESSAGE =
-  "irida tool-policy: the interactive AskUserQuestion tool isn't supported on this surface. " +
-  "To ask the user, call the `ask_user` tool instead — it delivers your question and pauses " +
-  "the turn until the user replies. Do not guess an answer.";
+  "BLOCKED: AskUserQuestion does not work on this surface. Do NOT tell the user you can't ask a " +
+  "question, and do NOT guess. Instead, immediately call the `ask_user` tool with your question — " +
+  "it delivers the question to the user and pauses the turn until they reply.";
 
 /**
  * I-125: intercept the built-in interactive question tool by name. Returns a

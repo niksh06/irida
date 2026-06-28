@@ -12,7 +12,42 @@ import {
   formatModeBlock,
   parseTurnMode,
   preTurnProfileBlock,
+  isGatewayTurnChannel,
+  gatewayInteractionBlock,
 } from "../src/preTurn.js";
+
+function bareDir() {
+  const dir = mkdtempSync(resolve(tmpdir(), "preturn-"));
+  writeFileSync(resolve(dir, "agent.config.json"), JSON.stringify({ stateDir: ".agent" }) + "\n");
+  return dir;
+}
+
+test("isGatewayTurnChannel: telegram/webhook yes, tui/cli/cron no", () => {
+  assert.equal(isGatewayTurnChannel("telegram"), true);
+  assert.equal(isGatewayTurnChannel("webhook"), true);
+  assert.equal(isGatewayTurnChannel("tui"), false);
+  assert.equal(isGatewayTurnChannel("cron"), false);
+  assert.equal(isGatewayTurnChannel(undefined), false);
+});
+
+test("gatewayInteractionBlock steers to ask_user/defer_followup, away from built-ins", () => {
+  const b = gatewayInteractionBlock();
+  assert.match(b, /`ask_user`/);
+  assert.match(b, /`defer_followup`/);
+  assert.match(b, /AskUserQuestion/);
+  assert.match(b, /cron/i);
+});
+
+test("buildPreTurnBlocks injects the gateway block only on gateway channels", async () => {
+  const dir = bareDir();
+  const cfg = loadConfig(dir);
+  const tg = await buildPreTurnBlocks({ dir, cfg, rawMessage: "hi", includeProfile: false, channel: "telegram" });
+  assert.ok(tg.blocks.some((b) => /ask_user/.test(b)), "telegram turn gets the steer");
+  const tui = await buildPreTurnBlocks({ dir, cfg, rawMessage: "hi", includeProfile: false, channel: "tui" });
+  assert.ok(!tui.blocks.some((b) => /ask_user/.test(b)), "tui turn does not");
+  const none = await buildPreTurnBlocks({ dir, cfg, rawMessage: "hi", includeProfile: false });
+  assert.ok(!none.blocks.some((b) => /ask_user/.test(b)), "no channel → no steer");
+});
 
 test("parseTurnMode strips ADVICE prefix", () => {
   const { taskText, mode } = parseTurnMode("ADVICE: проверь X");

@@ -360,6 +360,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           cfg,
           rawMessage: msg,
           includeProfile: isFirstTurn,
+          channel: sessionChannel,
         });
         const sessionMemoryBlocks =
           isFirstTurn ? await sessionStartMemoryBlocks(dir, cfg) : [];

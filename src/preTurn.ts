@@ -67,6 +67,29 @@ export function formatModeBlock(mode: TurnMode): string {
   return MODE_LINES[mode];
 }
 
+/** Gateway channels where the async ask/defer tools apply (not TUI/CLI). */
+const GATEWAY_TURN_CHANNELS = new Set<string>(["telegram", "webhook"]);
+
+export function isGatewayTurnChannel(channel?: string): boolean {
+  return !!channel && GATEWAY_TURN_CHANNELS.has(channel);
+}
+
+/**
+ * I-125/I-126: on the async, non-interactive gateway surface the model's built-in
+ * interactive tools don't reach the user — it must use the irida MCP tools. The
+ * model defaults to its trained AskUserQuestion/cron habits unless told otherwise,
+ * so this block is injected every gateway turn to steer it to ask_user/defer_followup.
+ */
+export function gatewayInteractionBlock(): string {
+  return [
+    "### How to interact on this surface (async Telegram chat)",
+    "You are talking to the user over Telegram — replies may be minutes apart and there is NO interactive UI. Use these tools, NOT your built-ins:",
+    "- To ask the user a clarifying question and wait for the answer: call the **`ask_user`** tool. Do NOT use the built-in AskUserQuestion (it does not work here). Never tell the user you cannot ask — just call `ask_user`.",
+    "- To defer work and come back to the user yourself later (a build/deploy to finish, “I'll check in N min”): call the **`defer_followup`** tool (reason + after_minutes). Do NOT use cron — that is for recurring jobs, not one-shot follow-ups.",
+    "After calling either tool, end your turn with a short honest ack. The user's reply (ask_user) or the scheduled follow-up (defer_followup) continues the conversation later.",
+  ].join("\n");
+}
+
 function formatProfileBlock(name: string, body: string): string {
   return `### User profile excerpt (${name})\n\n${body.trim()}`;
 }
@@ -105,6 +128,8 @@ export async function buildPreTurnBlocks(args: {
   cfg: AgentConfig;
   rawMessage: string;
   includeProfile: boolean;
+  /** Owning channel — gateway channels get the ask_user/defer_followup steer. */
+  channel?: string;
 }): Promise<{ taskText: string; blocks: string[] }> {
   const preTurnCfg = args.cfg.memory?.preTurn;
   const { taskText, mode } = parseTurnMode(args.rawMessage, {
@@ -114,6 +139,7 @@ export async function buildPreTurnBlocks(args: {
 
   const blocks: string[] = [];
   if (mode) blocks.push(formatModeBlock(mode));
+  if (isGatewayTurnChannel(args.channel)) blocks.push(gatewayInteractionBlock());
   if (args.includeProfile && preTurnCfg?.profileNote?.trim()) {
     const profile = await preTurnProfileBlock(args.dir, args.cfg);
     if (profile) blocks.push(profile);

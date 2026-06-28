@@ -23,6 +23,7 @@ import {
   saveDigestQaResult,
 } from "./digestQa.js";
 import { EXIT, type ExitCode } from "./exit.js";
+import { iridaHome } from "./env.js";
 
 import type { SdkLike, SdkCreateLike, SdkResumeLike } from "./host.js";
 
@@ -142,8 +143,14 @@ export async function cmdCronTick(opts: CronCmdOptions = {}): Promise<ExitCode> 
   const result = await cronTick({ dir, sdk: opts.sdk });
   if (result.ran.length) console.log(`cron tick: ran ${result.ran.join(", ")}`);
   // I-126: fire due deferred follow-ups (independent of cron jobs; honors pause).
+  // Follow-ups are GATEWAY state — the defer_followup MCP tool writes them under
+  // the gateway's dir (iridaHome()) and the gateway drains the outbox from there.
+  // cron-tick's cwd differs from the gateway's dir on prod (gateway uses
+  // iridaHome(), cron uses process.cwd()), so anchor to iridaHome() or the
+  // follow-up is read — and its result delivered — to the wrong directory.
   try {
-    const fu = await runDueFollowups({ dir, sdk: opts.sdk });
+    const followupDir = iridaHome() ?? dir;
+    const fu = await runDueFollowups({ dir: followupDir, sdk: opts.sdk });
     if (fu.fired.length || fu.failed.length || fu.stale.length) {
       console.log(
         `cron tick: follow-ups fired ${fu.fired.length}, failed ${fu.failed.length}, stale ${fu.stale.length}`
