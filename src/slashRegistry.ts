@@ -43,7 +43,8 @@ export const SLASH_REGISTRY: SlashRegistryEntry[] = [
   { cmd: "schedule", desc: "Cron schedule ops", descGateway: "Cron: list/add/approve", args: "[subcommand]", surfaces: ["gateway"] },
   { cmd: "undo", desc: "Undo last reversible mutation", descGateway: "Отменить последнее действие", surfaces: ["tui", "gateway"] },
   { cmd: "mode", desc: "Sticky turn mode (advice/do/debug/sync)", descGateway: "Режим ответа: advice/do/debug/sync (или off)", args: "[advice|do|debug|sync|off]", surfaces: ["gateway"] },
-  { cmd: "cancel", desc: "Abandon the agent's pending question", descGateway: "Отменить ожидающий вопрос агента", surfaces: ["gateway"] },
+  { cmd: "cancel", desc: "Abandon pending question / a follow-up by id", descGateway: "Отменить вопрос агента или отложенную задачу (/cancel <fu_id>)", args: "[fu_id]", surfaces: ["gateway"] },
+  { cmd: "followups", desc: "List scheduled deferred follow-ups", descGateway: "Отложенные задачи агента (defer_followup)", surfaces: ["gateway"] },
 ];
 
 export function slashEntriesForSurface(surface: SlashSurface): SlashRegistryEntry[] {

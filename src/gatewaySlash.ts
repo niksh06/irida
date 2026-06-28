@@ -15,6 +15,7 @@ import { loadProposals } from "./evolutionCycle.js";
 import { loadSkillLedger, rollbackAgentSkill } from "./skillApply.js";
 import { getChatMode, setChatMode, clearChatMode } from "./gatewayModeStore.js";
 import { clearPendingQuestion } from "./gatewayPendingQuestionStore.js";
+import { listFollowups, clearFollowup, getFollowup } from "./gatewayFollowupStore.js";
 import { parseModeArg, TURN_MODES } from "./preTurn.js";
 import { createStore } from "./store.js";
 import { searchSessions } from "./sessionSearch.js";
@@ -181,11 +182,37 @@ export async function handleGatewaySlash(
     }
 
     case "cancel": {
-      // I-125: abandon a parked clarifying question without resetting the session.
+      const arg = p.arg.trim();
+      // I-126: `/cancel <fu_id>` drops a scheduled deferred follow-up.
+      if (/^fu_/i.test(arg)) {
+        const fu = getFollowup(ctx.dir, arg);
+        if (!fu || peerKey(fu.adapter, fu.chatId) !== peerKey(ctx.adapter, ctx.chatId)) {
+          return `Нет отложенной задачи с id ${arg} в этом чате.`;
+        }
+        clearFollowup(ctx.dir, arg);
+        return `Отменил отложенную задачу ${arg} («${fu.reason.slice(0, 80)}»).`;
+      }
+      // I-125: bare `/cancel` abandons a parked clarifying question (no session reset).
       const had = clearPendingQuestion(ctx.dir, ctx.adapter, ctx.chatId);
       return had
         ? "Снял ожидание ответа на вопрос агента. Пиши что угодно — продолжим с нового."
-        : "Нет ожидающего вопроса от агента.";
+        : "Нет ожидающего вопроса от агента. (Для отложенной задачи: /cancel <fu_id>.)";
+    }
+
+    case "followups": {
+      // I-126: list this chat's pending deferred follow-ups.
+      const items = listFollowups(ctx.dir, ctx.adapter, ctx.chatId);
+      if (items.length === 0) return "Нет отложенных задач. (Агент создаёт их сам через defer_followup.)";
+      const now = Date.now();
+      const lines = items
+        .slice()
+        .sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt))
+        .map((f) => {
+          const mins = Math.round((Date.parse(f.dueAt) - now) / 60000);
+          const when = mins <= 0 ? "вот-вот" : `через ~${mins} мин`;
+          return `• ${f.id} (${when}): ${f.reason.replace(/\s+/g, " ").slice(0, 90)}`;
+        });
+      return ["Отложенные задачи:", ...lines, "", "Отменить: /cancel <id>"].join("\n");
     }
 
     case "memory": {

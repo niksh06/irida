@@ -19,6 +19,7 @@ import { cronJobsPath, loadCronJobs, loadCronState, validateCronJobsFile } from 
 import { formatCronLastResultSummary } from "./cronRunRecord.js";
 import { formatRunMetrics, loadRunMetrics } from "./runMetrics.js";
 import { assessOutboxHealth } from "./gatewayOutbox.js";
+import { loadFollowups } from "./gatewayFollowupStore.js";
 
 export interface GatewayStatusLine {
   name: string;
@@ -102,6 +103,18 @@ export function gatherGatewayStatus(dir: string = process.cwd()): GatewayStatusL
       ? `PAUSED — cron runs no jobs (${[pause.source, pause.reason].filter(Boolean).join(": ")})`
       : "active — cron runs due jobs",
   });
+
+  // I-126: deferred follow-ups awaiting their due time (cron-tick fires them).
+  try {
+    const pending = loadFollowups(dir).followups.length;
+    rows.push({
+      name: "follow-ups",
+      ok: true,
+      detail: pending > 0 ? `${pending} pending (deferred self-resume)` : "none scheduled",
+    });
+  } catch {
+    // non-fatal — status should never break on the follow-up store
+  }
 
   const gwLaunch = launchdRunning(GATEWAY_LABELS);
   rows.push({ name: "launchd gateway", ok: gwLaunch.ok, detail: gwLaunch.detail });

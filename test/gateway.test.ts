@@ -16,6 +16,7 @@ import {
 } from "../src/gatewayRouter.js";
 import { dispatchWebhookRequest, parseWebhookBody, webhookAuthOk } from "../src/gatewayWebhook.js";
 import { setPendingQuestion, getPendingQuestion } from "../src/gatewayPendingQuestionStore.js";
+import { addFollowup, listFollowups } from "../src/gatewayFollowupStore.js";
 import { savePairingFile } from "../src/gatewayPairing.js";
 import { startGateway } from "../src/gateway_cmd.js";
 import { writeExampleGatewayConfig } from "./helpers/gatewayConfig.js";
@@ -214,6 +215,27 @@ test("/cancel abandons a parked question without running a turn (I-125)", async 
     // /cancel on an empty state is a clean no-op message
     const again = await router.handleInbound("u1", "/cancel");
     assert.match(again.reply, /Нет ожидающего/);
+    await router.closeAll();
+  });
+});
+
+test("/followups lists, /cancel <fu_id> drops a deferred follow-up (I-126)", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+    const r = addFollowup(dir, { chatId: "u1", adapter: "telegram", reason: "report the build", afterMinutes: 30 });
+    const id = r.followup!.id;
+
+    const list = await router.handleInbound("u1", "/followups");
+    assert.match(list.reply, new RegExp(id));
+    assert.match(list.reply, /report the build/);
+
+    const cancel = await router.handleInbound("u1", `/cancel ${id}`);
+    assert.match(cancel.reply, /Отменил отложенную задачу/);
+    assert.equal(listFollowups(dir, "telegram", "u1").length, 0);
+
+    const empty = await router.handleInbound("u1", "/followups");
+    assert.match(empty.reply, /Нет отложенных задач/);
     await router.closeAll();
   });
 });

@@ -12,6 +12,7 @@ import {
 import { formatCronWhen, nextCronRun } from "./cronSchedule.js";
 import { cronJobEnabled } from "./cronJobs.js";
 import { executeCronJob, cronTick, markCronJobRan } from "./cronEngine.js";
+import { runDueFollowups } from "./gatewayFollowups.js";
 import { resolveJobNotifyTarget, sendCronJobNotify, sendDigestQaAlertMessage } from "./cronNotify.js";
 import { saveCronJobResult } from "./cronRunRecord.js";
 import {
@@ -140,6 +141,17 @@ export async function cmdCronTick(opts: CronCmdOptions = {}): Promise<ExitCode> 
   }
   const result = await cronTick({ dir, sdk: opts.sdk });
   if (result.ran.length) console.log(`cron tick: ran ${result.ran.join(", ")}`);
+  // I-126: fire due deferred follow-ups (independent of cron jobs; honors pause).
+  try {
+    const fu = await runDueFollowups({ dir, sdk: opts.sdk });
+    if (fu.fired.length || fu.failed.length || fu.stale.length) {
+      console.log(
+        `cron tick: follow-ups fired ${fu.fired.length}, failed ${fu.failed.length}, stale ${fu.stale.length}`
+      );
+    }
+  } catch (e) {
+    console.error(`cron tick: follow-ups error — ${e instanceof Error ? e.message : String(e)}`);
+  }
   if (result.errors.length) {
     for (const err of result.errors) console.error(`cron tick: ${err.id} — ${err.message}`);
     return EXIT.software;

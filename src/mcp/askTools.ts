@@ -16,6 +16,7 @@ import {
   iridaGatewayAdapter,
 } from "../env.js";
 import { setPendingQuestion } from "../gatewayPendingQuestionStore.js";
+import { addFollowup, FOLLOWUP_MAX_AFTER_MINUTES } from "../gatewayFollowupStore.js";
 
 export interface AskMcpContext {
   dir: string;
@@ -73,6 +74,57 @@ export function registerAskMcpTools(server: McpServer, ctx: AskMcpContext): void
         "Question delivered to the user. END YOUR TURN NOW — restate the question as your " +
           "final message and stop. The user's reply will arrive as your next message; do not " +
           "assume an answer."
+      );
+    }
+  );
+
+  server.registerTool(
+    "defer_followup",
+    {
+      description:
+        "Defer work and proactively come back to the user LATER. Use when you tell the user " +
+        "you'll return with a result after some time (a build/deploy to finish, something to " +
+        "re-check, 'I'll get back to you in N min'). Calling this schedules a ONE-SHOT " +
+        "self-resume: after ~after_minutes you are re-run to do/check the work and the result " +
+        "is messaged to the user automatically — no poke needed. The `reason` MUST be " +
+        "SELF-CONTAINED (what to do/check AND what to report), because the follow-up runs in a " +
+        "FRESH turn that sees ONLY this text — not the current conversation. After calling, END " +
+        "your turn with an honest ack ('working on X, I'll message you in ~N min'); do not " +
+        "assume the result now. Resolution is ~5 min. For RECURRING schedules use cron " +
+        "(/schedule), not this.",
+      inputSchema: {
+        reason: z
+          .string()
+          .min(1)
+          .describe(
+            "Self-contained description of what to do/check and what to report. The follow-up " +
+              "turn sees ONLY this — include any command, path, or context it needs."
+          ),
+        after_minutes: z
+          .number()
+          .int()
+          .min(1)
+          .max(FOLLOWUP_MAX_AFTER_MINUTES)
+          .describe(`Delay before coming back, in minutes (1..${FOLLOWUP_MAX_AFTER_MINUTES}).`),
+      },
+    },
+    async ({ reason, after_minutes }) => {
+      if (!ctx.gatewayChatId) {
+        return textResult(
+          "defer_followup is only available in gateway chat. Do the work inline and reply now instead."
+        );
+      }
+      const out = addFollowup(ctx.dir, {
+        chatId: ctx.gatewayChatId,
+        adapter: ctx.gatewayAdapter ?? "telegram",
+        reason: reason.trim(),
+        afterMinutes: after_minutes,
+      });
+      if (!out.ok) return textResult(`defer_followup: ${out.error}`);
+      return textResult(
+        `Follow-up scheduled (~${after_minutes} min, id ${out.followup!.id}). END YOUR TURN NOW ` +
+          `with an honest ack to the user (e.g. "working on it — I'll message you in ~${after_minutes} ` +
+          `min with the result"). Do not assume or fabricate the result now.`
       );
     }
   );
