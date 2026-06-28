@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Backup personal csagent home: PG + non-secret .agent configs.
+# Backup personal irida home: PG + non-secret .agent configs.
 # Usage: bash deploy/backup-personal.sh [backup-dir]
 set -euo pipefail
 
 HOME_DIR="${IRIDA_HOME:-${CSAGENT_HOME:-$HOME/.irida}}"
 ROOT="${IRIDA_ROOT:-${CSAGENT_ROOT:-$HOME_DIR/irida}}"
 STAMP="$(date +%Y%m%d-%H%M)"
-DEST="${1:-$HOME/backups/csagent-$STAMP}"
+DEST="${1:-$HOME/backups/irida-$STAMP}"
 
 mkdir -p "$DEST"
 
@@ -30,15 +30,21 @@ copy_json_configs() {
 
 copy_json_configs
 
-COMPOSE="$ROOT/deploy/docker-compose.csagent-postgres.yml"
+# Rebranded to the single OrbStack `irida` space (I-131): docker-compose.irida.yml,
+# service `memory` (container irida-memory), DB irida_memory / role irida. Resolve
+# the container id via compose (name-agnostic, mirrors ensure-postgres.sh).
+COMPOSE="${IRIDA_PG_COMPOSE:-${CSAGENT_PG_COMPOSE:-$ROOT/deploy/docker-compose.irida.yml}}"
+PG_SERVICE="${IRIDA_PG_SERVICE:-${CSAGENT_PG_SERVICE:-memory}}"
+PG_USER="${IRIDA_POSTGRES_USER:-${CSAGENT_POSTGRES_USER:-irida}}"
+PG_DB="${IRIDA_POSTGRES_DB:-${CSAGENT_POSTGRES_DB:-irida_memory}}"
 if [[ -f "$COMPOSE" ]] && command -v docker >/dev/null 2>&1; then
-  if docker compose -f "$COMPOSE" ps --status running 2>/dev/null | grep -q csagent-postgres; then
-    DUMP="$DEST/csagent.pg.dump"
-    docker compose -f "$COMPOSE" exec -T csagent-postgres \
-      pg_dump -U csagent -Fc csagent > "$DUMP"
+  PG_CID="$(docker compose -f "$COMPOSE" ps -q "$PG_SERVICE" 2>/dev/null | head -1)"
+  if [[ -n "$PG_CID" ]]; then
+    DUMP="$DEST/irida_memory.pg.dump"
+    docker exec -i "$PG_CID" pg_dump -U "$PG_USER" -Fc "$PG_DB" > "$DUMP"
     echo "  pg_dump -> $(basename "$DUMP") ($(wc -c < "$DUMP" | tr -d ' ') bytes)"
   else
-    echo "  skip pg_dump (csagent-postgres not running)"
+    echo "  skip pg_dump ($PG_SERVICE container not running)"
   fi
 else
   echo "  skip pg_dump (docker compose file or docker missing)"
