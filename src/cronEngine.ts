@@ -27,6 +27,7 @@ import { executeTopicDigestJob } from "./cronTopicDigest.js";
 import { pruneClaudeSessions, formatBytes } from "./claudeSessionPrune.js";
 import { distillRecentSessions } from "./memoryDistill.js";
 import { consolidateMemory } from "./memoryConsolidate.js";
+import { createMemoryStore } from "./memoryStore.js";
 import { runEvolutionCycle } from "./evolutionCycle.js";
 import {
   runSelfMonitor,
@@ -232,6 +233,36 @@ export async function executeCronJob(
         exitCode: EXIT.software,
         message: `claude-session-prune failed: ${e instanceof Error ? e.message : String(e)}`,
       });
+    }
+  }
+  if (job.builtin === "memory-reindex") {
+    // I-131 self-heal: embed-on-save is fail-soft (a note saved while the embedder
+    // was down has no vector). Backfill those misses (missing-only, NOT --all).
+    if (isBackgroundPaused(configDir)) {
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: "memory-reindex: skipped (background paused)",
+        silent: true,
+      });
+    }
+    const store = createMemoryStore(configDir);
+    try {
+      const n = store.reindexEmbeddings ? await store.reindexEmbeddings() : 0;
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `memory-reindex: embedded ${n} missing note(s)`,
+        silent: n === 0,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `memory-reindex failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    } finally {
+      await (store as { close?: () => Promise<void> }).close?.();
     }
   }
   if (job.builtin === "memory-distill") {

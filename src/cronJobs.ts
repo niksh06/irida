@@ -26,6 +26,7 @@ export const CRON_BUILTIN_HANDLERS = [
   "memory-distill",
   "memory-consolidate",
   "evolution-cycle",
+  "memory-reindex",
 ] as const;
 export type CronBuiltinHandler = (typeof CRON_BUILTIN_HANDLERS)[number];
 
