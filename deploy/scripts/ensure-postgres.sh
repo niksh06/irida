@@ -15,12 +15,14 @@ set -uo pipefail
 
 HOME_DIR="${IRIDA_HOME:-${CSAGENT_HOME:-$HOME/.irida}}"
 ROOT="${IRIDA_ROOT:-${CSAGENT_ROOT:-$HOME_DIR/irida}}"
-# PG container/user/db keep the persisted `csagent` identifiers (the live store is named so).
-COMPOSE_FILE="${IRIDA_PG_COMPOSE:-${CSAGENT_PG_COMPOSE:-$ROOT/deploy/docker-compose.csagent-postgres.yml}}"
-SERVICE="${IRIDA_PG_SERVICE:-${CSAGENT_PG_SERVICE:-csagent-postgres}}"
+# Rebranded to the single OrbStack `irida` space (I-131): docker-compose.irida.yml
+# with service `memory` (container irida-memory) + `embedder`; the live store was
+# renamed in-place csagent → irida_memory, role csagent → irida (same volume).
+COMPOSE_FILE="${IRIDA_PG_COMPOSE:-${CSAGENT_PG_COMPOSE:-$ROOT/deploy/docker-compose.irida.yml}}"
+SERVICE="${IRIDA_PG_SERVICE:-${CSAGENT_PG_SERVICE:-memory}}"
 PG_PORT="${IRIDA_POSTGRES_HOST_PORT:-${CSAGENT_POSTGRES_HOST_PORT:-5435}}"
-PG_USER="${IRIDA_POSTGRES_USER:-${CSAGENT_POSTGRES_USER:-csagent}}"
-PG_DB="${IRIDA_POSTGRES_DB:-${CSAGENT_POSTGRES_DB:-csagent}}"
+PG_USER="${IRIDA_POSTGRES_USER:-${CSAGENT_POSTGRES_USER:-irida}}"
+PG_DB="${IRIDA_POSTGRES_DB:-${CSAGENT_POSTGRES_DB:-irida_memory}}"
 WAIT_SECS="${IRIDA_PG_WAIT_SECS:-${CSAGENT_PG_WAIT_SECS:-60}}"
 
 log() { echo "[ensure-postgres] $*"; }

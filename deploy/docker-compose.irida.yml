@@ -1,0 +1,57 @@
+# Single OrbStack space `irida` (I-131) — the memory Postgres + the embedder,
+# grouped like aleph-* / tparser-*. The `memory` service REUSES the existing
+# csagent_pg_data volume (external) — no data migration; the DB/role are renamed
+# in-place to irida_memory/irida after the swap.
+#
+#   docker compose -f deploy/docker-compose.irida.yml up -d   # project name = irida
+name: irida
+
+services:
+  memory:
+    container_name: irida-memory
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${IRIDA_POSTGRES_USER:-irida}
+      POSTGRES_PASSWORD: ${IRIDA_POSTGRES_PASSWORD:-irida}
+      POSTGRES_DB: ${IRIDA_POSTGRES_DB:-irida_memory}
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - csagent_pg_data:/var/lib/postgresql # reused as-is (renamed in-place)
+    ports:
+      - "127.0.0.1:${IRIDA_POSTGRES_HOST_PORT:-5435}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  embedder:
+    container_name: irida-embedder
+    build:
+      context: ./embedder
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      EMBED_MODEL: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface:ro
+    ports:
+      - "127.0.0.1:8014:8000"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  csagent_pg_data:
+    external: true # the live memory volume — reused, never recreated
