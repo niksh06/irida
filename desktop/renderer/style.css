@@ -1,0 +1,112 @@
+:root {
+  --bubble-bg: rgba(255, 255, 255, 0.96);
+  --bubble-fg: #1f2937;
+  --bubble-edge: rgba(100, 149, 237, 0.55);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---- The dog ---- */
+.pet {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  width: 280px;
+  height: 230px;
+  transform: translateX(-50%);
+  -webkit-app-region: drag; /* whole pet is the drag handle */
+}
+
+.sprite {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  object-position: bottom;
+  height: auto;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 6px 5px rgba(0, 0, 0, 0.25));
+  -webkit-user-drag: none;
+}
+
+.close {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  -webkit-app-region: no-drag;
+}
+.pet:hover .close {
+  opacity: 1;
+}
+
+/* ---- Speech bubble ---- */
+.bubble {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  max-width: 210px;
+  padding: 9px 12px;
+  background: var(--bubble-bg);
+  color: var(--bubble-fg);
+  border: 1.5px solid var(--bubble-edge);
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.35;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(4px) scale(0.96);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  -webkit-app-region: drag;
+}
+.bubble.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+/* little tail pointing down toward the dog */
+.bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -8px;
+  left: 26px;
+  border-width: 8px 8px 0 8px;
+  border-style: solid;
+  border-color: var(--bubble-bg) transparent transparent transparent;
+  filter: drop-shadow(0 1px 0 var(--bubble-edge));
+}
+
+/* All states are animated WebPs with motion baked into real frames
+   (working = chase GIF; idle/happy/sad/sleep = build-dog-states.py), so the
+   renderer just swaps the sprite — no CSS keyframes needed. */

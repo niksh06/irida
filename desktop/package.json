@@ -1,0 +1,14 @@
+{
+  "name": "csagent-pet-overlay",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Desktop Clippy-style overlay for the csagent blue dog pet (tparser-dog-butterfly). Reads .agent/pet-state.json and floats always-on-top.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "demo": "electron . --demo"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
