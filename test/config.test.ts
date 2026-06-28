@@ -33,6 +33,34 @@ test("defaults when no config file", () => {
   assert.equal(c.engine.provider, "cursor");
 });
 
+test("config: falls back to IRIDA_HOME when launch dir has none (two-config fix)", () => {
+  const home = tmp();
+  const install = tmp(); // no config here — mimics cron-tick's install-root cwd
+  writeFileSync(
+    resolve(home, "agent.config.json"),
+    JSON.stringify({ model: "from-home", engine: { provider: "claude-agent" } })
+  );
+  const prev = process.env.IRIDA_HOME;
+  process.env.IRIDA_HOME = home;
+  try {
+    // install/ has no config → read home/, but cwd/state stay anchored to `dir`.
+    const c = loadConfig(install);
+    assert.equal(c.model, "from-home");
+    assert.equal(c.engine.provider, "claude-agent");
+    assert.equal(c.cwd, install); // only the FILE location moves home, not cwd
+
+    // A local config wins over home (explicit --dir / per-install override).
+    writeFileSync(
+      resolve(install, "agent.config.json"),
+      JSON.stringify({ model: "from-install" })
+    );
+    assert.equal(loadConfig(install).model, "from-install");
+  } finally {
+    if (prev === undefined) delete process.env.IRIDA_HOME;
+    else process.env.IRIDA_HOME = prev;
+  }
+});
+
 test("engine: selects claude-agent with optional model override", () => {
   const dir = tmp();
   writeFileSync(

@@ -281,8 +281,27 @@ export function defaults(dir: string): AgentConfig {
   };
 }
 
+/**
+ * Directory to read `agent.config.json` from. Mirrors resolveMemoryRoot's home
+ * preference (Arch-4): `.agent` is already home-anchored, but the config file was
+ * read from the literal launch dir — so the gateway (cwd `~/.irida`) and cron-tick
+ * (cwd `~/.irida/irida`) loaded two configs that silently diverged (the I-129/I-131
+ * two-config footgun: `memory.embeddings`/`preTurn` had to be set in both).
+ *
+ * Precedence: a dir that carries its OWN config wins (explicit `--dir` runs, tests,
+ * and a deliberate per-install override) → else fall back to `IRIDA_HOME`'s config
+ * → else the dir itself (defaults). Only the file LOCATION moves home; cwd/skills/
+ * stateDir stay anchored to `dir` via defaults(dir)/validate(_, dir).
+ */
+function resolveConfigDir(dir: string): string {
+  if (existsSync(resolve(dir, CONFIG_FILE))) return dir;
+  const home = iridaHome();
+  if (home && existsSync(resolve(home, CONFIG_FILE))) return home;
+  return dir;
+}
+
 export function loadConfig(dir: string = process.cwd()): AgentConfig {
-  const path = resolve(dir, CONFIG_FILE);
+  const path = resolve(resolveConfigDir(dir), CONFIG_FILE);
   if (!existsSync(path)) return defaults(dir);
 
   let raw: string;
