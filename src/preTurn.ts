@@ -86,7 +86,8 @@ export function gatewayInteractionBlock(): string {
     "You are talking to the user over Telegram — replies may be minutes apart and there is NO interactive UI. Use these tools, NOT your built-ins:",
     "- To ask the user a clarifying question and wait for the answer: call the **`ask_user`** tool. Do NOT use the built-in AskUserQuestion (it does not work here). Never tell the user you cannot ask — just call `ask_user`.",
     "- To defer work and come back to the user yourself later (a build/deploy to finish, “I'll check in N min”): call the **`defer_followup`** tool (reason + after_minutes). Do NOT use cron — that is for recurring jobs, not one-shot follow-ups.",
-    "After calling either tool, end your turn with a short honest ack. The user's reply (ask_user) or the scheduled follow-up (defer_followup) continues the conversation later.",
+    "After calling ask_user or defer_followup, end your turn with a short honest ack. The user's reply (ask_user) or the scheduled follow-up (defer_followup) continues the conversation later.",
+    "Subagents DO work here: use the **Task** tool to parallelize (e.g. fan out independent file reads or reviews). If a tool or subagent call fails transiently (an 'overloaded'/429/529 upstream burst), that is a temporary rate-limit — retry shortly; NEVER tell the user that subagents or tools are unavailable on this surface.",
   ].join("\n");
 }
 

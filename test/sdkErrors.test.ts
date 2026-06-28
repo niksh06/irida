@@ -153,6 +153,26 @@ describe("formatSdkError — transient capacity errors are non-rotatable (I-127)
       assert.equal(r.errorKind, "overload");
     });
   }
+  it("classifies a STRUCTURED 529 as overload, not a rotatable sdk error", () => {
+    // The gap: a 529 arriving as a structured SDK error hit the structured branch
+    // first → errorKind from debug.error + rotatable:true → session rotates and can
+    // fail hard (surfaced to the user as "subagents/tools are down" during a burst).
+    const err = Object.assign(new Error("Error"), {
+      code: 14,
+      details: [
+        {
+          debug: {
+            error: "ERROR_OVERLOADED",
+            details: { title: "Overloaded", detail: "API Error: 529 Overloaded" },
+          },
+        },
+      ],
+    });
+    const r = formatSdkError(err);
+    assert.equal(r.errorKind, "overload");
+    assert.equal(r.rotatable, false, "a 529 must never rotate, even when structured");
+    assert.equal(r.recoverable, true);
+  });
   it("still rotates a genuine non-transient SDK error", () => {
     const r = formatSdkError(new Error("some unexpected sdk failure"));
     assert.equal(r.rotatable, true);

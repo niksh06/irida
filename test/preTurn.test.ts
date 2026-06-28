@@ -36,6 +36,9 @@ test("gatewayInteractionBlock steers to ask_user/defer_followup, away from built
   assert.match(b, /`defer_followup`/);
   assert.match(b, /AskUserQuestion/);
   assert.match(b, /cron/i);
+  // subagents work — correct the "subagents don't work here" misperception
+  assert.match(b, /\bTask\b/);
+  assert.match(b, /subagent/i);
 });
 
 test("buildPreTurnBlocks injects the gateway block only on gateway channels", async () => {

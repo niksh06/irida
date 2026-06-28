@@ -41,6 +41,36 @@ export function formatSdkError(e: unknown): FormattedSdkError {
 
   const detail = parseConnectDetails(e);
   const auth = isAuthError(e, detail);
+  const raw = e instanceof Error ? e.message : String(e);
+
+  // Transient capacity/permission errors — account/subscription bursts return
+  // `403 Request not allowed`, plus 429/529/503/overloaded. Rotating the session
+  // NEVER helps (the fresh agent hits the same upstream state) and just sheds
+  // context + spawns a session. Mark non-rotatable + recoverable so chat retries
+  // in place instead. (I-127)
+  //
+  // Checked FIRST, against the combined raw+structured text: a 529 can arrive as
+  // a plain message OR a structured SDK error. The structured branch below would
+  // otherwise classify it `sdk`/rotatable, so an overload burst (which a
+  // subagent-heavy turn is the first to trip) cascades into rotation+failure that
+  // the user sees as "tools/subagents are down" instead of a transient retry.
+  const overloadText = [raw, detail?.details?.detail, detail?.details?.title, detail?.error]
+    .filter(Boolean)
+    .join(" ");
+  if (
+    !auth &&
+    /\b(403 request not allowed|429|503|529)\b|overloaded|rate.?limit|too many requests|service unavailable/i.test(
+      overloadText
+    )
+  ) {
+    const body = detail?.details?.detail || detail?.details?.title || raw;
+    return {
+      message: redact(`Upstream busy — ${body}. Transient; retry shortly.`),
+      errorKind: "overload",
+      recoverable: true,
+      rotatable: false,
+    };
+  }
 
   if (detail?.details?.detail || detail?.details?.title) {
     const title = detail.details.title ?? "SDK error";
@@ -56,8 +86,6 @@ export function formatSdkError(e: unknown): FormattedSdkError {
     };
   }
 
-  const raw = e instanceof Error ? e.message : String(e);
-
   // Claude Agent SDK (claude-agent engine) surfaces failures as plain messages
   // from its bundled binary — no typed exceptions reach us, so auth failures are
   // classified heuristically. Marking them auth (recoverable, non-rotatable) stops
@@ -68,20 +96,6 @@ export function formatSdkError(e: unknown): FormattedSdkError {
         `Authentication failed — ${raw}. Set ANTHROPIC_API_KEY (auth=api-key), or run \`claude login\` / \`claude setup-token\` (auth=account).`
       ),
       errorKind: "auth",
-      recoverable: true,
-      rotatable: false,
-    };
-  }
-
-  // Transient capacity/permission errors — account/subscription bursts return
-  // `403 Request not allowed`, plus 429/529/503/overloaded. Rotating the session
-  // NEVER helps (the fresh agent hits the same upstream state) and just sheds
-  // context + spawns a session. Mark non-rotatable + recoverable so chat retries
-  // in place instead. (I-127)
-  if (!auth && /\b(403 request not allowed|429|503|529)\b|overloaded|rate.?limit|too many requests|service unavailable/i.test(raw)) {
-    return {
-      message: redact(`Upstream busy — ${raw}. Transient; retry shortly.`),
-      errorKind: "overload",
       recoverable: true,
       rotatable: false,
     };
