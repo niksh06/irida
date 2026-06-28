@@ -613,6 +613,16 @@ async function cronTickLocked(
     } catch (e) {
       failedDueThisTick.add(job.id);
       const message = e instanceof Error ? e.message : String(e);
+      // I-129: record the failure so it is NOT silent. Previously the catch path
+      // left lastResult untouched while lastRun had already advanced (set before
+      // execution) — an exception was invisible in /schedule, status, and
+      // self-monitor (exactly the session-ingest-daily 2026-06-26 case).
+      saveCronJobResult(
+        dir,
+        job.id,
+        { ok: false, exitCode: EXIT.software, message, durationMs: 0 },
+        slot
+      );
       result.errors.push({ id: job.id, message });
       console.error(`[cron] job=${job.id} error: ${message}`);
     }

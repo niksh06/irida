@@ -309,7 +309,7 @@ export function cronJobEnabled(job: CronJob): boolean {
   return job.enabled !== false;
 }
 
-function parseCronMinuteKey(key: string): Date | null {
+export function parseCronMinuteKey(key: string): Date | null {
   const m = key.trim().match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
   if (!m) return null;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0);

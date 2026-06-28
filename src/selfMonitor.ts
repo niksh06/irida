@@ -14,7 +14,14 @@
 import { resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { loadConfig } from "./config.js";
-import { loadCronJobs, loadCronState, type CronJob, type CronJobLastResult } from "./cronJobs.js";
+import {
+  loadCronJobs,
+  loadCronState,
+  parseCronMinuteKey,
+  type CronJob,
+  type CronJobLastResult,
+} from "./cronJobs.js";
+import { nextCronRun } from "./cronSchedule.js";
 import { loadRunLogEntries, countRecentErrorKinds } from "./runMetrics.js";
 import { gatherGatewayStatus, gatherGatewayStoreStatusLines } from "./gatewayStatus.js";
 import { redact } from "./redact.js";
@@ -75,6 +82,51 @@ export function evaluateCronFreshness(dir: string, now: number): SelfMonitorChec
   );
 }
 
+/** Only watch daily-or-sparser jobs for staleness (skip frequent every-N-min jobs). */
+const STALENESS_MIN_CADENCE_HOURS = 12;
+/** A job is stale once it has missed ~1.5 cadences without firing. */
+const STALENESS_CADENCE_FACTOR = 1.5;
+
+/** A job's cadence in hours from its cron expr (gap between consecutive runs). */
+export function cronCadenceHours(cronExpr: string, now: number): number | null {
+  const n1 = nextCronRun(cronExpr, new Date(now));
+  if (!n1) return null;
+  const n2 = nextCronRun(cronExpr, n1);
+  if (!n2) return null;
+  return (n2.getTime() - n1.getTime()) / 3600_000;
+}
+
+/**
+ * I-129: a recurring job can stop firing SILENTLY — its slot falls between two
+ * cron ticks (host sleep / launchd drift exceeding the grace window), so lastRun
+ * never advances and nothing complains. The `critical` freshness check (above)
+ * only covers jobs flagged critical. This generalizes it to every enabled,
+ * daily-or-sparser job: flag when lastRun is older than ~1.5× its cadence. The
+ * threshold scales with the cron, so a weekly job is not falsely flagged at 36h.
+ */
+export function evaluateRecurringStaleness(dir: string, now: number): SelfMonitorCheck[] {
+  const state = loadCronState(dir);
+  // `critical` jobs are already covered by evaluateCronFreshness — avoid duplicates.
+  const jobs = loadCronJobs(dir).filter((j) => j.enabled !== false && j.cron && !j.critical);
+  const checks: SelfMonitorCheck[] = [];
+  for (const job of jobs) {
+    const cadenceH = cronCadenceHours(job.cron, now);
+    if (cadenceH == null || cadenceH < STALENESS_MIN_CADENCE_HOURS) continue;
+    const thresholdH = cadenceH * STALENESS_CADENCE_FACTOR;
+    const lastRun = parseCronMinuteKey(state.lastRun?.[job.id] ?? "");
+    const ageH = lastRun ? (now - lastRun.getTime()) / 3600_000 : Number.POSITIVE_INFINITY;
+    if (ageH > thresholdH) {
+      const ran = lastRun ? `last ran ${ageH.toFixed(0)}h ago` : "never ran";
+      checks.push({
+        name: `cron ${job.id}`,
+        ok: false,
+        detail: `${ran} (daily~${cadenceH.toFixed(0)}h cadence, stale >${thresholdH.toFixed(0)}h) — not firing?`,
+      });
+    }
+  }
+  return checks;
+}
+
 /** Auth/403/startup error streak in the recent run log (the account rate-cap gap). */
 export function evaluateEngineErrorStreak(dir: string, now: number): SelfMonitorCheck {
   const stateDir = loadConfig(dir).stateDir;
@@ -108,6 +160,7 @@ export async function runSelfMonitor(dir: string, opts: { now?: number } = {}): 
   const now = opts.now ?? Date.now();
   const checks: SelfMonitorCheck[] = [
     ...evaluateCronFreshness(dir, now),
+    ...evaluateRecurringStaleness(dir, now),
     evaluateEngineErrorStreak(dir, now),
     ...(await gatherInfraChecks(dir)),
   ];
