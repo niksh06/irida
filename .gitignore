@@ -32,6 +32,10 @@ AGENTS.local.md
 .cursor/
 .codegraph/
 
+# tooling / machine-local config (codegraph index, Claude Code local settings)
+.cbm/
+.claude/
+
 # pet art local-only (manifest.json + build-pet-assets.py stay in git)
 deploy/assets/pet/source/
 deploy/assets/pet/dist/
