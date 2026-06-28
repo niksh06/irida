@@ -14,6 +14,7 @@ import { buildDigestFollowupTurn, parseDigestFollowup } from "./gatewayDigestFol
 import { loadLastDigestContext } from "./digestQa.js";
 import { handleGatewaySlash, isGatewaySlashCommand } from "./gatewaySlash.js";
 import { getChatMode, applyChatModePrefix } from "./gatewayModeStore.js";
+import { getPendingQuestion, clearPendingQuestion } from "./gatewayPendingQuestionStore.js";
 import { loadGatewayConfig, type GatewayConfig } from "./gatewayConfig.js";
 import { defaultServiceLogSink } from "./serviceLog.js";
 
@@ -154,6 +155,14 @@ export class GatewaySessionRouter {
       // Sticky per-chat mode (I-91): prepend the mode prefix unless the message
       // already carries an explicit one. parseTurnMode then applies it.
       turnText = applyChatModePrefix(turnText, getChatMode(this.dir, this.adapter, chatId));
+      // I-125: this message answers any parked clarifying question — the answer
+      // reaches the agent through the resumed session, so just drop the pending
+      // entry (cleared BEFORE the turn so a fresh ask_user within it survives).
+      const pending = getPendingQuestion(this.dir, this.adapter, chatId);
+      if (pending) {
+        clearPendingQuestion(this.dir, this.adapter, chatId);
+        this.onLog(`[gateway] answering parked question chat=${chatId}`);
+      }
       const out = await session.sendTurn(turnText, hooks);
       if (out.kind === "ok") return { reply: out.assistantText };
       if (out.kind === "blocked") throw new GatewayRouterError(out.reason, "blocked");

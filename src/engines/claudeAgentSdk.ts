@@ -124,6 +124,30 @@ export function evaluateToolInput(
   return { behavior: "allow", updatedInput: input };
 }
 
+/**
+ * Steer message for the built-in interactive ask tool (I-125). In a headless
+ * gateway run there is no UI to render AskUserQuestion, so the SDK auto-resolves
+ * it — the agent gets an empty answer and silently proceeds on a guess (the
+ * user's "the question expired and it kept going" symptom). We deny it and point
+ * the agent at the durable `ask_user` MCP tool, which parks the turn instead.
+ */
+export const ASK_USER_STEER_MESSAGE =
+  "irida tool-policy: the interactive AskUserQuestion tool isn't supported on this surface. " +
+  "To ask the user, call the `ask_user` tool instead — it delivers your question and pauses " +
+  "the turn until the user replies. Do not guess an answer.";
+
+/**
+ * I-125: intercept the built-in interactive question tool by name. Returns a
+ * deny decision steering to `ask_user`, or null for any other tool (which then
+ * flows through the normal destructive-input gate). Pure + exported for tests.
+ */
+export function interceptInteractiveAsk(toolName: string): ToolDecision | null {
+  if (toolName === "AskUserQuestion") {
+    return { behavior: "deny", message: ASK_USER_STEER_MESSAGE };
+  }
+  return null;
+}
+
 function restoreEnv(name: string, prev: string | undefined): void {
   if (prev === undefined) delete process.env[name];
   else process.env[name] = prev;
@@ -203,6 +227,12 @@ function permissionOptions(
   return {
     permissionMode: "default",
     canUseTool: async (toolName, input) => {
+      // I-125: deny the headless-broken interactive ask, steer to `ask_user`.
+      const steer = interceptInteractiveAsk(toolName);
+      if (steer) {
+        console.error(`[tool-policy] deny ${toolName}: steer to ask_user (I-125)`);
+        return steer;
+      }
       const decision = evaluateToolInput(input, { sanitize: sanitizeInput });
       // Both land in stderr → gateway.error.log for the autonomous surfaces.
       if (decision.behavior === "deny") {

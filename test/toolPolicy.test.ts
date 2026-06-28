@@ -1,7 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { destructiveReason } from "../src/safety.js";
-import { evaluateToolInput } from "../src/engines/claudeAgentSdk.js";
+import {
+  evaluateToolInput,
+  interceptInteractiveAsk,
+  ASK_USER_STEER_MESSAGE,
+} from "../src/engines/claudeAgentSdk.js";
 import { resolveDenyDestructive, type EngineConfig } from "../src/config.js";
 
 describe("destructiveReason (shared denylist)", () => {
@@ -39,6 +43,23 @@ describe("evaluateToolInput (claude-agent canUseTool gate)", () => {
   });
   it("ignores non-string fields", () => {
     assert.equal(evaluateToolInput({ timeout: 1000, recursive: true }).behavior, "allow");
+  });
+});
+
+describe("interceptInteractiveAsk (I-125 headless ask steer)", () => {
+  it("denies the built-in AskUserQuestion and steers to ask_user", () => {
+    const d = interceptInteractiveAsk("AskUserQuestion");
+    assert.ok(d);
+    assert.equal(d!.behavior, "deny");
+    if (d!.behavior === "deny") {
+      assert.equal(d!.message, ASK_USER_STEER_MESSAGE);
+      assert.match(d!.message, /ask_user/);
+    }
+  });
+  it("returns null for any other tool (flows through the normal gate)", () => {
+    assert.equal(interceptInteractiveAsk("Bash"), null);
+    assert.equal(interceptInteractiveAsk("Edit"), null);
+    assert.equal(interceptInteractiveAsk("ask_user"), null); // our MCP tool is allowed
   });
 });
 

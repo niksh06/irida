@@ -14,6 +14,7 @@ import { loadRunMetrics, formatRunMetrics, loadSessionUsage, formatSessionUsage 
 import { loadProposals } from "./evolutionCycle.js";
 import { loadSkillLedger, rollbackAgentSkill } from "./skillApply.js";
 import { getChatMode, setChatMode, clearChatMode } from "./gatewayModeStore.js";
+import { clearPendingQuestion } from "./gatewayPendingQuestionStore.js";
 import { parseModeArg, TURN_MODES } from "./preTurn.js";
 import { createStore } from "./store.js";
 import { searchSessions } from "./sessionSearch.js";
@@ -177,6 +178,14 @@ export async function handleGatewaySlash(
       if (!mode) return `unknown mode «${arg}». Use: ${TURN_MODES.join(" | ")} (or off)`;
       setChatMode(ctx.dir, ctx.adapter, ctx.chatId, mode);
       return `mode → **${mode}** (sticky; applies to messages without an explicit ADVICE:/DO:/… prefix)`;
+    }
+
+    case "cancel": {
+      // I-125: abandon a parked clarifying question without resetting the session.
+      const had = clearPendingQuestion(ctx.dir, ctx.adapter, ctx.chatId);
+      return had
+        ? "Снял ожидание ответа на вопрос агента. Пиши что угодно — продолжим с нового."
+        : "Нет ожидающего вопроса от агента.";
     }
 
     case "memory": {

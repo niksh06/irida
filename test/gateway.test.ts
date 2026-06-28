@@ -15,6 +15,7 @@ import {
   peerKey,
 } from "../src/gatewayRouter.js";
 import { dispatchWebhookRequest, parseWebhookBody, webhookAuthOk } from "../src/gatewayWebhook.js";
+import { setPendingQuestion, getPendingQuestion } from "../src/gatewayPendingQuestionStore.js";
 import { savePairingFile } from "../src/gatewayPairing.js";
 import { startGateway } from "../src/gateway_cmd.js";
 import { writeExampleGatewayConfig } from "./helpers/gatewayConfig.js";
@@ -184,6 +185,35 @@ test("GatewaySessionRouter /new resets peer to fresh sess_", async () => {
     const second = loadGatewayPeers(dir).peers[peerKey("telegram", "u1")];
     assert.ok(second?.startsWith("sess_"));
     assert.notEqual(first, second);
+    await router.closeAll();
+  });
+});
+
+test("GatewaySessionRouter clears a parked question when the user answers (I-125)", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+    setPendingQuestion(dir, { chatId: "u1", adapter: "telegram", question: "Which env?" });
+    assert.ok(getPendingQuestion(dir, "telegram", "u1"));
+    // the next normal message is the answer → pending dropped, turn still runs
+    const out = await router.handleInbound("u1", "production");
+    assert.match(out.reply, /production/);
+    assert.equal(getPendingQuestion(dir, "telegram", "u1"), undefined);
+    await router.closeAll();
+  });
+});
+
+test("/cancel abandons a parked question without running a turn (I-125)", async () => {
+  await withKey("k", async () => {
+    const dir = tmp();
+    const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+    setPendingQuestion(dir, { chatId: "u1", adapter: "telegram", question: "Which env?" });
+    const out = await router.handleInbound("u1", "/cancel");
+    assert.match(out.reply, /Снял ожидание/);
+    assert.equal(getPendingQuestion(dir, "telegram", "u1"), undefined);
+    // /cancel on an empty state is a clean no-op message
+    const again = await router.handleInbound("u1", "/cancel");
+    assert.match(again.reply, /Нет ожидающего/);
     await router.closeAll();
   });
 });

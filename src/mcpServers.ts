@@ -14,6 +14,7 @@ import { pgUrl } from "./pg/pool.js";
 export const MEMORY_MCP_NAME = "csagent-memory";
 export const BROWSER_MCP_NAME = "csagent-browser";
 export const CRON_MCP_NAME = "csagent-cron";
+export const ASK_MCP_NAME = "csagent-ask";
 
 export interface McpResolveContext {
   gatewayChatId?: string;
@@ -103,6 +104,34 @@ export function cronMcpEnabled(cfg: AgentConfig, ctx: McpResolveContext = {}): b
   return Boolean(ctx.gatewayChatId?.trim());
 }
 
+function askServerEntry(projectDir: string): { command: string; args: string[] } {
+  const roots = [
+    iridaRoot(),
+    projectDir,
+    join(CODE_ROOT, ".."),
+  ].filter(Boolean) as string[];
+
+  for (const root of roots) {
+    const dist = join(root, "dist/mcp/askServer.js");
+    if (existsSync(dist)) {
+      return { command: process.execPath, args: [dist] };
+    }
+    const src = join(root, "src/mcp/askServer.ts");
+    const tsx = join(root, "node_modules/.bin/tsx");
+    if (existsSync(src) && existsSync(tsx)) {
+      return { command: tsx, args: [src] };
+    }
+  }
+
+  const fallback = join(CODE_ROOT, "mcp/askServer.js");
+  return { command: process.execPath, args: [fallback] };
+}
+
+/** ask_user (I-125) is gateway-chat only — same gate as cron. */
+export function askMcpEnabled(cfg: AgentConfig, ctx: McpResolveContext = {}): boolean {
+  return Boolean(ctx.gatewayChatId?.trim());
+}
+
 /** MCP servers passed to Cursor SDK (includes built-ins unless disabled). */
 export function resolveMcpServers(
   cfg: AgentConfig,
@@ -151,6 +180,22 @@ export function resolveMcpServers(
   if (cronMcpEnabled(cfg, ctx) && !(CRON_MCP_NAME in merged)) {
     const { command, args } = cronServerEntry(projectDir);
     merged[CRON_MCP_NAME] = {
+      command,
+      args,
+      env: {
+        CSAGENT_MEMORY_DIR: resolve(projectDir),
+        CSAGENT_STATE_DIR: stateDir,
+        CSAGENT_GATEWAY_CHAT_ID: ctx.gatewayChatId!.trim(),
+        CSAGENT_GATEWAY_ADAPTER: ctx.gatewayAdapter?.trim() || "telegram",
+        ...withHome,
+        ...withDbUrl,
+      },
+    };
+  }
+
+  if (askMcpEnabled(cfg, ctx) && !(ASK_MCP_NAME in merged)) {
+    const { command, args } = askServerEntry(projectDir);
+    merged[ASK_MCP_NAME] = {
       command,
       args,
       env: {
