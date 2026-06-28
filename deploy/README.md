@@ -117,11 +117,11 @@ bash deploy/uninstall-launchd.sh
 Hybrid store: set `IRIDA_DATABASE_URL` in `~/.irida/irida.env`, then reinstall launchd so plists pick it up.
 
 ```bash
-# Start PG (from repo clone)
-docker compose -f deploy/docker-compose.csagent-postgres.yml up -d
+# Start PG + embedder (single OrbStack `irida` space, I-131)
+docker compose -f deploy/docker-compose.irida.yml up -d
 
 # In ~/.irida/irida.env:
-export IRIDA_DATABASE_URL="postgresql://csagent:csagent@127.0.0.1:5435/csagent"
+export IRIDA_DATABASE_URL="postgresql://irida:irida@127.0.0.1:5435/irida_memory"
 
 bash deploy/setup-home.sh
 bash deploy/install-launchd.sh
@@ -135,12 +135,12 @@ Migrations run automatically on first connect (`deploy/postgres/migrations/*.sql
 ### Backup
 
 ```bash
-docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-postgres \
-  pg_dump -U csagent -Fc csagent > ~/backups/csagent-$(date +%Y%m%d).dump
+docker compose -f deploy/docker-compose.irida.yml exec -T memory \
+  pg_dump -U irida -Fc irida_memory > ~/backups/irida-$(date +%Y%m%d).dump
 
 # restore (from host, with pg client)
-docker compose -f deploy/docker-compose.csagent-postgres.yml exec -T csagent-postgres \
-  pg_restore -U csagent -d csagent --clean --if-exists < ~/backups/csagent-YYYYMMDD.dump
+docker compose -f deploy/docker-compose.irida.yml exec -T memory \
+  pg_restore -U irida -d irida_memory --clean --if-exists < ~/backups/irida-YYYYMMDD.dump
 ```
 
 ## Memory (Phase 2, MCP-first)

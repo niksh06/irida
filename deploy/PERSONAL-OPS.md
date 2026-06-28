@@ -230,7 +230,7 @@ Post-mortem gateway 2026-06-18 (allowlist split-brain, test ID `99` в prod, pai
 | Reddit RSS 429 | Reddit rate-limits rapid fetches; snapshot lists `Fetch errors`; retry later or increase delay; digest still runs on partial data |
 | `/status` FAIL gateway | `gateway status`, `tail gateway.error.log`, `doctor` (format секретов) |
 | inbound тишина, outbound OK | `getWebhookInfo` → `allowed_updates` must include `message` (not only `channel_post`); см. [postmortem 2026-06-17](../Reports/analysis/postmortem-gateway-telegram-inbound-silent-2026-06-17.md) |
-| poll alive, бот молчит, `ECONNREFUSED :5435` | Docker + Postgres: `open -a Docker`, `docker compose -f deploy/docker-compose.csagent-postgres.yml up -d`, `pg_isready -h 127.0.0.1 -p 5435`; restart gateway; см. [postmortem PG 2026-06-18](../Reports/analysis/postmortem-gateway-postgres-down-2026-06-18.md) |
+| poll alive, бот молчит, `ECONNREFUSED :5435` | Docker + Postgres: `open -a Docker`, `bash deploy/scripts/ensure-postgres.sh` (или `docker compose -f deploy/docker-compose.irida.yml up -d memory`), `pg_isready -h 127.0.0.1 -p 5435`; restart gateway; см. [postmortem PG 2026-06-18](../Reports/analysis/postmortem-gateway-postgres-down-2026-06-18.md) |
 | pairing / «чат не в allowlist» | `jq .allowedChatIds ~/.irida/.agent/gateway.json` (prod ≠ repo); diff с `.agent/gateway.json`; `/approve` только из allowlist-чата; см. [postmortem allowlist 2026-06-18](../Reports/analysis/postmortem-gateway-allowlist-split-brain-2026-06-18.md) |
 | poll `Not Found` | битый token в PG → `auth telegram login --from-env` или `--stdin` |
 | turn `ERROR_NOT_LOGGED_IN` | битый Cursor key в PG → `auth login --from-env` или `--stdin` |

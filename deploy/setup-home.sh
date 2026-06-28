@@ -113,7 +113,7 @@ ${PRESERVE_DATABASE_URL:+export IRIDA_DATABASE_URL="$PRESERVE_DATABASE_URL"}
 ${PRESERVE_SECRETS_KEY:+export IRIDA_SECRETS_KEY="$PRESERVE_SECRETS_KEY"}
 ${PRESERVE_OBSIDIAN_VAULT_PATH:+export OBSIDIAN_VAULT_PATH="$PRESERVE_OBSIDIAN_VAULT_PATH"}
 # Optional overrides:
-# export IRIDA_DATABASE_URL="postgresql://csagent:csagent@127.0.0.1:5435/csagent"
+# export IRIDA_DATABASE_URL="postgresql://irida:irida@127.0.0.1:5435/irida_memory"
 # export IRIDA_SECRETS_KEY="change-me-long-random-passphrase"  # pgcrypto for cursor/telegram tokens in PG
 # export CURSOR_API_KEY=
 # export ANTHROPIC_API_KEY=                                    # claude-agent engine (api-key auth)
