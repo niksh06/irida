@@ -9,6 +9,20 @@ function tmp(): string {
   return mkdtempSync(resolve(tmpdir(), "cfg-"));
 }
 
+test("memory.embeddings.provider survives parsing (I-131)", () => {
+  const dir = tmp();
+  writeFileSync(
+    resolve(dir, "agent.config.json"),
+    JSON.stringify({
+      memory: { embeddings: { enabled: true, provider: "embed-service", url: "http://127.0.0.1:8014" } },
+    })
+  );
+  const e = loadConfig(dir).memory?.embeddings;
+  assert.equal(e?.enabled, true);
+  assert.equal(e?.provider, "embed-service"); // schema must not drop the field
+  assert.equal(e?.url, "http://127.0.0.1:8014");
+});
+
 test("defaults when no config file", () => {
   const dir = tmp();
   const c = loadConfig(dir);

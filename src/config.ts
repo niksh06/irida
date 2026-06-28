@@ -315,6 +315,7 @@ const embeddingsSchema = z.object({
   enabled: z.boolean().optional(),
   url: nonEmptyString.optional(),
   model: nonEmptyString.optional(),
+  provider: z.enum(["ollama", "embed-service"]).optional(),
 });
 
 const autoRagSchema = z.object({
