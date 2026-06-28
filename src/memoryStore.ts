@@ -112,8 +112,12 @@ export interface IMemoryStore {
   searchNotesSemantic?(query: string, limit?: number, opts?: MemorySearchOptions): Promise<MemoryNote[]>;
   /** RRF merge of FTS + vector (Postgres + embeddings enabled, I-72). */
   searchNotesHybrid?(query: string, limit?: number, opts?: MemorySearchOptions): Promise<MemoryNote[]>;
-  /** Compute and store embeddings for notes missing one; returns updated count. */
-  reindexEmbeddings?(): Promise<number>;
+  /**
+   * Compute and store embeddings; returns updated count. Default: only notes
+   * missing a vector (self-heal). `all:true` re-embeds every embeddable note —
+   * needed after an embedding-model change (I-131) so stale vectors are replaced.
+   */
+  reindexEmbeddings?(opts?: { all?: boolean }): Promise<number>;
   addFact(input: AddFactInput): Promise<MemoryFact>;
   queryFacts(input: QueryFactsInput): Promise<MemoryFact[]>;
   factAuditSummary(): Promise<MemoryFactAuditSummary>;
@@ -558,13 +562,16 @@ export class PostgresMemoryStore implements IMemoryStore {
     );
   }
 
-  async reindexEmbeddings(): Promise<number> {
+  async reindexEmbeddings(opts: { all?: boolean } = {}): Promise<number> {
     await this.ensureMigrated();
     if (!this.embedder) return 0;
     const wingFilter = wingNotInSql(this.embedExcludeWings, 1);
+    // Default: backfill only missing vectors (self-heal cron). all:true re-embeds
+    // every embeddable note — used once after a model change to replace stale vectors.
+    const missingOnly = opts.all ? "" : "embedding IS NULL AND ";
     const res = await this.pool.query(
       `SELECT name, title, body, wing FROM memory_notes
-       WHERE embedding IS NULL AND body_enc IS NULL AND body != ''${wingFilter.clause}`,
+       WHERE ${missingOnly}body_enc IS NULL AND body != ''${wingFilter.clause}`,
       wingFilter.params
     );
     let updated = 0;

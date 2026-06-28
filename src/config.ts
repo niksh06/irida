@@ -14,14 +14,20 @@ export interface SafetyConfig {
   allowAutoPr: boolean;
 }
 
-/** Local embedding provider for semantic memory search (I-36, Ollama-compatible). */
+/** Local embedding provider for semantic memory search (I-36). */
 export interface EmbeddingsConfig {
   /** Compute embeddings on note save + enable semantic search (default false). */
   enabled?: boolean;
-  /** Ollama-compatible base URL (default http://127.0.0.1:11434). */
+  /** Base URL (Ollama default http://127.0.0.1:11434; embed-service e.g. http://127.0.0.1:8014). */
   url?: string;
-  /** Embedding model name (default nomic-embed-text). */
+  /** Embedding model name (default nomic-embed-text; informational for embed-service). */
   model?: string;
+  /**
+   * API shape (I-131). "ollama": POST /api/embeddings {model,prompt} → {embedding}.
+   * "embed-service": POST /embed {text} → {vector} — a dedicated sentence-transformers
+   * microservice (768-dim multilingual), decoupled from the write path. Default "ollama".
+   */
+  provider?: "ollama" | "embed-service";
 }
 
 /** Silent memory retrieval before each turn (Wave B auto-RAG). */

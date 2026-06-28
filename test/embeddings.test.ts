@@ -30,6 +30,35 @@ test("embedder posts to ollama api and validates dim", async () => {
   assert.equal(seen.prompt, "hello world");
 });
 
+test("embed-service provider posts /embed {text} and reads {vector} (I-131)", async () => {
+  const vec = Array.from({ length: EMBEDDINGS_DIM }, (_, i) => i / EMBEDDINGS_DIM);
+  let seen: { url?: string; text?: string } = {};
+  const embed = makeEmbedder(
+    { enabled: true, provider: "embed-service", url: "http://127.0.0.1:8014" },
+    fakeFetch((url, body) => {
+      seen = { url, text: (body as { text: string }).text };
+      return new Response(JSON.stringify({ model_name: "mpnet", dim: EMBEDDINGS_DIM, vector: vec }));
+    })
+  )!;
+  const out = await embed("привет мир");
+  assert.deepEqual(out, vec);
+  assert.equal(seen.url, "http://127.0.0.1:8014/embed");
+  assert.equal(seen.text, "привет мир");
+});
+
+test("embed-service fail-soft: wrong dim / missing vector → null", async () => {
+  const e1 = makeEmbedder(
+    { enabled: true, provider: "embed-service", url: "http://x" },
+    fakeFetch(() => new Response(JSON.stringify({ vector: [1, 2, 3] })))
+  )!;
+  assert.equal(await e1("x"), null);
+  const e2 = makeEmbedder(
+    { enabled: true, provider: "embed-service", url: "http://x" },
+    fakeFetch(() => new Response(JSON.stringify({ embedding: Array(EMBEDDINGS_DIM).fill(0) })))
+  )!;
+  assert.equal(await e2("x"), null); // embed-service reads `vector`, not `embedding`
+});
+
 test("embedder fail-soft: http error, wrong dim, network throw → null", async () => {
   const cases: Array<typeof fetch> = [
     fakeFetch(() => new Response("nope", { status: 500 })),

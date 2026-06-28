@@ -1,13 +1,15 @@
 /**
- * Local embeddings via an Ollama-compatible API (I-36).
- * Fail-soft: any error returns null — memory saves must never depend on the
- * embedding daemon being up.
+ * Local embeddings (I-36) via one of two HTTP shapes (I-131):
+ *  - "ollama":        POST /api/embeddings {model,prompt} → {embedding}
+ *  - "embed-service": POST /embed {text} → {vector}  (sentence-transformers µ-service)
+ * Fail-soft: any error / wrong-dim returns null — memory saves must never depend
+ * on the embedding service being up (the reindex cron backfills misses).
  */
 import type { EmbeddingsConfig } from "./config.js";
 
 export const EMBEDDINGS_DEFAULT_URL = "http://127.0.0.1:11434";
 export const EMBEDDINGS_DEFAULT_MODEL = "nomic-embed-text";
-/** nomic-embed-text dimension; pgvector column is fixed to this. */
+/** pgvector column is fixed to this; both nomic and multilingual-mpnet are 768-dim. */
 export const EMBEDDINGS_DIM = 768;
 /** Keep prompts well under model context; notes are chunk-free v1. */
 const EMBED_MAX_CHARS = 8000;
@@ -18,6 +20,12 @@ export function embeddingsEnabled(cfg?: EmbeddingsConfig): boolean {
   return cfg?.enabled === true;
 }
 
+function validVec(emb: unknown): number[] | null {
+  if (!Array.isArray(emb) || emb.length !== EMBEDDINGS_DIM) return null;
+  if (!emb.every((v) => typeof v === "number" && Number.isFinite(v))) return null;
+  return emb as number[];
+}
+
 /** Build an embedder for the configured provider; null result = skip silently. */
 export function makeEmbedder(
   cfg: EmbeddingsConfig | undefined,
@@ -25,22 +33,22 @@ export function makeEmbedder(
 ): EmbedFn | undefined {
   if (!embeddingsEnabled(cfg)) return undefined;
   const url = (cfg?.url ?? EMBEDDINGS_DEFAULT_URL).replace(/\/$/, "");
+  const provider = cfg?.provider ?? "ollama";
   const model = cfg?.model ?? EMBEDDINGS_DEFAULT_MODEL;
   return async (text: string): Promise<number[] | null> => {
-    const prompt = text.trim().slice(0, EMBED_MAX_CHARS);
-    if (!prompt) return null;
+    const input = text.trim().slice(0, EMBED_MAX_CHARS);
+    if (!input) return null;
+    const endpoint = provider === "embed-service" ? `${url}/embed` : `${url}/api/embeddings`;
+    const payload = provider === "embed-service" ? { text: input } : { model, prompt: input };
     try {
-      const res = await fetchFn(`${url}/api/embeddings`, {
+      const res = await fetchFn(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model, prompt }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) return null;
-      const body = (await res.json()) as { embedding?: unknown };
-      const emb = body.embedding;
-      if (!Array.isArray(emb) || emb.length !== EMBEDDINGS_DIM) return null;
-      if (!emb.every((v) => typeof v === "number" && Number.isFinite(v))) return null;
-      return emb as number[];
+      const body = (await res.json()) as { embedding?: unknown; vector?: unknown };
+      return validVec(provider === "embed-service" ? body.vector : body.embedding);
     } catch {
       return null;
     }
