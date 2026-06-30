@@ -9,7 +9,7 @@ import {
   formatDurationMs,
   saveCronJobResult,
 } from "../src/cronRunRecord.js";
-import { loadCronState } from "../src/cronJobs.js";
+import { loadCronState, saveCronState, mutateCronState } from "../src/cronJobs.js";
 import { EXIT } from "../src/exit.js";
 
 test("formatDurationMs renders human durations", () => {
@@ -58,6 +58,40 @@ test("saveCronJobResult persists lastResult in cron.state.json", () => {
   assert.equal(state.lastResult?.digest?.durationMs, 3000);
   const raw = JSON.parse(readFileSync(join(dir, ".agent", "cron.state.json"), "utf8"));
   assert.ok(raw.lastResult?.digest);
+});
+
+test("mutateCronState re-reads so a stale snapshot can't clobber lastResult (I-132)", () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "cron-mutate-"));
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  writeFileSync(
+    join(dir, "agent.config.json"),
+    JSON.stringify({ stateDir: ".agent", cwd: dir }),
+    "utf8"
+  );
+  const OLD = new Date("2026-06-22T10:40:00Z");
+  const FRESH = new Date("2026-06-29T23:59:00Z");
+
+  // 1. cron-tick loads ONE state snapshot at the top of the tick…
+  saveCronJobResult(dir, "tparser-daily-digest", { ok: true, exitCode: EXIT.ok, message: "old", durationMs: 1 }, OLD);
+  const tickSnapshot = loadCronState(dir);
+
+  // 2. …then the long (15-min) digest finishes and writes its FRESH result to disk.
+  saveCronJobResult(dir, "tparser-daily-digest", { ok: true, exitCode: EXIT.ok, message: "fresh", durationMs: 300_000 }, FRESH);
+
+  // Repro: the old cron-tick pattern re-saved the stale in-memory snapshot for the
+  // next job → it clobbered the digest's fresh result back to OLD (the prod freeze).
+  saveCronState(dir, tickSnapshot);
+  assert.equal(loadCronState(dir).lastResult?.["tparser-daily-digest"]?.at, OLD.toISOString());
+
+  // Fix: route the lastRun write through mutateCronState (re-read → mutate → save),
+  // so it only touches its own field and never clobbers a concurrently-written one.
+  saveCronJobResult(dir, "tparser-daily-digest", { ok: true, exitCode: EXIT.ok, message: "fresh", durationMs: 300_000 }, FRESH);
+  mutateCronState(dir, (s) => {
+    s.lastRun["reddit-digest-daily"] = "2026-06-29T2359";
+  });
+  const after = loadCronState(dir);
+  assert.equal(after.lastResult?.["tparser-daily-digest"]?.at, FRESH.toISOString()); // preserved
+  assert.equal(after.lastRun?.["reddit-digest-daily"], "2026-06-29T2359"); // and lastRun set
 });
 
 test("buildCronJobLastResult copies topic stats", () => {

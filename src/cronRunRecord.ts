@@ -3,7 +3,7 @@
  */
 import type { ExitCode } from "./exit.js";
 import { saveCronContextArtifact } from "./cronContextArtifact.js";
-import { loadCronState, saveCronState, type CronJobLastResult } from "./cronJobs.js";
+import { mutateCronState, type CronJobLastResult } from "./cronJobs.js";
 
 export interface CronTopicSummary {
   topicId: string;
@@ -84,9 +84,9 @@ export function saveCronJobResult(
   exec: CronExecuteResult,
   at: Date = new Date()
 ): void {
-  const state = loadCronState(dir);
-  state.lastResult = { ...state.lastResult, [jobId]: buildCronJobLastResult(exec, at) };
-  saveCronState(dir, state);
+  mutateCronState(dir, (s) => {
+    s.lastResult = { ...s.lastResult, [jobId]: buildCronJobLastResult(exec, at) };
+  });
   saveCronContextArtifact(dir, jobId, exec, at);
 }
 

@@ -297,6 +297,26 @@ export function saveCronState(dir: string, state: CronStateFile): void {
   writeFileAtomic(statePath(dir), JSON.stringify(state, null, 2) + "\n");
 }
 
+/**
+ * Read-modify-write of cron.state.json: re-read the on-disk state, apply `fn`,
+ * then save — so a caller never persists a whole STALE snapshot that rolls back
+ * a field written between that snapshot's load and this save. cronTick holds one
+ * snapshot for the entire tick; the long (15-min) digest's `saveCronJobResult`
+ * writes a fresh `lastResult` mid-tick, and a later job's `lastRun` write reusing
+ * the start-of-tick snapshot used to clobber it back — freezing `lastResult.at`
+ * so digest-QA's freshness check failed every morning (I-132). Always mutate
+ * through here instead of `saveCronState(dir, heldSnapshot)`.
+ */
+export function mutateCronState(
+  dir: string,
+  fn: (state: CronStateFile) => void
+): CronStateFile {
+  const state = loadCronState(dir);
+  fn(state);
+  saveCronState(dir, state);
+  return state;
+}
+
 export function validateCronJobsFile(dir: string = process.cwd()): string[] {
   try {
     loadCronJobs(dir);

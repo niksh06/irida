@@ -19,7 +19,7 @@ import {
   findDueCronMinute,
   loadCronJobs,
   loadCronState,
-  saveCronState,
+  mutateCronState,
 } from "./cronJobs.js";
 import { loadCronJobPromptText } from "./cronPrompt.js";
 import { scanPromptText, validateCronJobPrompt } from "./cronPromptGuard.js";
@@ -594,8 +594,9 @@ async function cronTickLocked(
     const upstream = job.contextFrom?.trim();
     if (upstream && dueIds.has(upstream) && failedDueThisTick.has(upstream)) {
       console.error(`[cron] job=${job.id} skipped — upstream '${upstream}' failed this tick`);
-      state.lastRun[job.id] = cronMinuteKey(at);
-      saveCronState(dir, state);
+      mutateCronState(dir, (s) => {
+        s.lastRun[job.id] = cronMinuteKey(at);
+      });
       saveCronJobResult(
         dir,
         job.id,
@@ -614,8 +615,9 @@ async function cronTickLocked(
     const gate = runCronGate(job, dir);
     if (!gate.wake) {
       console.error(`[cron] job=${job.id} gated (skip): ${gate.reason}`);
-      state.lastRun[job.id] = cronMinuteKey(at);
-      saveCronState(dir, state);
+      mutateCronState(dir, (s) => {
+        s.lastRun[job.id] = cronMinuteKey(at);
+      });
       saveCronJobResult(
         dir,
         job.id,
@@ -627,8 +629,9 @@ async function cronTickLocked(
     }
 
     console.error(`[cron] running job=${job.id} slot=${cronMinuteKey(slot)}`);
-    state.lastRun[job.id] = cronMinuteKey(at);
-    saveCronState(dir, state);
+    mutateCronState(dir, (s) => {
+      s.lastRun[job.id] = cronMinuteKey(at);
+    });
     try {
       const exec = await executeCronJob(job, opts);
       saveCronJobResult(dir, job.id, exec, slot);
@@ -663,7 +666,7 @@ async function cronTickLocked(
 }
 
 export function markCronJobRan(dir: string, jobId: string, at: Date = new Date()): void {
-  const state = loadCronState(dir);
-  state.lastRun[jobId] = cronMinuteKey(at);
-  saveCronState(dir, state);
+  mutateCronState(dir, (s) => {
+    s.lastRun[jobId] = cronMinuteKey(at);
+  });
 }
