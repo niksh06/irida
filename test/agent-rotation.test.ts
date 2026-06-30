@@ -243,3 +243,129 @@ describe("in-session agent rotation", () => {
     });
   });
 });
+
+describe("overload retry (I-133)", () => {
+  it("retries an overload error in place (no rotation) and succeeds", async () => {
+    await withKey(async () => {
+      const dir = mkdtempSync(resolve(tmpdir(), "overload-retry-"));
+      let createCount = 0;
+      let sendCount = 0;
+      let retried = false;
+
+      const sdk: SdkCreateLike = {
+        create: async () => {
+          createCount++;
+          const agent: AgentLike = {
+            agentId: "agent-1",
+            send: async () => {
+              sendCount++;
+              if (sendCount === 1) throw new Error("529 Overloaded");
+              return okRun("recovered after overload");
+            },
+          };
+          return agent;
+        },
+      };
+
+      const opened = await openChatSession({
+        sdk,
+        dir,
+        interactive: false,
+        overloadRetryDelaysMs: [0, 0], // skip the real 5s/15s backoff in tests
+        onTurnRetry: () => {
+          retried = true;
+        },
+      });
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+
+      const out = await opened.session.sendTurn("hello");
+      assert.equal(out.kind, "ok");
+      if (out.kind === "ok") assert.equal(out.assistantText, "recovered after overload");
+      assert.equal(sendCount, 2);
+      assert.equal(createCount, 1); // no rotation — same agent, same session
+      assert.equal(retried, true);
+      await opened.session.close();
+    });
+  });
+
+  it("surfaces 'upstream busy' after exhausting the overload retry budget", async () => {
+    await withKey(async () => {
+      const dir = mkdtempSync(resolve(tmpdir(), "overload-exhaust-"));
+      let createCount = 0;
+      let sendCount = 0;
+
+      const sdk: SdkCreateLike = {
+        create: async () => {
+          createCount++;
+          const agent: AgentLike = {
+            agentId: "agent-1",
+            send: async () => {
+              sendCount++;
+              throw new Error("529 Overloaded"); // never recovers
+            },
+          };
+          return agent;
+        },
+      };
+
+      const opened = await openChatSession({
+        sdk,
+        dir,
+        interactive: false,
+        overloadRetryDelaysMs: [0, 0],
+      });
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+
+      const out = await opened.session.sendTurn("hello");
+      assert.equal(out.kind, "error");
+      if (out.kind === "error") {
+        assert.equal(out.fatal, false);
+        assert.match(out.message, /Upstream busy/);
+      }
+      assert.equal(sendCount, 3); // 1 initial + 2 bounded retries
+      assert.equal(createCount, 1); // never rotated
+      await opened.session.close();
+    });
+  });
+
+  it("does not retry an overload error once the turn has produced output", async () => {
+    await withKey(async () => {
+      const dir = mkdtempSync(resolve(tmpdir(), "overload-partial-"));
+      let sendCount = 0;
+
+      const sdk: SdkCreateLike = {
+        create: async () => ({
+          agentId: "agent-1",
+          send: async (): Promise<RunLike> => {
+            sendCount++;
+            return {
+              stream: async function* () {
+                yield { type: "text", text: "partial…" };
+                throw new Error("529 Overloaded"); // fails mid-stream, after output
+              },
+              wait: async () => {
+                throw new Error("529 Overloaded");
+              },
+            };
+          },
+        }),
+      };
+
+      const opened = await openChatSession({
+        sdk,
+        dir,
+        interactive: false,
+        overloadRetryDelaysMs: [0, 0],
+      });
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+
+      const out = await opened.session.sendTurn("hello");
+      assert.equal(out.kind, "error");
+      assert.equal(sendCount, 1); // no retry — would re-bill the already-produced output
+      await opened.session.close();
+    });
+  });
+});

@@ -47,6 +47,10 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Write a state file via tmp + rename so a crash mid-write cannot corrupt it. */
 export function writeFileAtomic(path: string, body: string, mode = 0o600): void {
   const tmp = `${path}.tmp-${process.pid}`;

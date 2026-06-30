@@ -45,10 +45,15 @@ import { buildPreTurnBlocks } from "./preTurn.js";
 import { connectAgentForSession, replayPreamble, type ConnectMode } from "./sessionConnect.js";
 import { resolveMcpServers } from "./mcpServers.js";
 import { redact } from "./redact.js";
-import { newId, preview, resultPreview, nowIso } from "./util.js";
+import { newId, preview, resultPreview, nowIso, sleep } from "./util.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import type { ActivityDetail } from "./host.js";
-import { consumeRunStream, formatSdkError, isAgentRotatableError } from "./sdkErrors.js";
+import {
+  consumeRunStream,
+  formatSdkError,
+  isAgentRotatableError,
+  OVERLOAD_RETRY_DELAYS_MS,
+} from "./sdkErrors.js";
 import {
   API_KEY_HELP,
   ANTHROPIC_API_KEY_HELP,
@@ -105,6 +110,8 @@ export interface ChatSessionOptions {
   onAgentRotating?: (info: { reason: string }) => void;
   /** Fired when SDK agent is replaced inside the same irida session. */
   onAgentRotated?: (info: AgentRotatedInfo) => void;
+  /** Overload retry backoff schedule override (tests only; default OVERLOAD_RETRY_DELAYS_MS). */
+  overloadRetryDelaysMs?: number[];
 }
 
 export type TurnOutcome =
@@ -419,6 +426,8 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
       let attemptSendMsg = sendMsg;
       let rotated = false;
+      let overloadAttempts = 0;
+      const overloadDelaysMs = opts.overloadRetryDelaysMs ?? OVERLOAD_RETRY_DELAYS_MS;
 
       log(
         `[chat] sendTurn session=${sessionId} agent=${agent.agentId ?? "-"} userChars=${msg.length} composedChars=${sendMsg.length} replayPrefixChars=${replayPrefix.length}`
@@ -659,6 +668,25 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             model: cfg.model,
             ...runLogMeta(),
           });
+          // Transient capacity errors (529/429/503, I-127) aren't fixed by rotating
+          // the session — retry the SAME turn in place after a short backoff (I-133).
+          // Guarded to early failures only (no partial output/tool calls yet): once a
+          // turn has produced output or run tools, a blind retry would redo billed
+          // work, not just resume a clean attempt.
+          if (
+            formatted.errorKind === "overload" &&
+            toolCalls === 0 &&
+            turnText.length === 0 &&
+            overloadAttempts < overloadDelaysMs.length
+          ) {
+            const delayMs = overloadDelaysMs[overloadAttempts];
+            overloadAttempts++;
+            log(`[chat] sendTurn overload retry attempt=${overloadAttempts} delayMs=${delayMs}`);
+            opts.onTurnRetry?.(rotateReason);
+            await sleep(delayMs);
+            continue;
+          }
+
           if (isAgentRotatableError(e) && (await tryRotateAgent(rotateReason))) continue;
 
           await store.upsertSession({

@@ -115,6 +115,13 @@ export function isAgentRotatableError(e: unknown): boolean {
   return formatSdkError(e).rotatable;
 }
 
+/**
+ * Bounded backoff for transient `overload` (529/429/503) retries (I-133): 5s, 15s.
+ * Capacity errors are not fixed by rotating the session (I-127) — they just need
+ * the upstream a moment to recover, so sendTurn retries the SAME turn in place.
+ */
+export const OVERLOAD_RETRY_DELAYS_MS = [5_000, 15_000];
+
 /** Consume SDK run stream; swallow iterator cleanup rejections. */
 export async function consumeRunStream(
   run: { stream?(): AsyncIterable<unknown> },
