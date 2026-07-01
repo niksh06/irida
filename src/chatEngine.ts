@@ -113,6 +113,8 @@ export interface ChatSessionOptions {
   onAgentRotated?: (info: AgentRotatedInfo) => void;
   /** Overload retry backoff schedule override (tests only; default OVERLOAD_RETRY_DELAYS_MS). */
   overloadRetryDelaysMs?: number[];
+  /** Session store override (tests only; default createStore(dir)). */
+  store?: IStore;
 }
 
 export type TurnOutcome =
@@ -242,7 +244,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     }
   }
 
-  const store = createStore(dir, cfg.stateDir);
+  const store = opts.store ?? createStore(dir, cfg.stateDir);
   const gatewayPeerIds = new Set(Object.values(loadGatewayPeers(dir).peers));
 
   let sdk: ChatSdk;
@@ -326,16 +328,24 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     log(`[chat] agentId=${agent.agentId ?? "-"} session=${sessionId} cwd=${cfg.cwd}`);
   }
 
-  await store.upsertSession({
-    id: sessionId,
-    title: "chat session",
-    cwd: sessionCwd,
-    runtime: cfg.runtime,
-    sdk_agent_id: agent.agentId ?? null,
-    last_status: connectMode === "fresh" ? "created" : "resumed",
-    channel: sessionChannel,
-    engine: provider,
-  });
+  // Registration is bookkeeping — a PG blip at open must not kill the session;
+  // later turns re-upsert the same row anyway (I-137).
+  try {
+    await store.upsertSession({
+      id: sessionId,
+      title: "chat session",
+      cwd: sessionCwd,
+      runtime: cfg.runtime,
+      sdk_agent_id: agent.agentId ?? null,
+      last_status: connectMode === "fresh" ? "created" : "resumed",
+      channel: sessionChannel,
+      engine: provider,
+    });
+  } catch (e) {
+    log(
+      `[chat] session register failed — continuing: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
 
   // Live resume keeps SDK context — skip skills/onStart reinjection (gateway restart post-mortem 2026-06-13).
   let firstTurn = connectMode !== "resumed";
@@ -362,17 +372,40 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
       let sendMsg: string;
       const isFirstTurn = firstTurn;
+      // Memory/profile injections are enhancements: when their store is down
+      // the turn must degrade (no memory blocks), not fail — postmortem
+      // 2026-06-18 had PG down keep the poll alive while EVERY turn failed
+      // (I-137). ContextRefError/MemoryError stay user-visible via the catch.
+      const soft = async <T>(label: string, fallback: T, fn: () => Promise<T>): Promise<T> => {
+        try {
+          return await fn();
+        } catch (e) {
+          if (e instanceof ContextRefError || e instanceof MemoryError) throw e;
+          log(
+            `[chat] ${label} failed — continuing without it: ${e instanceof Error ? e.message : String(e)}`
+          );
+          return fallback;
+        }
+      };
       try {
-        const { taskText, blocks: preTurnBlocks } = await buildPreTurnBlocks({
-          dir,
-          cfg,
-          rawMessage: msg,
-          includeProfile: isFirstTurn,
-          channel: sessionChannel,
-        });
-        const sessionMemoryBlocks =
-          isFirstTurn ? await sessionStartMemoryBlocks(dir, cfg) : [];
-        const autoRagBlocks = await autoRagMemoryBlocks(dir, taskText, cfg);
+        const { taskText, blocks: preTurnBlocks } = await soft(
+          "preTurn blocks",
+          { taskText: msg, blocks: [] as string[] },
+          () =>
+            buildPreTurnBlocks({
+              dir,
+              cfg,
+              rawMessage: msg,
+              includeProfile: isFirstTurn,
+              channel: sessionChannel,
+            })
+        );
+        const sessionMemoryBlocks = isFirstTurn
+          ? await soft("session-start memory", [] as string[], () => sessionStartMemoryBlocks(dir, cfg))
+          : [];
+        const autoRagBlocks = await soft("autoRag memory", [] as string[], () =>
+          autoRagMemoryBlocks(dir, taskText, cfg)
+        );
         sendMsg = await composePrompt({
           userPrompt: taskText,
           cwd: sessionCwd,
@@ -429,6 +462,19 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       let rotated = false;
       let overloadAttempts = 0;
       const overloadDelaysMs = opts.overloadRetryDelaysMs ?? OVERLOAD_RETRY_DELAYS_MS;
+      // Persistence is bookkeeping: a store outage must not change the turn's
+      // outcome — and above all must never push a COMPLETED turn into the
+      // catch→rotation path, which would re-execute it (double billing;
+      // audit 2026-07-02 H-2 / I-137).
+      const persistSoft = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
+        try {
+          await fn();
+        } catch (e) {
+          log(
+            `[chat] ${label} failed — turn outcome preserved: ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
+      };
 
       log(
         `[chat] sendTurn session=${sessionId} agent=${agent.agentId ?? "-"} userChars=${msg.length} composedChars=${sendMsg.length} replayPrefixChars=${replayPrefix.length}`
@@ -478,8 +524,20 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         agent = next;
         lastAgentTouchAt = Date.now();
         session.agentId = agent.agentId ?? null;
-        const replayRuns = Math.min(4, (await store.listRuns(sessionId)).length);
-        const prefix = await replayPreamble(store, sessionId, replayRuns, 12_000);
+        // Replay is best-effort context restoration — with the store down,
+        // rotate with an empty preamble instead of failing the turn (I-137).
+        let replayRuns = 0;
+        let prefix = "";
+        try {
+          replayRuns = Math.min(4, (await store.listRuns(sessionId)).length);
+          prefix = await replayPreamble(store, sessionId, replayRuns, 12_000);
+        } catch (e) {
+          replayRuns = 0;
+          prefix = "";
+          log(
+            `[chat] rotate replay unavailable — rotating without history: ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
         log(
           `[chat] rotate done reason=${reason} old=${previousAgentId ?? "-"} new=${agent.agentId ?? "-"} replayRuns=${replayRuns} replayPrefixChars=${prefix.length} basePromptChars=${baseSendMsg.length}`
         );
@@ -489,15 +547,17 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           replayTurns: replayRuns,
           reason,
         });
-        await store.upsertSession({
-          id: sessionId,
-          title: await resolveSessionTitle(store, sessionId, msg),
-          cwd: sessionCwd,
-          runtime: cfg.runtime,
-          sdk_agent_id: agent.agentId ?? null,
-          last_status: "agent_rotated",
-          channel: sessionChannel,
-        });
+        await persistSoft("upsertSession (rotate)", async () =>
+          store.upsertSession({
+            id: sessionId,
+            title: await resolveSessionTitle(store, sessionId, msg),
+            cwd: sessionCwd,
+            runtime: cfg.runtime,
+            sdk_agent_id: agent.agentId ?? null,
+            last_status: "agent_rotated",
+            channel: sessionChannel,
+          })
+        );
         attemptSendMsg = prefix
           ? prefix + "Continue. New request:\n\n" + coreSendMsg
           : coreSendMsg;
@@ -589,36 +649,40 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
                   `partialChars=${turnText.length}`,
                 ])
               : null;
-          await store.recordRun({
-            id: runId,
-            session_id: sessionId,
-            sdk_agent_id: agent.agentId ?? null,
-            sdk_run_id: res.id ?? null,
-            prompt_preview: preview(msg),
-            result_preview: resultPreview(turnText),
-            status: lastStatus,
-            error_kind: lastStatus === "error" ? "run_error" : null,
-            error_detail: runErrorDetail,
-            started_at: startedAt,
-            finished_at: nowIso(),
-            cwd: sessionCwd,
-            runtime: cfg.runtime,
-            model: cfg.model,
-            input_tokens: usage.inputTokens ?? null,
-            output_tokens: usage.outputTokens ?? null,
-            cache_read_tokens: usage.cacheReadTokens ?? null,
-            cache_creation_tokens: usage.cacheCreationTokens ?? null,
-            ...runLogMeta(),
-          });
-          await store.upsertSession({
-            id: sessionId,
-            title: await resolveSessionTitle(store, sessionId, msg),
-            cwd: sessionCwd,
-            runtime: cfg.runtime,
-            sdk_agent_id: agent.agentId ?? null,
-            last_status: lastStatus,
-            channel: sessionChannel,
-          });
+          await persistSoft("recordRun", () =>
+            store.recordRun({
+              id: runId,
+              session_id: sessionId,
+              sdk_agent_id: agent.agentId ?? null,
+              sdk_run_id: res.id ?? null,
+              prompt_preview: preview(msg),
+              result_preview: resultPreview(turnText),
+              status: lastStatus,
+              error_kind: lastStatus === "error" ? "run_error" : null,
+              error_detail: runErrorDetail,
+              started_at: startedAt,
+              finished_at: nowIso(),
+              cwd: sessionCwd,
+              runtime: cfg.runtime,
+              model: cfg.model,
+              input_tokens: usage.inputTokens ?? null,
+              output_tokens: usage.outputTokens ?? null,
+              cache_read_tokens: usage.cacheReadTokens ?? null,
+              cache_creation_tokens: usage.cacheCreationTokens ?? null,
+              ...runLogMeta(),
+            })
+          );
+          await persistSoft("upsertSession", async () =>
+            store.upsertSession({
+              id: sessionId,
+              title: await resolveSessionTitle(store, sessionId, msg),
+              cwd: sessionCwd,
+              runtime: cfg.runtime,
+              sdk_agent_id: agent.agentId ?? null,
+              last_status: lastStatus,
+              channel: sessionChannel,
+            })
+          );
           if (lastStatus === "error") {
             const detail = pickRunErrorDetail(res);
             // claude-agent delivers upstream failures as `is_error` RESULT
@@ -683,23 +747,25 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           const rotateReason = `exception kind=${formatted.errorKind} ${formatted.message}`;
           log(`[chat] sendTurn error kind=${formatted.errorKind} ${formatted.message}`);
           // Record the failed attempt before any retry so transcript/replay keeps it.
-          await store.recordRun({
-            id: runId,
-            session_id: sessionId,
-            sdk_agent_id: agent.agentId ?? null,
-            sdk_run_id: null,
-            prompt_preview: preview(msg),
-            result_preview: resultPreview(turnText),
-            status: "error",
-            error_kind: formatted.errorKind,
-            error_detail: formatErrorDetail([formatted.message]),
-            started_at: startedAt,
-            finished_at: nowIso(),
-            cwd: sessionCwd,
-            runtime: cfg.runtime,
-            model: cfg.model,
-            ...runLogMeta(),
-          });
+          await persistSoft("recordRun (error path)", () =>
+            store.recordRun({
+              id: runId,
+              session_id: sessionId,
+              sdk_agent_id: agent.agentId ?? null,
+              sdk_run_id: null,
+              prompt_preview: preview(msg),
+              result_preview: resultPreview(turnText),
+              status: "error",
+              error_kind: formatted.errorKind,
+              error_detail: formatErrorDetail([formatted.message]),
+              started_at: startedAt,
+              finished_at: nowIso(),
+              cwd: sessionCwd,
+              runtime: cfg.runtime,
+              model: cfg.model,
+              ...runLogMeta(),
+            })
+          );
           // Transient capacity errors (529/429/503, I-127) aren't fixed by rotating
           // the session — retry the SAME turn in place after a short backoff (I-133).
           // Guarded to early failures only (no partial output/tool calls yet): once a
@@ -721,15 +787,17 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
           if (isAgentRotatableError(e) && (await tryRotateAgent(rotateReason))) continue;
 
-          await store.upsertSession({
-            id: sessionId,
-            title: await resolveSessionTitle(store, sessionId, msg),
-            cwd: sessionCwd,
-            runtime: cfg.runtime,
-            sdk_agent_id: agent.agentId ?? null,
-            last_status: "error",
-            channel: sessionChannel,
-          });
+          await persistSoft("upsertSession (error path)", async () =>
+            store.upsertSession({
+              id: sessionId,
+              title: await resolveSessionTitle(store, sessionId, msg),
+              cwd: sessionCwd,
+              runtime: cfg.runtime,
+              sdk_agent_id: agent.agentId ?? null,
+              last_status: "error",
+              channel: sessionChannel,
+            })
+          );
           return {
             kind: "error",
             message: formatted.message,

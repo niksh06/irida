@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, chmodSy
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { redact } from "./redact.js";
+import { withPgRetry } from "./pg/pool.js";
 import {
   CREDENTIAL_SECRET_NAMES,
   type CredentialSecretName,
@@ -238,7 +239,9 @@ export async function warmCredentialsCache(dir: string = process.cwd()): Promise
     return;
   }
   try {
-    const loaded = await loadPgCredentialSecrets();
+    // A transient PG blip at process start must not cold-cache secrets for the
+    // whole process lifetime (gateway warms exactly once) — retry briefly (I-137).
+    const loaded = await withPgRetry(() => loadPgCredentialSecrets(), { label: "credentials warm" });
     const file = readCredentialsFileFromDisk(dir);
     let migrated = false;
     for (const name of CREDENTIAL_SECRET_NAMES) {
