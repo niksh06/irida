@@ -44,6 +44,7 @@ export const SLASH_REGISTRY: SlashRegistryEntry[] = [
   { cmd: "undo", desc: "Undo last reversible mutation", descGateway: "Отменить последнее действие", surfaces: ["tui", "gateway"] },
   { cmd: "mode", desc: "Sticky turn mode (advice/do/debug/sync)", descGateway: "Режим ответа: advice/do/debug/sync (или off)", args: "[advice|do|debug|sync|off]", surfaces: ["gateway"] },
   { cmd: "cancel", desc: "Abandon pending question / a follow-up by id", descGateway: "Отменить вопрос агента или отложенную задачу (/cancel <fu_id>)", args: "[fu_id]", surfaces: ["gateway"] },
+  { cmd: "stop", desc: "Discard current turn + clear queue", descGateway: "Прервать: отбросить текущий ответ и очистить очередь", surfaces: ["gateway"] },
   { cmd: "followups", desc: "List scheduled deferred follow-ups", descGateway: "Отложенные задачи агента (defer_followup)", surfaces: ["gateway"] },
 ];
 

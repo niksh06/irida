@@ -97,8 +97,9 @@ test("syncTelegramBotCommands posts setMyCommands for each scope", async () => {
     "all_group_chats",
   ]);
   const names = (calls[0]!.body.commands as Array<{ command: string }>).map((c) => c.command);
+  // /stop is in the menu since I-138 (queue clear + reply discard).
   assert.ok(
-    names.includes("help") && names.includes("doctor") && names.includes("delegate") && !names.includes("stop")
+    names.includes("help") && names.includes("doctor") && names.includes("delegate") && names.includes("stop")
   );
 });
 

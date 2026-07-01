@@ -15,6 +15,7 @@ import { gatewayTelegramBotCommands, isGatewaySlashCommand } from "./gatewaySlas
 import type { ActivityDetail } from "./host.js";
 import { emitServiceLog, type ServiceLogSink } from "./serviceLog.js";
 import { loadTelegramPollOffset, saveTelegramPollOffset } from "./gatewayTelegramOffset.js";
+import { addInflight, loadInflight, removeInflight } from "./gatewayInflight.js";
 
 export interface TelegramMessage {
   message_id: number;
@@ -758,8 +759,20 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   const maxBackoffMs = 60_000;
   let lastHeartbeatLog = Date.now();
   const heartbeatMs = 15 * 60 * 1000;
-  /** Per-chat serial queues: one slow turn must not block other chats or the poll loop. */
-  const chatQueues = new Map<string, Promise<void>>();
+  /**
+   * Per-chat droppable queues (I-138): the poll loop only enqueues — one slow
+   * turn blocks neither other chats, nor getUpdates, nor outbox drain. Order
+   * is preserved within a chat; /stop clears queued items and bumps the epoch
+   * so the in-flight turn's reply is suppressed on completion.
+   */
+  interface ChatQueue {
+    items: Array<{ u: TelegramUpdate; updateId: number }>;
+    running: boolean;
+    epoch: number;
+    pump: Promise<void>;
+  }
+  const chatQueues = new Map<string, ChatQueue>();
+  const MAX_PENDING_PER_CHAT = 5;
   let pollTicks = 0;
   const pollAliveEvery = Math.max(20, Math.floor(60_000 / Math.max(pollMs, 500)));
   let inflightTick: Promise<void> = Promise.resolve();
@@ -833,13 +846,19 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
     }
   };
 
-  const handleUpdate = async (u: TelegramUpdate): Promise<void> => {
+  const handleUpdate = async (u: TelegramUpdate, suppressed?: () => boolean): Promise<void> => {
     const result = await processTelegramUpdate(opts.cfg, opts.router, u, {
       token,
       fetchFn,
       dir: opts.dir,
     });
     if (!result.handled || !result.chatId) return;
+    if (suppressed?.()) {
+      // /stop arrived while this turn ran — the SDK work is done (and billed),
+      // but the user explicitly discarded it.
+      logInfo(`[gateway] reply suppressed by /stop chat=${result.chatId}`);
+      return;
+    }
     if (result.ignored) {
       logError(`[gateway] telegram chat=${result.chatId} ignored: ${result.ignored}`);
       return;
@@ -870,6 +889,103 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
     }
   };
 
+  const getQueue = (chatId: string): ChatQueue => {
+    let q = chatQueues.get(chatId);
+    if (!q) {
+      q = { items: [], running: false, epoch: 0, pump: Promise.resolve() };
+      chatQueues.set(chatId, q);
+    }
+    return q;
+  };
+
+  const pumpQueue = (chatId: string, q: ChatQueue): void => {
+    if (q.running) return;
+    q.running = true;
+    q.pump = (async () => {
+      for (;;) {
+        if (!running) break; // shutdown: leave items journaled for restart replay
+        const item = q.items.shift();
+        if (!item) break;
+        const epochAtStart = q.epoch;
+        try {
+          await handleUpdate(item.u, () => q.epoch !== epochAtStart);
+        } catch (e) {
+          logError(
+            `[gateway] telegram update failed chat=${chatId}: ${e instanceof Error ? e.message : String(e)}`
+          );
+        } finally {
+          try {
+            removeInflight(dir, item.updateId);
+          } catch {
+            /* journal is best-effort */
+          }
+        }
+      }
+      q.running = false;
+    })();
+  };
+
+  const enqueueUpdate = (chatId: string, u: TelegramUpdate, from: "poll" | "journal"): void => {
+    const q = getQueue(chatId);
+    if (q.items.length >= MAX_PENDING_PER_CHAT) {
+      logError(`[gateway] chat queue full chat=${chatId} — dropping update ${u.update_id}`);
+      if (from === "journal") {
+        try {
+          removeInflight(dir, u.update_id);
+        } catch {
+          /* best-effort */
+        }
+      }
+      void deliverWithRetry(chatId, "Очередь сообщений переполнена — дождись ответа на предыдущие.", false);
+      return;
+    }
+    if (from === "poll") {
+      try {
+        addInflight(dir, { updateId: u.update_id, chatId, update: u, at: new Date().toISOString() });
+      } catch (e) {
+        // Crash-recovery aid only — never block handling on the journal.
+        logError(`[gateway] inflight journal write failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    q.items.push({ u, updateId: u.update_id });
+    pumpQueue(chatId, q);
+  };
+
+  /** /stop must bypass the queue — inside it, it would wait behind the very turn it stops. */
+  const isStopCommand = (u: TelegramUpdate): boolean => {
+    const text = (u.message?.text ?? "").trim().toLowerCase();
+    return text === "/stop" || text.startsWith("/stop@");
+  };
+
+  const handleStopBypass = async (chatId: string, u: TelegramUpdate): Promise<void> => {
+    const msg = u.message;
+    const authorized =
+      msg && isChatAllowed(opts.cfg, chatId, opts.dir) && authorizeTelegramSender(opts.cfg, msg).ok;
+    if (!authorized) {
+      // Unauthorized /stop takes the normal path (pairing / ignore rules).
+      enqueueUpdate(chatId, u, "poll");
+      return;
+    }
+    const q = chatQueues.get(chatId);
+    const droppedItems = q ? q.items.splice(0) : [];
+    for (const item of droppedItems) {
+      try {
+        removeInflight(dir, item.updateId);
+      } catch {
+        /* best-effort */
+      }
+    }
+    const interrupted = Boolean(q?.running);
+    if (q) q.epoch++;
+    logInfo(`[gateway] /stop chat=${chatId} inflight=${interrupted} droppedQueued=${droppedItems.length}`);
+    const ack = interrupted
+      ? `⏹ Ок: текущий ответ отброшен${droppedItems.length ? `, очередь очищена (${droppedItems.length})` : ""}.`
+      : droppedItems.length
+        ? `⏹ Очередь очищена (${droppedItems.length}).`
+        : "Нечего прерывать — сейчас ничего не выполняется.";
+    await deliverWithRetry(chatId, ack, false);
+  };
+
   const tick = async () => {
     if (!running) return;
     let nextDelayMs = pollMs;
@@ -893,20 +1009,20 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       for (const u of updates) {
         if (!running) break;
         const chatId = telegramUpdateChatId(u);
-        const runUpdate = () =>
-          handleUpdate(u).catch((e) => {
-            logError(
-              `[gateway] telegram update failed chat=${chatId ?? u.update_id}: ${e instanceof Error ? e.message : String(e)}`
-            );
-          });
         if (!chatId) {
-          await runUpdate();
+          // Service updates without a chat are rare — handle inline.
+          await handleUpdate(u).catch((e) =>
+            logError(
+              `[gateway] telegram update failed id=${u.update_id}: ${e instanceof Error ? e.message : String(e)}`
+            )
+          );
+        } else if (isStopCommand(u)) {
+          await handleStopBypass(chatId, u);
         } else {
-          const prev = chatQueues.get(chatId) ?? Promise.resolve();
-          const settled = prev.then(runUpdate);
-          chatQueues.set(chatId, settled);
-          // Ack only after this update is handled — avoid losing user messages on crash/hang.
-          await settled;
+          // Journaled BEFORE the offset ack below (I-138): the old code kept
+          // at-least-once by awaiting each turn serially; now the journal
+          // carries that guarantee and startup replays unhandled entries.
+          enqueueUpdate(chatId, u, "poll");
         }
         offset = Math.max(offset, u.update_id + 1);
         saveTelegramPollOffset(opts.dir ?? process.cwd(), offset);
@@ -925,6 +1041,17 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
   };
 
   logInfo(`[gateway] telegram long-poll started (interval=${pollMs}ms, offset=${offset})`);
+  // Crash recovery (I-138): updates journaled but never finished re-enter their
+  // chat queues in id order.
+  try {
+    const survivors = loadInflight(dir).sort((a, b) => a.updateId - b.updateId);
+    if (survivors.length > 0) {
+      logInfo(`[gateway] replaying ${survivors.length} in-flight update(s) from journal`);
+      for (const s of survivors) enqueueUpdate(s.chatId, s.update as TelegramUpdate, "journal");
+    }
+  } catch (e) {
+    logError(`[gateway] inflight replay failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
   void syncTelegramBotCommands(token, fetchFn)
     .then((n) => logInfo(`[gateway] telegram setMyCommands OK (${n} cmds, ${TELEGRAM_COMMAND_SCOPES.length} scopes)`))
     .catch((e) =>
@@ -939,7 +1066,9 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
       // Drain: finish the in-flight poll and all per-chat turns before the
       // caller disposes router sessions.
       await inflightTick.catch(() => {});
-      await Promise.allSettled([...chatQueues.values()]);
+      // Pumps stop between items (`running` gate); unfinished items stay in
+      // the journal and replay on the next start.
+      await Promise.allSettled([...chatQueues.values()].map((q) => q.pump));
     },
   };
 }

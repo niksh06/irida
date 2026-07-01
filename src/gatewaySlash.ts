@@ -199,6 +199,13 @@ export async function handleGatewaySlash(
         : "Нет ожидающего вопроса от агента. (Для отложенной задачи: /cancel <fu_id>.)";
     }
 
+    case "stop": {
+      // I-138: on Telegram the poller intercepts /stop BEFORE the queue (inside
+      // it, it would wait behind the very turn it stops). Reaching this handler
+      // means nothing was in flight for this chat.
+      return "Нечего прерывать — сейчас ничего не выполняется.";
+    }
+
     case "followups": {
       // I-126: list this chat's pending deferred follow-ups.
       const items = listFollowups(ctx.dir, ctx.adapter, ctx.chatId);
