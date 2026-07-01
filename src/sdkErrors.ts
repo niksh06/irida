@@ -57,12 +57,7 @@ export function formatSdkError(e: unknown): FormattedSdkError {
   const overloadText = [raw, detail?.details?.detail, detail?.details?.title, detail?.error]
     .filter(Boolean)
     .join(" ");
-  if (
-    !auth &&
-    /\b(403 request not allowed|429|503|529)\b|overloaded|rate.?limit|too many requests|service unavailable/i.test(
-      overloadText
-    )
-  ) {
+  if (!auth && isOverloadErrorText(overloadText)) {
     const body = detail?.details?.detail || detail?.details?.title || raw;
     return {
       message: redact(`Upstream busy — ${body}. Transient; retry shortly.`),
@@ -113,6 +108,21 @@ export function formatSdkError(e: unknown): FormattedSdkError {
 /** True when sendTurn may rotate SDK agent and retry once (never for auth). */
 export function isAgentRotatableError(e: unknown): boolean {
   return formatSdkError(e).rotatable;
+}
+
+/**
+ * Transient capacity error text — 529/429/503, `403 Request not allowed`
+ * (account bursts), overloaded/rate-limit variants. Single source for BOTH
+ * delivery shapes: thrown exceptions (formatSdkError above) and run-RESULT
+ * errors — the claude-agent engine surfaces upstream failures as `is_error`
+ * result messages, so they reach chatEngine's `status:"error"` branch, never
+ * the catch. Both paths must retry in place and never rotate (I-127/I-135).
+ */
+export function isOverloadErrorText(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return /\b(403 request not allowed|429|503|529)\b|overloaded|rate.?limit|too many requests|service unavailable/i.test(
+    text
+  );
 }
 
 /**

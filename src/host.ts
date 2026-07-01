@@ -47,7 +47,8 @@ export class StartupError extends Error {}
 // ── Interactive session shapes (issue 009) ───────────────────────────────
 export interface RunLike {
   stream?(): AsyncIterable<unknown>;
-  wait(): Promise<{ status: string; id?: string }>;
+  /** `error` carries the failure detail when status === "error" (read via pickRunErrorDetail). */
+  wait(): Promise<{ status: string; id?: string; error?: string }>;
 }
 
 export interface AgentSendOptions {

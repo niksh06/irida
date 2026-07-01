@@ -52,6 +52,7 @@ import {
   consumeRunStream,
   formatSdkError,
   isAgentRotatableError,
+  isOverloadErrorText,
   OVERLOAD_RETRY_DELAYS_MS,
 } from "./sdkErrors.js";
 import {
@@ -620,6 +621,37 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           });
           if (lastStatus === "error") {
             const detail = pickRunErrorDetail(res);
+            // claude-agent delivers upstream failures as `is_error` RESULT
+            // messages, not thrown exceptions — so transient capacity errors
+            // (529/429/503) land here, never in the catch below. Same policy as
+            // the thrown path (I-133): bounded in-place retry while the turn is
+            // still clean, and NEVER rotate — a fresh session hits the same
+            // upstream state and only sheds context (I-127/I-135).
+            if (isOverloadErrorText(detail)) {
+              if (
+                toolCalls === 0 &&
+                turnText.length === 0 &&
+                overloadAttempts < overloadDelaysMs.length
+              ) {
+                const delayMs = overloadDelaysMs[overloadAttempts];
+                overloadAttempts++;
+                log(
+                  `[chat] sendTurn overload retry (run result) attempt=${overloadAttempts} delayMs=${delayMs}`
+                );
+                opts.onTurnRetry?.(`run_error overload ${detail}`);
+                await sleep(delayMs);
+                continue;
+              }
+              const failed = formatRunErrorMessage({ res, toolCalls, turnText });
+              log(`[chat] sendTurn failed (overload, no rotation) ${failed.message}`);
+              return {
+                kind: "error",
+                message: `Upstream busy — ${detail}. Transient; retry shortly.`,
+                fatal: false,
+                partialAssistantText: failed.partialAssistantText,
+                runFailed: true,
+              };
+            }
             const rotateReason = [
               "run_error",
               `status=${lastStatus}`,
