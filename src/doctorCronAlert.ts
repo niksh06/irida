@@ -7,6 +7,7 @@ import { cronJobsPath, findLatestCronJobsBackup, loadCronJobs } from "./cronJobs
 import { gatherDoctorChecks, type DoctorCheck } from "./doctorChecks.js";
 import { loadGatewayConfig } from "./gatewayConfig.js";
 import { gatherGatewayStatus } from "./gatewayStatus.js";
+import { enqueueOutbox } from "./gatewayOutbox.js";
 import { telegramSendLongMessage } from "./gatewayTelegram.js";
 import { resolveJobNotifyTarget } from "./cronNotify.js";
 
@@ -62,7 +63,11 @@ export function resolveMorningAlertTarget(
   return null;
 }
 
-/** Exit 0 when cron health OK or alert delivered; 1 when alert could not be sent. */
+/**
+ * Exit 0 when cron health OK, the alert was delivered, or it was parked to the
+ * gateway outbox (drain guarantees delivery, I-136); 1 only when the alert
+ * could neither be sent nor parked.
+ */
 export async function cmdDoctorMorningAlert(dir: string = process.cwd()): Promise<number> {
   const check = gatherCronHealthCheck(dir);
   if (check.ok) {
@@ -88,7 +93,13 @@ export async function cmdDoctorMorningAlert(dir: string = process.cwd()): Promis
     console.error(
       `[doctor] morning cron alert failed: ${e instanceof Error ? e.message : String(e)}`
     );
-    return 1;
+    try {
+      enqueueOutbox(dir, { chatId: target.chatId, text, format: "plain" });
+      console.error("[doctor] morning cron alert parked in outbox (gateway will drain)");
+      return 0;
+    } catch {
+      return 1;
+    }
   }
   return 0;
 }

@@ -123,6 +123,17 @@ export async function sendDigestQaAlertMessage(
     console.error(
       `[cron] digest QA alert failed job=${job.id}: ${e instanceof Error ? e.message : String(e)}`
     );
+    // I-136: the alert channel exists FOR failures — park it like the notify
+    // path does (I-31) instead of dropping; the gateway outbox drain delivers
+    // it and self-monitor already watches the outbox.
+    if (target.mode === "telegram") {
+      try {
+        enqueueOutbox(dir, { chatId: target.chatId, text: alert, format: "plain" });
+        console.error(`[cron] digest QA alert parked in outbox job=${job.id}`);
+      } catch {
+        /* best-effort */
+      }
+    }
   }
 }
 

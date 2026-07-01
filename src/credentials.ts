@@ -15,6 +15,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, chmodSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
+import { redact } from "./redact.js";
 import {
   CREDENTIAL_SECRET_NAMES,
   type CredentialSecretName,
@@ -197,6 +198,38 @@ function pgCachedSecret(name: CredentialSecretName): string {
   return pgSecretsCache[name] ?? "";
 }
 
+function checkSecretFormat(name: CredentialSecretName, value: string): SecretFormatCheck {
+  return name === "cursor_api_key"
+    ? validateCursorApiKeyFormat(value)
+    : validateTelegramBotTokenFormat(value);
+}
+
+/**
+ * Read-path format guard (I-136). A corrupt stored value (the I-132 incident:
+ * a 6-char blob from credentials.json) passes `if (!token)` guards and reaches
+ * the Telegram API as `bot<garbage>/…` → opaque 404. Scope, per the Arch-7 note
+ * above: env is never validated (explicit user override, doctor flags shape),
+ * and in file-only mode the lenient file API stays lenient on read too — the
+ * garbage class this guards against is a PG-mode artifact (failed decrypt /
+ * split-brain residue mirrored to the file fallback).
+ */
+function guardResolvedSecret(
+  name: CredentialSecretName,
+  value: string,
+  source: "pg" | "file"
+): string {
+  if (!value) return "";
+  if (source === "file" && !pgSecretsEnabled()) return value;
+  const fmt = checkSecretFormat(name, value);
+  if (fmt.ok) return value;
+  const where = source === "pg" ? "postgres" : "credentials.json";
+  const hint = name === "cursor_api_key" ? "irida auth login --stdin" : "irida auth telegram login --stdin";
+  console.error(
+    `[credentials] ${name} from ${where} is corrupt (${fmt.detail}) — ignoring; re-save with: ${hint}`
+  );
+  return "";
+}
+
 /** Load encrypted secrets from Postgres; migrate plaintext file on first run. */
 export async function warmCredentialsCache(dir: string = process.cwd()): Promise<void> {
   if (!pgSecretsEnabled()) {
@@ -210,6 +243,16 @@ export async function warmCredentialsCache(dir: string = process.cwd()): Promise
     let migrated = false;
     for (const name of CREDENTIAL_SECRET_NAMES) {
       if (!loaded[name] && file[name]) {
+        // Migration guard (I-136): never push a corrupt file value into PG —
+        // this path bypasses persistSecret's validation and would launder the
+        // I-132 garbage class into the "trusted" store.
+        const fileFmt = checkSecretFormat(name, file[name]!);
+        if (!fileFmt.ok) {
+          console.error(
+            `[credentials] skip migrating ${name} to postgres: file value is corrupt (${fileFmt.detail})`
+          );
+          continue;
+        }
         await setPgCredentialSecret(name, file[name]!);
         loaded[name] = file[name];
         migrated = true;
@@ -219,14 +262,8 @@ export async function warmCredentialsCache(dir: string = process.cwd()): Promise
       // (short garbage that decrypts fine) while the file copy is valid —
       // prefer the valid file value and say so. Write-back stays explicit.
       if (loaded[name] && file[name]) {
-        const fmt =
-          name === "cursor_api_key"
-            ? validateCursorApiKeyFormat(loaded[name]!)
-            : validateTelegramBotTokenFormat(loaded[name]!);
-        const fileFmt =
-          name === "cursor_api_key"
-            ? validateCursorApiKeyFormat(file[name]!)
-            : validateTelegramBotTokenFormat(file[name]!);
+        const fmt = checkSecretFormat(name, loaded[name]!);
+        const fileFmt = checkSecretFormat(name, file[name]!);
         if (!fmt.ok && fileFmt.ok) {
           console.error(
             `[credentials] ${name} in postgres is corrupt (${fmt.detail}); using valid file value — re-save with: irida auth ${name === "cursor_api_key" ? "login" : "telegram login"} --stdin`
@@ -245,10 +282,17 @@ export async function warmCredentialsCache(dir: string = process.cwd()): Promise
     }
     pgSecretsCache = loaded;
     pgCacheReady = true;
-  } catch {
+  } catch (e) {
     // Postgres unavailable — fall back to plaintext credentials.json if present.
+    // Say so loudly (I-136): this silent catch was link #1 of the I-132 chain
+    // (dead DB → cold cache → garbage file token → opaque Telegram 404).
     pgSecretsCache = null;
     pgCacheReady = false;
+    console.error(
+      `[credentials] warm cache failed — postgres unavailable, falling back to credentials.json: ${redact(
+        e instanceof Error ? e.message : String(e)
+      )}`
+    );
   }
 }
 
@@ -277,9 +321,13 @@ async function persistSecret(name: CredentialSecretName, value: string, dir: str
 export function resolveApiKey(dir: string = process.cwd()): ResolvedApiKey {
   const fromEnv = (process.env.CURSOR_API_KEY ?? "").trim();
   if (fromEnv) return { key: fromEnv, source: "env" };
-  const fromPg = pgCachedSecret("cursor_api_key");
+  const fromPg = guardResolvedSecret("cursor_api_key", pgCachedSecret("cursor_api_key"), "pg");
   if (fromPg) return { key: fromPg, source: "pg" };
-  const fromFile = readCredentialsFileFromDisk(dir).cursor_api_key ?? "";
+  const fromFile = guardResolvedSecret(
+    "cursor_api_key",
+    readCredentialsFileFromDisk(dir).cursor_api_key ?? "",
+    "file"
+  );
   if (fromFile) return { key: fromFile, source: "file" };
   return { key: "", source: "none" };
 }
@@ -321,9 +369,13 @@ export function resolveTelegramBotToken(
   const name = envName.trim() || "TELEGRAM_BOT_TOKEN";
   const fromEnv = (process.env[name] ?? "").trim();
   if (fromEnv) return { value: fromEnv, source: "env" };
-  const fromPg = pgCachedSecret("telegram_bot_token");
+  const fromPg = guardResolvedSecret("telegram_bot_token", pgCachedSecret("telegram_bot_token"), "pg");
   if (fromPg) return { value: fromPg, source: "pg" };
-  const fromFile = readCredentialsFileFromDisk(dir).telegram_bot_token ?? "";
+  const fromFile = guardResolvedSecret(
+    "telegram_bot_token",
+    readCredentialsFileFromDisk(dir).telegram_bot_token ?? "",
+    "file"
+  );
   if (fromFile) return { value: fromFile, source: "file" };
   return { value: "", source: "none" };
 }

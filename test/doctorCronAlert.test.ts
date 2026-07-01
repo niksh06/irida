@@ -101,3 +101,32 @@ test("cmdDoctorMorningAlert returns 0 when alert sent successfully", async () =>
     else process.env.TELEGRAM_BOT_TOKEN = prevToken;
   }
 });
+
+test("cmdDoctorMorningAlert parks the alert to outbox when send fails (I-136)", async () => {
+  const dir = tmp();
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  // No cron.jobs.json -> health FAIL; target falls back to the gateway peer list.
+  writeFileSync(
+    join(dir, ".agent", "gateway.json"),
+    JSON.stringify({ allowedChatIds: ["123456"] }, null, 2) + "\n",
+    "utf8"
+  );
+  const { loadOutbox } = await import("../src/gatewayOutbox.js");
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ ok: false, description: "Not Found" }), { status: 404 });
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  let code: number;
+  try {
+    code = await cmdDoctorMorningAlert(dir);
+  } finally {
+    globalThis.fetch = prevFetch;
+    if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+  }
+  const outbox = loadOutbox(dir);
+  assert.equal(outbox.entries.length, 1);
+  assert.match(outbox.entries[0]!.text, /morning cron health FAIL/);
+  assert.equal(code, 0); // parked = delivery guaranteed via gateway outbox drain
+});

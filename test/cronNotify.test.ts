@@ -353,3 +353,37 @@ test("sendCronJobNotify POSTs to webhook", async () => {
   if (prevSecret === undefined) delete process.env.GATEWAY_WEBHOOK_SECRET;
   else process.env.GATEWAY_WEBHOOK_SECRET = prevSecret;
 });
+
+test("digest QA alert parks to outbox when telegram send fails (I-136)", async () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "qa-alert-park-"));
+  mkdirSync(join(dir, ".agent"), { recursive: true });
+  const { sendDigestQaAlertMessage } = await import("../src/cronNotify.js");
+  const job: CronJob = {
+    id: DEFAULT_DIGEST_JOB_ID,
+    cron: "59 23 * * *",
+    topicDelegates: true,
+    notify: { chatId: "123456789", telegram: true, tokenEnv: "TELEGRAM_BOT_TOKEN" },
+  };
+  const report = {
+    jobId: DEFAULT_DIGEST_JOB_ID,
+    ok: false,
+    checks: [{ name: "freshness", ok: false, detail: "200h ago (max 26h)" }],
+  };
+  const target = resolveJobNotifyTarget(job)!;
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ ok: false, description: "Not Found" }), { status: 404 });
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  try {
+    await sendDigestQaAlertMessage(job, report, dir, target);
+  } finally {
+    globalThis.fetch = prevFetch;
+    if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+  }
+  const outbox = loadOutbox(dir);
+  assert.equal(outbox.entries.length, 1);
+  assert.match(outbox.entries[0]!.text, /QA/i);
+  assert.equal(outbox.entries[0]!.chatId, "123456789");
+});
