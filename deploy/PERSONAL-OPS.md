@@ -188,7 +188,7 @@ from source); only the long-lived gateway needs the kickstart.
 
 ### Rollback
 
-Set `"enabled": false` (or remove `autoRag` block), `setup-home.sh`, restart gateway. No DB migration.
+Set `"enabled": false` (or remove `autoRag` block), `sync-to-prod.sh --apply`, restart gateway. No DB migration.
 
 ### Metrics (1–2 weeks)
 
@@ -203,12 +203,17 @@ Inspect: `tail -f ~/.irida/logs/gateway.log | grep autoRag`, `/status` runs 24h 
 
 ## После правок в Downloads
 
+Единственный деплой-путь — `sync-to-prod.sh` (аддитивный rsync + rebuild dist;
+никогда не трогает `.agent/`, `agent.config.json`, `skills/agent/`).
+`setup-home.sh` — только первичный bootstrap, не деплой.
+
 ```bash
-cd "/path/to/csagent-clone"
+cd "/path/to/irida-clone"
 npm test && npm run build
-bash deploy/setup-home.sh
+bash deploy/sync-to-prod.sh              # dry-run: что изменится
+bash deploy/sync-to-prod.sh --apply      # rsync + rebuild dist на проде
 ~/.irida/irida/scripts/csagent-run.sh doctor          # format секретов + API probe — обязательно
-bash ~/.irida/irida/deploy/install-launchd.sh
+launchctl kickstart -k "gui/$(id -u)/ai.irida.gateway"   # если менялся src/ гейтвея
 bash deploy/prod-check.sh
 ```
 
@@ -220,7 +225,7 @@ Post-mortem gateway 2026-06-18 (Postgres `:5435` down, poll alive но turns FAI
 
 Post-mortem gateway 2026-06-18 (allowlist split-brain, test ID `99` в prod, pairing dead-end): [Reports/analysis/postmortem-gateway-allowlist-split-brain-2026-06-18.md](../Reports/analysis/postmortem-gateway-allowlist-split-brain-2026-06-18.md).
 
-**Важно:** `setup-home.sh` синхронизирует **код**, не Postgres. Секреты в PG перезаписывает только `auth login`. **Gateway allowlist:** при `IRIDA_DATABASE_URL` + `IRIDA_SECRETS_KEY` chat ID хранятся **зашифрованными** в PG (`gateway_allowed_chats`); при первом `gateway run` мигрируют из `gateway.json`, plaintext `allowedChatIds` очищается (`allowedChatIdsStorage: pg`). Без Postgres — как раньше, только `~/.irida/.agent/gateway.json`. `doctor` — строки `gateway allowlist` + sanity.
+**Важно:** `sync-to-prod.sh`/`setup-home.sh` синхронизируют **код**, не Postgres. Секреты в PG перезаписывает только `auth login`. **Gateway allowlist:** при `IRIDA_DATABASE_URL` + `IRIDA_SECRETS_KEY` chat ID хранятся **зашифрованными** в PG (`gateway_allowed_chats`); при первом `gateway run` мигрируют из `gateway.json`, plaintext `allowedChatIds` очищается (`allowedChatIdsStorage: pg`). Без Postgres — как раньше, только `~/.irida/.agent/gateway.json`. `doctor` — строки `gateway allowlist` + sanity.
 
 ## Когда что-то сломалось
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Personal prod health pass — doctor, gateway, cron. For ~/.csagent home install.
+# Personal prod health pass — doctor, gateway, cron. For the ~/.irida home install.
 # Usage: bash deploy/prod-check.sh
 set -euo pipefail
 
@@ -13,8 +13,14 @@ if [[ ! -x "$RUN" ]]; then
 fi
 
 # shellcheck source=/dev/null
-[[ -f "$HOME_DIR/csagent.env" ]] && source "$HOME_DIR/csagent.env"
+if [[ -f "$HOME_DIR/irida.env" ]]; then
+  source "$HOME_DIR/irida.env"
+elif [[ -f "$HOME_DIR/csagent.env" ]]; then
+  source "$HOME_DIR/csagent.env"
+fi
 
+export IRIDA_HOME="$HOME_DIR"
+export IRIDA_ROOT="$ROOT"
 export CSAGENT_HOME="$HOME_DIR"
 export CSAGENT_ROOT="$ROOT"
 
@@ -40,7 +46,23 @@ if [[ -f "$ROOT/deploy/gateway-smoke.sh" ]]; then
   run "gateway smoke" bash "$ROOT/deploy/gateway-smoke.sh"
 fi
 run "cron list" "$RUN" cron list
-run "launchd" launchctl list 2>/dev/null | grep -E 'csagent|PID' || true
+
+# Post-rebrand services are ai.irida.* — check each label explicitly instead of
+# grepping `launchctl list` output through a pipe (a pipe runs `run` in a
+# subshell, silently losing fail=1).
+check_launchd() {
+  local missing=0
+  for label in ai.irida.gateway ai.irida.cron-tick; do
+    if launchctl list "$label" >/dev/null 2>&1; then
+      echo "  $label loaded"
+    else
+      echo "  $label NOT LOADED" >&2
+      missing=1
+    fi
+  done
+  return "$missing"
+}
+run "launchd" check_launchd
 
 if [[ -f "$ROOT/deploy/digest-qa.sh" ]]; then
   echo ""

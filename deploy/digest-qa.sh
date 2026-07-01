@@ -14,8 +14,14 @@ if [[ ! -x "$RUN" ]]; then
 fi
 
 # shellcheck source=/dev/null
-[[ -f "$HOME_DIR/csagent.env" ]] && source "$HOME_DIR/csagent.env"
+if [[ -f "$HOME_DIR/irida.env" ]]; then
+  source "$HOME_DIR/irida.env"
+elif [[ -f "$HOME_DIR/csagent.env" ]]; then
+  source "$HOME_DIR/csagent.env"
+fi
 
+export IRIDA_HOME="$HOME_DIR"
+export IRIDA_ROOT="$ROOT"
 export CSAGENT_HOME="$HOME_DIR"
 export CSAGENT_ROOT="$ROOT"
 

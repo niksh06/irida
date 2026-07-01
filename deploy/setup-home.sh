@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Initialize ~/.irida (Hermes-style home): runtime state + install copy outside Downloads.
 # Reads IRIDA_* env (legacy CSAGENT_* honored as fallback during migration).
+#
+# BOOTSTRAP ONLY — first install / env regeneration. Routine deploys go through
+# deploy/sync-to-prod.sh (additive rsync + dist rebuild); this script's sync is
+# additive too (no --delete) so a re-run can never clobber prod-local content
+# (skills/agent/, .agent/, agent.config.json).
 set -euo pipefail
 
 SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -59,8 +64,10 @@ sync_install() {
 
   echo "Syncing irida code → $IRIDA_ROOT"
   mkdir -p "$IRIDA_ROOT"
+  # NO --delete: prod tree owns content the repo never has (skills/agent/,
+  # runtime state, prod config). A destructive mirror here once risked wiping
+  # the evolution pipeline's agent-applied skills (audit 2026-07-02).
   rsync -a \
-    --delete \
     --exclude node_modules \
     --exclude .git \
     --exclude dist \
@@ -68,7 +75,19 @@ sync_install() {
     --exclude docs \
     --exclude repos \
     --exclude .agent \
+    --exclude logs \
     --exclude agent.config.json \
+    --exclude 'agent.config.json.bak*' \
+    --exclude '.env' \
+    --exclude '*.env' \
+    --exclude 'skills/agent' \
+    --exclude .claude \
+    --exclude .cursor \
+    --exclude .github \
+    --exclude .codegraph \
+    --exclude .cbm \
+    --exclude desktop \
+    --exclude .DS_Store \
     "$SOURCE_ROOT/" "$IRIDA_ROOT/"
 
   if [[ ! -d "$IRIDA_ROOT/node_modules" ]] || [[ ! -d "$IRIDA_ROOT/node_modules/pg" ]]; then
@@ -81,7 +100,8 @@ sync_install
 
 if [[ -d "$SOURCE_ROOT/skills" ]]; then
   mkdir -p "$IRIDA_ROOT/skills"
-  rsync -a "$SOURCE_ROOT/skills/" "$IRIDA_ROOT/skills/"
+  # skills/agent is prod-local (I-98 L1 auto-apply) — never overwrite from dev.
+  rsync -a --exclude 'agent/' "$SOURCE_ROOT/skills/" "$IRIDA_ROOT/skills/"
   echo "Synced skills/ → $IRIDA_ROOT/skills ($(find "$IRIDA_ROOT/skills" -name '*.md' | wc -l | tr -d ' ') files)"
 fi
 
@@ -136,3 +156,4 @@ echo "STATE_DIR=$STATE_DIR"
 echo "LOG_DIR=$LOG_DIR"
 echo ""
 echo "Next: bash $IRIDA_ROOT/deploy/install-launchd.sh"
+echo "Routine deploys after this bootstrap: bash deploy/sync-to-prod.sh --apply"

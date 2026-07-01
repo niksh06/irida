@@ -11,13 +11,13 @@ Hermes-style home: **`~/.irida`**. Code in **`~/.irida/irida`**, runtime in **`~
   irida.env          # IRIDA_HOME, IRIDA_ROOT
   logs/                # launchd stdout/stderr
   .agent/              # credentials, gateway, cron, sqlite, memory
-  csagent/             # install copy (synced from repo by setup-home.sh)
+  irida/               # install copy (bootstrap: setup-home.sh; deploys: sync-to-prod.sh)
     skills/            # bundled Markdown skills (canonical prod path)
     agent.config.json
     src/
 ```
 
-**Skills:** live under **`$IRIDA_ROOT/skills`**, not `~/.irida/skills`. `setup-home.sh` rsyncs `skills/` from the repo into the install copy. Gateway/cron resolve them via `IRIDA_ROOT` when `IRIDA_HOME` has no local `skills/` overlay. Verify: `irida doctor` → `skills root: …/csagent/skills`.
+**Skills:** live under **`$IRIDA_ROOT/skills`**, not `~/.irida/skills`. `setup-home.sh` rsyncs `skills/` from the repo into the install copy. Gateway/cron resolve them via `IRIDA_ROOT` when `IRIDA_HOME` has no local `skills/` overlay. Verify: `irida doctor` → `skills root: …/irida/skills`.
 
 ## Prod health (personal ops)
 
@@ -104,7 +104,7 @@ cd /path/to/your/csagent-clone
 ./scripts/csagent-run.sh doctor
 ```
 
-После правок в Downloads — снова `bash deploy/setup-home.sh` (rsync → home install).
+После правок в Downloads — `bash deploy/sync-to-prod.sh --apply` (аддитивный rsync + rebuild dist). `setup-home.sh` — только первичный bootstrap.
 
 ## Uninstall
 

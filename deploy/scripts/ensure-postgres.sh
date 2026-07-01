@@ -53,10 +53,11 @@ if ! command -v docker >/dev/null 2>&1; then
   log "docker CLI not found — cannot manage Postgres"; exit 70
 fi
 
-# 1. Docker daemon up? If not, start Docker Desktop (macOS) and wait.
+# 1. Docker daemon up? If not, start the daemon app and wait. Prod runs the
+# stack in OrbStack (I-131) — `open -a Docker` alone would launch nothing there.
 if ! docker info >/dev/null 2>&1; then
-  log "docker daemon down — starting Docker Desktop"
-  open -a Docker 2>/dev/null || true
+  log "docker daemon down — starting OrbStack/Docker Desktop"
+  open -a OrbStack 2>/dev/null || open -a Docker 2>/dev/null || true
   for _ in $(seq 1 "$WAIT_SECS"); do
     docker info >/dev/null 2>&1 && break
     sleep 1
