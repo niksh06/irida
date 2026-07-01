@@ -38,6 +38,36 @@ export interface DeferredFollowup {
   /** ISO time the follow-up becomes due. */
   dueAt: string;
   createdAt: string;
+  /** Claim mark (I-139): ISO time a runner claimed this entry before firing. */
+  firing?: string;
+}
+
+/** A claim older than this belongs to a crashed runner and may be retaken. */
+export const FOLLOWUP_CLAIM_TTL_MS = 15 * 60_000;
+
+/** True when `firing` is a live claim (younger than the TTL) at `now`. */
+export function hasFreshClaim(entry: DeferredFollowup, now: Date): boolean {
+  if (!entry.firing) return false;
+  const at = Date.parse(entry.firing);
+  return Number.isFinite(at) && now.getTime() - at < FOLLOWUP_CLAIM_TTL_MS;
+}
+
+/**
+ * Claim-then-run (I-139): mark the entry BEFORE the minutes-long agent run so
+ * an overlapping runner (launchd tick + manual `cron tick`) skips it instead
+ * of double-firing. Re-reads the store so the decision is made on current
+ * disk state — the race window shrinks from the run's duration to one
+ * read→write; a full file lock is overkill since ticks themselves are
+ * serialized by the cron-tick lock (I-140).
+ */
+export function claimFollowup(dir: string, id: string, now: Date = new Date()): boolean {
+  const file = loadFollowups(dir);
+  const entry = file.followups.find((f) => f.id === id);
+  if (!entry) return false;
+  if (hasFreshClaim(entry, now)) return false;
+  entry.firing = now.toISOString();
+  saveFollowups(dir, file);
+  return true;
 }
 
 export interface FollowupsFile {

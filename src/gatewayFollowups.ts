@@ -13,7 +13,13 @@ import { runPrompt } from "./run.js";
 import { isBackgroundPaused } from "./backgroundPause.js";
 import { enqueueOutbox } from "./gatewayOutbox.js";
 import { SESSION_CHANNEL } from "./sessionChannel.js";
-import { dueFollowups, clearFollowup, type DeferredFollowup } from "./gatewayFollowupStore.js";
+import {
+  claimFollowup,
+  clearFollowup,
+  dueFollowups,
+  hasFreshClaim,
+  type DeferredFollowup,
+} from "./gatewayFollowupStore.js";
 
 /** Cap fired follow-ups per tick — a burst shouldn't spike token spend. */
 export const FOLLOWUPS_MAX_PER_TICK = 3;
@@ -85,8 +91,16 @@ export async function runDueFollowups(opts: {
         quiet: true,
       }));
 
-  const batch = due.slice(0, opts.max ?? FOLLOWUPS_MAX_PER_TICK);
+  // Claim-then-run (I-139): entries another runner already claimed don't take
+  // batch slots, and each firing is guarded by a claim write made on a fresh
+  // re-read of the store.
+  const unclaimed = due.filter((f) => !hasFreshClaim(f, now));
+  const batch = unclaimed.slice(0, opts.max ?? FOLLOWUPS_MAX_PER_TICK);
   for (const fu of batch) {
+    if (!claimFollowup(dir, fu.id, now)) {
+      log(`[followup] skip ${fu.id} — claimed by another runner`);
+      continue;
+    }
     await fireOne(dir, fu, runner, log, result);
   }
   return result;

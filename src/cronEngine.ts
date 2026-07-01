@@ -1,7 +1,8 @@
 /**
  * Execute cron jobs via run or chatEngine (issue 038).
  */
-import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { resolve as resolvePath } from "node:path";
 import { loadConfig, ConfigError } from "./config.js";
 import { isBackgroundPaused } from "./backgroundPause.js";
@@ -84,11 +85,6 @@ export async function executeCronJob(
   const started = Date.now();
   const configDir = opts.dir ?? process.cwd();
   const workDir = job.cwd ?? configDir;
-
-  const { key: apiKey } = resolveApiKey(configDir);
-  if (!apiKey) {
-    return withDuration(started, { ok: false, exitCode: EXIT.config, message: API_KEY_HELP });
-  }
 
   try {
     loadConfig(configDir);
@@ -349,6 +345,19 @@ export async function executeCronJob(
     }
   }
 
+  // Engine-credentials gate for PROMPT jobs only — every script/builtin branch
+  // above runs without the SDK and must not be blocked on a Cursor key (I-140:
+  // on prod this gate was masked for weeks by a garbage credentials.json).
+  // cursor → fail fast without a key, as before. claude-agent → no pre-gate:
+  // runPrompt resolves credentials per-run, and account mode legitimately runs
+  // without a token (claude login session).
+  if (loadConfig(configDir).engine.provider !== "claude-agent") {
+    const { key: apiKey } = resolveApiKey(configDir);
+    if (!apiKey) {
+      return withDuration(started, { ok: false, exitCode: EXIT.config, message: API_KEY_HELP });
+    }
+  }
+
   const promptBody = job.topicDelegates
     ? [job.topicPromptFile, job.synthesizePromptFile].filter(Boolean).join(" ")
     : loadCronJobPromptText(job, configDir);
@@ -471,8 +480,13 @@ export interface CronTickResult {
   errors: Array<{ id: string; message: string }>;
 }
 
-/** Stale-lock TTL — covers the longest topic-digest runs. */
-const CRON_TICK_LOCK_TTL_MS = 60 * 60 * 1000;
+/**
+ * Stale-lock TTL. With the heartbeat below refreshing mtime while the lock is
+ * held, exceeding the TTL now means "holder is dead", not "tick is long".
+ */
+export const CRON_TICK_LOCK_TTL_MS = 60 * 60 * 1000;
+/** Heartbeat cadence — cheap mtime touch while the tick runs (I-140). */
+const CRON_TICK_LOCK_HEARTBEAT_MS = 5 * 60_000;
 
 interface CronTickLock {
   release(): void;
@@ -481,19 +495,43 @@ interface CronTickLock {
 /**
  * Cross-process tick lock (launchd tick + manual `cron tick` overlap).
  * `wx` open is atomic; a stale lock (crashed process) is broken by TTL.
+ * v2 (I-140): the lock body carries `pid nonce` ownership — release/touch
+ * verify it first, so a tick that lost its lock to a TTL break can no longer
+ * delete the NEXT tick's lock and let a third one run in parallel.
  */
-function acquireCronTickLock(dir: string): CronTickLock | null {
-  const { lockPath, tryAcquire, release } = cronTickLockOps(dir);
-  if (tryAcquire()) return { release };
+export function acquireCronTickLock(
+  dir: string,
+  heartbeatMs: number = CRON_TICK_LOCK_HEARTBEAT_MS
+): CronTickLock | null {
+  const ops = cronTickLockOps(dir);
+  const arm = (): CronTickLock => {
+    const hb = setInterval(() => {
+      try {
+        ops.touch();
+      } catch {
+        /* heartbeat is best-effort */
+      }
+    }, heartbeatMs);
+    hb.unref?.();
+    return {
+      release: () => {
+        clearInterval(hb);
+        ops.release();
+      },
+    };
+  };
+  if (ops.tryAcquire()) return arm();
   try {
-    const stat = statSync(lockPath);
-    if (Date.now() - stat.mtimeMs > CRON_TICK_LOCK_TTL_MS) {
-      rmSync(lockPath, { force: true });
-      if (tryAcquire()) return { release };
+    const stat = statSync(ops.lockPath);
+    const ageMs = Date.now() - stat.mtimeMs;
+    if (ageMs > CRON_TICK_LOCK_TTL_MS) {
+      console.error(`[cron] breaking stale tick lock (age ${Math.round(ageMs / 60_000)}m, no heartbeat)`);
+      rmSync(ops.lockPath, { force: true });
+      if (ops.tryAcquire()) return arm();
     }
   } catch {
     // Lock vanished between checks — one retry.
-    if (tryAcquire()) return { release };
+    if (ops.tryAcquire()) return arm();
   }
   return null;
 }
@@ -501,17 +539,26 @@ function acquireCronTickLock(dir: string): CronTickLock | null {
 function cronTickLockOps(dir: string): {
   lockPath: string;
   tryAcquire: () => boolean;
+  touch: () => void;
   release: () => void;
 } {
   const cfg = loadConfig(dir);
   const root = resolvePath(dir, cfg.stateDir);
   const lockPath = resolvePath(root, "cron.tick.lock");
+  const owner = `${process.pid} ${randomUUID()}`;
+  const isMine = (): boolean => {
+    try {
+      return readFileSync(lockPath, "utf8").startsWith(owner + " ");
+    } catch {
+      return false;
+    }
+  };
   return {
     lockPath,
     tryAcquire: () => {
       try {
         mkdirSync(root, { recursive: true });
-        writeFileSync(lockPath, `${process.pid} ${new Date().toISOString()}\n`, {
+        writeFileSync(lockPath, `${owner} ${new Date().toISOString()}\n`, {
           encoding: "utf8",
           flag: "wx",
           mode: 0o600,
@@ -521,8 +568,17 @@ function cronTickLockOps(dir: string): {
         return false;
       }
     },
+    touch: () => {
+      if (!isMine()) return;
+      const now = new Date();
+      utimesSync(lockPath, now, now);
+    },
     release: () => {
-      rmSync(lockPath, { force: true });
+      if (isMine()) {
+        rmSync(lockPath, { force: true });
+      } else {
+        console.error("[cron] tick lock is owned by another process — leaving it in place");
+      }
     },
   };
 }
