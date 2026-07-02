@@ -404,6 +404,7 @@ export class PostgresMemoryStore implements IMemoryStore {
   private readonly connectionString: string;
   private pool: pg.Pool;
   private migrated = false;
+  private closed = false;
   private embedder?: EmbedFn;
   private readonly searchExcludeWings: readonly string[];
   private readonly embedExcludeWings: readonly string[];
@@ -763,6 +764,11 @@ export class PostgresMemoryStore implements IMemoryStore {
   }
 
   async close(): Promise<void> {
+    // Guard against double-release (I-142): pools are ref-counted per
+    // connection string, so a second close() here would decrement ANOTHER
+    // holder's ref and could end a shared pool under live queries.
+    if (this.closed) return;
+    this.closed = true;
     await releasePgPool(this.connectionString);
   }
 }

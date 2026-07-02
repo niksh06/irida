@@ -7,6 +7,7 @@ const PATTERNS: RegExp[] = [
   /\bkey[_-][A-Za-z0-9]{6,}\b/gi, // Cursor-style key_... tokens
   /(Bearer\s+)[A-Za-z0-9._-]{8,}/gi,
   /\b\d{6,}:[A-Za-z0-9_-]{20,}\b/g, // telegram-bot-token shape
+  /\bsk-[A-Za-z0-9_-]{16,}\b/g, // Anthropic sk-ant-… and generic sk-… API keys (I-142)
 ];
 
 // Patterns where only the secret group (p2) is masked, keeping surrounding

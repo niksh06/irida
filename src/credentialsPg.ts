@@ -87,6 +87,10 @@ export async function setPgCredentialSecret(name: CredentialSecretName, value: s
   if (!pgSecretsEnabled()) {
     throw new Error(`${SECRETS_KEY_ENV} and CSAGENT_DATABASE_URL required for postgres credential store`);
   }
+  // Enforce on WRITE (I-142): a weak passphrase makes every ciphertext at rest
+  // cheaply brute-forceable — a warning alone let it through (audit H-13).
+  const weak = secretsKeyStrengthIssue();
+  if (weak) throw new Error(`refusing to store secret with a weak key: ${weak}`);
   const trimmed = value.trim();
   if (!trimmed) throw new Error("secret value must be non-empty");
   const key = secretsKey();

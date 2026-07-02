@@ -13,6 +13,8 @@ export const EMBEDDINGS_DEFAULT_MODEL = "nomic-embed-text";
 export const EMBEDDINGS_DIM = 768;
 /** Keep prompts well under model context; notes are chunk-free v1. */
 const EMBED_MAX_CHARS = 8000;
+/** Bound each embed call — a wedged service must not hang upsertNote (I-142). */
+const EMBED_TIMEOUT_MS = 10_000;
 
 export type EmbedFn = (text: string) => Promise<number[] | null>;
 
@@ -41,10 +43,13 @@ export function makeEmbedder(
     const endpoint = provider === "embed-service" ? `${url}/embed` : `${url}/api/embeddings`;
     const payload = provider === "embed-service" ? { text: input } : { model, prompt: input };
     try {
+      // Fail-soft covers errors; the timeout covers a service that accepts
+      // the connection and never answers (I-142).
       const res = await fetchFn(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
       });
       if (!res.ok) return null;
       const body = (await res.json()) as { embedding?: unknown; vector?: unknown };
