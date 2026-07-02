@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { acquirePgPool, pgConfigured, pgConnectionString, releasePgPool } from "./pg/pool.js";
+import { runPgMigrations } from "./pg/migrations.js";
 import { dualEnv } from "./env.js";
 
 /** Canonical secrets-key env var. The legacy CSAGENT_SECRETS_KEY is still read via dualEnv. */
@@ -19,10 +20,8 @@ const CREDENTIALS_MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/004_credentials.sql"),
   "utf8"
 );
-const CREDENTIALS_HISTORY_MIGRATION = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/009_credentials_history.sql"),
-  "utf8"
-);
+// (Full schema comes from the tracked runner — src/pg/migrations.ts, I-141.
+// CREDENTIALS_MIGRATION above stays for the standalone doctor probe pool.)
 
 let pool: pg.Pool | null = null;
 
@@ -62,8 +61,7 @@ let migrated = false;
 
 async function ensureMigrated(): Promise<void> {
   if (migrated) return;
-  await getPool().query(CREDENTIALS_MIGRATION);
-  await getPool().query(CREDENTIALS_HISTORY_MIGRATION);
+  await runPgMigrations(getPool(), pgConnectionString());
   migrated = true;
 }
 

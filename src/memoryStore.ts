@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { acquireSharedSqliteDb, releaseSharedSqliteDb } from "./sqliteShared.js";
 import { acquirePgPool, pgUrl, releasePgPool } from "./pg/pool.js";
+import { runPgMigrations } from "./pg/migrations.js";
 import { redact } from "./redact.js";
 import { newId, nowIso } from "./util.js";
 import { loadConfig, resolveMemoryRoot } from "./config.js";
@@ -128,22 +129,10 @@ export interface IMemoryStore {
   close(): Promise<void>;
 }
 
-const MEMORY_MIGRATION = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/003_memory.sql"),
-  "utf8"
-);
-const MEMORY_FTS_MIGRATION = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/006_memory_fts.sql"),
-  "utf8"
-);
-const MEMORY_SECURE_MIGRATION = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/007_memory_secure.sql"),
-  "utf8"
-);
-const MEMORY_VECTOR_MIGRATION = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/008_memory_vector.sql"),
-  "utf8"
-);
+// Schema is applied by the tracked runner (src/pg/migrations.ts, I-141). The
+// pgvector migration (008) is feature-gated there: applied when the extension
+// is available, skipped (with a log) on plain installs — matching the old
+// "vector column only when the embedder is on" behavior at the schema level.
 
 function titleFromBody(name: string, body: string): string {
   return titleFromOkfOrBody(name, body);
@@ -439,13 +428,7 @@ export class PostgresMemoryStore implements IMemoryStore {
 
   private async ensureMigrated(): Promise<void> {
     if (this.migrated) return;
-    await this.pool.query(MEMORY_MIGRATION);
-    await this.pool.query(MEMORY_FTS_MIGRATION);
-    await this.pool.query(MEMORY_SECURE_MIGRATION);
-    if (this.embedder) {
-      // Vector column only when the feature is on — plain installs skip pgvector.
-      await this.pool.query(MEMORY_VECTOR_MIGRATION);
-    }
+    await runPgMigrations(this.pool, this.connectionString);
     this.migrated = true;
   }
 

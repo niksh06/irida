@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { acquireSharedSqliteDb, releaseSharedSqliteDb } from "./sqliteShared.js";
 import { acquirePgPool, pgUrl, releasePgPool } from "./pg/pool.js";
+import { runPgMigrations } from "./pg/migrations.js";
 import { redact } from "./redact.js";
 import { appendRunLog } from "./runLog.js";
 import { nowIso } from "./util.js";
@@ -87,22 +88,8 @@ export interface IStore {
   close(): Promise<void>;
 }
 
-const SESSIONS_RUNS_MIGRATION = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/001_sessions_runs.sql"),
-  "utf8"
-);
-const SESSIONS_CHANNEL_MIGRATION = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/002_sessions_channel.sql"),
-  "utf8"
-);
-const RUNS_ERROR_DETAIL_MIGRATION = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/005_runs_error_detail.sql"),
-  "utf8"
-);
-const SESSIONS_ENGINE_MIGRATION = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/006_sessions_engine.sql"),
-  "utf8"
-);
+// Schema is applied by the tracked runner (src/pg/migrations.ts, I-141) — the
+// per-module hardcoded .sql lists it replaced live in git history.
 
 function buildListSessionsSql(opts: ListSessionsOptions | undefined, limit: number): { sql: string; params: unknown[] } {
   const params: unknown[] = [];
@@ -342,10 +329,7 @@ export class PostgresStore implements IStore {
 
   private async ensureMigrated(): Promise<void> {
     if (this.migrated) return;
-    await this.pool.query(SESSIONS_RUNS_MIGRATION);
-    await this.pool.query(SESSIONS_CHANNEL_MIGRATION);
-    await this.pool.query(RUNS_ERROR_DETAIL_MIGRATION);
-    await this.pool.query(SESSIONS_ENGINE_MIGRATION);
+    await runPgMigrations(this.pool, this.connectionString);
     this.migrated = true;
   }
 

@@ -8,9 +8,12 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { pgSecretsEnabled, secretsKey } from "./credentialsPg.js";
 import { acquirePgPool, pgConnectionString, releasePgPool } from "./pg/pool.js";
+import { runPgMigrations } from "./pg/migrations.js";
 
 export type GatewayAllowSource = "allowlist" | "pairing";
 
+// Schema is applied by the tracked runner (src/pg/migrations.ts, I-141). The
+// constant below stays for the standalone doctor probe pool only.
 const GATEWAY_ALLOWED_MIGRATION = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../deploy/postgres/migrations/010_gateway_allowed_chats.sql"),
   "utf8"
@@ -28,7 +31,7 @@ function getPool(): pg.Pool {
 
 async function ensureMigrated(): Promise<void> {
   if (migrated) return;
-  await getPool().query(GATEWAY_ALLOWED_MIGRATION);
+  await runPgMigrations(getPool(), pgConnectionString());
   migrated = true;
 }
 
