@@ -60,6 +60,7 @@ import { resolveAgentLogger } from "../agentLog.js";
 import { resolve as resolvePath } from "node:path";
 import { loadConfig } from "../config.js";
 import { parseEngineArg } from "../gatewayEngineStore.js";
+import { resolveApiKey, resolveAnthropicKey } from "../credentials.js";
 import { indexOfLastAssistant, indexOfStreamingAssistant } from "./streamingTarget.js";
 import {
   formatToolProgressLine,
@@ -806,8 +807,9 @@ export function App(props: TuiOptions) {
             return;
           }
           const argNorm = slash.engine.trim().toLowerCase();
+          let nextOverride: string | undefined;
           if (argNorm === "off" || argNorm === "clear" || argNorm === "none") {
-            engineOverrideRef.current = undefined;
+            nextOverride = undefined;
           } else {
             const parsed = parseEngineArg(argNorm);
             if (!parsed) {
@@ -821,14 +823,54 @@ export function App(props: TuiOptions) {
               pushMessage({ role: "system", text: `engine already ${parsed}` });
               return;
             }
-            engineOverrideRef.current = parsed;
+            // Deterministic credential pre-checks (user report «session failed»):
+            // a doomed boot would land the TUI in the fatal state for nothing.
+            if (parsed === "cursor" && !resolveApiKey(dir).key) {
+              pushMessage({
+                role: "error",
+                text: "CURSOR_API_KEY is not set — run `irida auth login --stdin` first",
+              });
+              return;
+            }
+            if (parsed === "claude-agent") {
+              const auth =
+                props.auth ??
+                (() => {
+                  try {
+                    return loadConfig(dir).engine?.auth;
+                  } catch {
+                    return undefined;
+                  }
+                })() ??
+                "api-key";
+              if (auth === "api-key" && !resolveAnthropicKey(dir).key) {
+                pushMessage({
+                  role: "error",
+                  text: "ANTHROPIC_API_KEY is not set (engine.auth=api-key) — export it or set engine.auth=account (claude login)",
+                });
+                return;
+              }
+            }
+            nextOverride = parsed;
           }
           setBusy(true);
           {
-            const next = engineOverrideRef.current ?? props.engine ?? cfgProvider;
+            const prevOverride = engineOverrideRef.current;
+            engineOverrideRef.current = nextOverride;
+            const next = nextOverride ?? props.engine ?? cfgProvider;
             pushMessage({ role: "system", text: `engine → ${next} · opening a fresh session…` });
             const out = await bootSession();
-            if (out && !out.ok) pushMessage({ role: "error", text: out.message });
+            if (out && !out.ok) {
+              // A failed switch must not brick the TUI in the fatal state —
+              // roll the override back and reboot onto the working engine.
+              engineOverrideRef.current = prevOverride;
+              const back = await bootSession();
+              pushMessage({
+                role: "error",
+                text: `switch to ${next} failed: ${out.message} — rolled back to ${prevOverride ?? props.engine ?? cfgProvider}`,
+              });
+              if (back && !back.ok) pushMessage({ role: "error", text: back.message });
+            }
           }
           setBusy(false);
           return;

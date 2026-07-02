@@ -23,6 +23,30 @@ function tmp(): string {
   return dir;
 }
 
+/** claude-agent switch needs credentials; account auth legitimately has none. */
+function tmpWithAccountAuth(): string {
+  const dir = tmp();
+  writeFileSync(
+    join(dir, "agent.config.json"),
+    JSON.stringify({ stateDir: ".agent", cwd: dir, engine: { provider: "cursor", auth: "account" } }),
+    "utf8"
+  );
+  return dir;
+}
+
+function withoutAnthropicEnv<T>(fn: () => Promise<T>): Promise<T> {
+  const prevKey = process.env.ANTHROPIC_API_KEY;
+  const prevTok = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  return fn().finally(() => {
+    if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = prevKey;
+    if (prevTok === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    else process.env.CLAUDE_CODE_OAUTH_TOKEN = prevTok;
+  });
+}
+
 const ctxFor = (dir: string, resetLog: string[]) => ({
   dir,
   adapter: "telegram",
@@ -71,7 +95,7 @@ test("/engine bare shows the config default when no sticky choice is set", async
 });
 
 test("/engine claude sets the sticky choice and resets the session", async () => {
-  const dir = tmp();
+  const dir = tmpWithAccountAuth();
   const resets: string[] = [];
   const reply = await handleGatewaySlash("/engine claude", ctxFor(dir, resets));
   assert.ok(reply);
@@ -105,6 +129,18 @@ test("/engine off clears the sticky choice and resets the session", async () => 
   const again = await handleGatewaySlash("/engine off", ctxFor(dir, resets));
   assert.match(again!, /не был задан/);
   assert.deepEqual(resets, ["reset"]);
+});
+
+test("/engine refuses a doomed switch: claude-agent with api-key auth and no key", async () => {
+  await withoutAnthropicEnv(async () => {
+    const dir = tmp(); // no engine block -> auth defaults to api-key
+    const resets: string[] = [];
+    const reply = await handleGatewaySlash("/engine claude", ctxFor(dir, resets));
+    assert.match(reply!, /не переключаю/);
+    assert.match(reply!, /ANTHROPIC_API_KEY/);
+    assert.equal(getChatEngine(dir, "telegram", "42"), undefined); // sticky untouched
+    assert.deepEqual(resets, []); // and the session was not reset
+  });
 });
 
 test("/engine rejects unknown engines", async () => {

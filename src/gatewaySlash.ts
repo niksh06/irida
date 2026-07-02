@@ -63,7 +63,7 @@ export function gatewaySlashHelpText(): string {
     "",
     "**Cron из чата:** попроси агента запланировать → `/schedule approve <код>` · fallback: `/schedule help`",
     "",
-    "Свободный текст → агент (Cursor SDK).",
+    "Свободный текст → агент (движок SDK: /engine).",
   ].join("\n");
 }
 
@@ -229,20 +229,21 @@ export async function handleGatewaySlash(
       if (engine === current) {
         return `движок уже **${engine}** — ничего не меняю. (Сбросить сессию: /new)`;
       }
-      setChatEngine(ctx.dir, ctx.adapter, ctx.chatId, engine);
-      await ctx.resetSession?.();
-      const lines = [`движок → **${engine}** (sticky). Новая сессия — следующее сообщение пойдёт на нём.`];
-      // Soft credential heads-up — the turn itself will surface a hard error.
+      // Deterministic credential pre-checks (user report «session failed»):
+      // a doomed sticky choice would fail EVERY message until /engine off —
+      // refuse the switch with a fix hint instead.
       if (engine === "cursor" && !resolveApiKey(ctx.dir).key) {
-        lines.push("⚠️ CURSOR_API_KEY не найден — turn упадёт, пока не сделаешь irida auth login.");
+        return "не переключаю: CURSOR_API_KEY не найден — сначала irida auth login --stdin";
       }
       if (engine === "claude-agent") {
         const auth = loadConfig(ctx.dir).engine.auth ?? "api-key";
         if (auth === "api-key" && !resolveAnthropicKey(ctx.dir).key) {
-          lines.push("⚠️ ANTHROPIC_API_KEY не найден (engine.auth=api-key) — задай ключ или переключи auth на account.");
+          return "не переключаю: ANTHROPIC_API_KEY не найден (engine.auth=api-key) — задай ключ или поставь engine.auth=account (claude login)";
         }
       }
-      return lines.join("\n");
+      setChatEngine(ctx.dir, ctx.adapter, ctx.chatId, engine);
+      await ctx.resetSession?.();
+      return `движок → **${engine}** (sticky). Новая сессия — следующее сообщение пойдёт на нём.`;
     }
 
     case "stop": {

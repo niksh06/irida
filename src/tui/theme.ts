@@ -21,5 +21,5 @@ export const theme = {
 
 export const banner = `
  ╭──────────────────────────────────────╮
- │  ◆ irida  ·  Cursor SDK agent      │
+ │  ◆ irida  ·  SDK agent             │
  ╰──────────────────────────────────────╯`;
