@@ -42,6 +42,7 @@ import { composePrompt, ContextRefError, MemoryError } from "./composePrompt.js"
 import { sessionStartMemoryBlocks } from "./memory.js";
 import { autoRagMemoryBlocks } from "./autoRag.js";
 import { buildPreTurnBlocks } from "./preTurn.js";
+import { PetRuntimeTracker } from "./petRuntime.js";
 import { connectAgentForSession, replayPreamble, type ConnectMode } from "./sessionConnect.js";
 import { resolveMcpServers } from "./mcpServers.js";
 import { redact } from "./redact.js";
@@ -836,6 +837,43 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       await store.close();
     },
   };
+
+  // Wisp bridge (I-146): every surface funnels through sendTurn, so wrapping it
+  // here feeds .agent/pet-state.json for the desktop overlay from TUI, gateway,
+  // cron and chat alike. Best-effort by design — pet writes must never break a
+  // turn. Disable with `"pet": {"enabled": false}` in agent.config.json.
+  if (cfg.pet?.enabled !== false) {
+    const petTracker = new PetRuntimeTracker({ dir, theme: cfg.pet?.theme });
+    const pet = (fn: () => void): void => {
+      try {
+        fn();
+      } catch {
+        /* snapshot write failure must not affect the turn */
+      }
+    };
+    const coreSendTurn = session.sendTurn.bind(session);
+    session.sendTurn = async (userMessage, turnHooks) => {
+      if (!userMessage.trim()) return coreSendTurn(userMessage, turnHooks);
+      pet(() => petTracker.beginTurn());
+      const hooks: TurnHooks = {
+        ...turnHooks,
+        onActivity: (activity) => {
+          pet(() => petTracker.onActivity(activity));
+          (turnHooks?.onActivity ?? opts.onActivity)?.(activity);
+        },
+      };
+      try {
+        const out = await coreSendTurn(userMessage, hooks);
+        // A safety-gate block is not a failure — no sad pet, just back to idle.
+        if (out.kind === "blocked") pet(() => petTracker.touchIdle());
+        else pet(() => petTracker.endTurn(out.kind === "ok"));
+        return out;
+      } catch (e) {
+        pet(() => petTracker.endTurn(false));
+        throw e;
+      }
+    };
+  }
 
   return { ok: true, session };
 }

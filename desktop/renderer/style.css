@@ -1,9 +1,3 @@
-:root {
-  --bubble-bg: rgba(255, 255, 255, 0.96);
-  --bubble-fg: #1f2937;
-  --bubble-edge: rgba(100, 149, 237, 0.55);
-}
-
 * {
   margin: 0;
   padding: 0;
@@ -17,44 +11,66 @@ body {
   height: 100%;
   background: transparent;
   overflow: hidden;
-  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
 }
 
-.stage {
+/* Color roles — the same vocabulary as the TUI theme (PetColorRole). */
+.theme-light {
+  --primary: #3a3a4a;
+  --accent: #6b4de0;
+  --warn: #b45309;
+  --good: #15803d;
+  --muted: #a0a4ae;
+  --error: #dc2626;
+  --label: #55596a;
+  --glow: rgba(255, 255, 255, 0.65);
+}
+.theme-dark {
+  --primary: #d8d8ea;
+  --accent: #a08bff;
+  --warn: #fbbf24;
+  --good: #4ade80;
+  --muted: #6b7280;
+  --error: #f87171;
+  --label: #b9bdd0;
+  --glow: rgba(0, 0, 0, 0.45);
+}
+
+#stage {
   position: relative;
   width: 100%;
   height: 100%;
-}
-
-/* ---- The dog ---- */
-.pet {
-  position: absolute;
-  left: 50%;
-  bottom: 12px;
-  width: 280px;
-  height: 230px;
-  transform: translateX(-50%);
+  padding: 18px 8px 8px;
   -webkit-app-region: drag; /* whole pet is the drag handle */
 }
 
-.sprite {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  max-height: 220px;
-  object-fit: contain;
-  object-position: bottom;
-  height: auto;
-  transform-origin: 50% 100%;
-  filter: drop-shadow(0 6px 5px rgba(0, 0, 0, 0.25));
-  -webkit-user-drag: none;
+#wisp {
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 22px;
+  line-height: 1.18;
+  text-align: center;
+  text-shadow: 0 1px 3px var(--glow);
 }
 
-.close {
+.c-primary { color: var(--primary); }
+.c-accent { color: var(--accent); }
+.c-warn { color: var(--warn); }
+.c-good { color: var(--good); }
+.c-muted { color: var(--muted); }
+.c-error { color: var(--error); }
+
+#label {
+  margin-top: 6px;
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 11px;
+  text-align: center;
+  color: var(--label);
+  text-shadow: 0 1px 2px var(--glow);
+}
+
+#close {
   position: absolute;
-  top: 0;
-  right: -2px;
+  top: 4px;
+  right: 10px;
   width: 18px;
   height: 18px;
   border: none;
@@ -68,45 +84,6 @@ body {
   transition: opacity 0.15s;
   -webkit-app-region: no-drag;
 }
-.pet:hover .close {
+#stage:hover #close {
   opacity: 1;
 }
-
-/* ---- Speech bubble ---- */
-.bubble {
-  position: absolute;
-  top: 6px;
-  left: 8px;
-  max-width: 210px;
-  padding: 9px 12px;
-  background: var(--bubble-bg);
-  color: var(--bubble-fg);
-  border: 1.5px solid var(--bubble-edge);
-  border-radius: 14px;
-  font-size: 13px;
-  line-height: 1.35;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
-  opacity: 0;
-  transform: translateY(4px) scale(0.96);
-  transition: opacity 0.25s ease, transform 0.25s ease;
-  -webkit-app-region: drag;
-}
-.bubble.show {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-}
-/* little tail pointing down toward the dog */
-.bubble::after {
-  content: "";
-  position: absolute;
-  bottom: -8px;
-  left: 26px;
-  border-width: 8px 8px 0 8px;
-  border-style: solid;
-  border-color: var(--bubble-bg) transparent transparent transparent;
-  filter: drop-shadow(0 1px 0 var(--bubble-edge));
-}
-
-/* All states are animated WebPs with motion baked into real frames
-   (working = chase GIF; idle/happy/sad/sleep = build-dog-states.py), so the
-   renderer just swaps the sprite — no CSS keyframes needed. */

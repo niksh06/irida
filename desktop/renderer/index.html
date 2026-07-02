@@ -2,22 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file:; style-src 'unsafe-inline' file:; script-src file:;" />
-    <title>csagent pet</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src file:; script-src file:;" />
+    <title>irida wisp</title>
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
-    <div id="stage" class="stage state-idle">
-      <!-- Speech bubble (Clippy-style), positioned above-left of the dog -->
-      <div id="bubble" class="bubble">
-        <span id="bubble-text">Привет! Я Пёс.</span>
-      </div>
-
-      <!-- The dog + its butterfly + sleep zzz -->
-      <div id="pet" class="pet" title="csagent pet — перетащи меня">
-        <img id="sprite" class="sprite" alt="pet" draggable="false" />
-        <button id="close" class="close" title="Закрыть">×</button>
-      </div>
+  <body class="theme-light state-idle">
+    <div id="stage" title="wisp — перетащи меня">
+      <button id="close" title="Спрятать (остаётся в menu bar)">×</button>
+      <pre id="wisp" aria-label="wisp"></pre>
+      <div id="label"></div>
     </div>
     <script src="app.js"></script>
   </body>

@@ -1,8 +1,8 @@
 {
-  "name": "csagent-pet-overlay",
+  "name": "irida-wisp-desktop",
   "private": true,
-  "version": "0.0.1",
-  "description": "Desktop Clippy-style overlay for the csagent blue dog pet (tparser-dog-butterfly). Reads .agent/pet-state.json and floats always-on-top.",
+  "version": "0.1.0",
+  "description": "Wisp — the irida pet as a macOS menu-bar companion + floating overlay. Renders the TUI's glyph frames from dist/petTerminal.js and follows .agent/pet-state.json.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

@@ -5,13 +5,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { ActivityDetail } from "./host.js";
-import { loadPetManifest, petAssetsReady, resolvePetAssetPath, resolvePetDir } from "./petAssets.js";
+import { loadPetManifest, resolvePetAssetPath, resolvePetDir } from "./petAssets.js";
 import {
   activityToolRunning,
   resolvePetState,
   type PetState,
   type PetTheme,
 } from "./petState.js";
+import { classifyPetActivity, type PetActivityKind } from "./petTerminal.js";
 
 export const PET_STATE_FILE = join(".agent", "pet-state.json");
 
@@ -27,6 +28,8 @@ export interface PetStateSnapshot {
   lastTurnOk?: boolean;
   lastTurnError?: boolean;
   label?: string;
+  /** Active tool bucket while working — drives the overlay "thought" glyph. */
+  activity?: PetActivityKind;
 }
 
 export interface PetRuntimeOptions {
@@ -44,31 +47,30 @@ export class PetRuntimeTracker {
   private lastTurnError = false;
   private lastEventAtMs = Date.now();
   private lastLabel: string | undefined;
+  private lastActivity: PetActivityKind | undefined;
 
   constructor(opts: PetRuntimeOptions) {
     this.dir = opts.dir;
     this.theme = opts.theme ?? "light";
+    // Legacy PNG pipeline is optional — the Wisp overlay renders glyph frames
+    // from the snapshot alone, so the tracker works with no pet assets at all.
     this.petDir = resolvePetDir(opts.dir);
   }
 
-  get enabled(): boolean {
-    return this.petDir != null && petAssetsReady(this.petDir);
-  }
-
   beginTurn(): void {
-    if (!this.enabled) return;
     this.turnBusy = true;
     this.toolRunning = false;
     this.lastTurnOk = false;
     this.lastTurnError = false;
+    this.lastActivity = undefined;
     this.lastEventAtMs = Date.now();
     this.persist();
   }
 
   onActivity(activity: ActivityDetail): void {
-    if (!this.enabled) return;
     this.lastEventAtMs = Date.now();
     this.lastLabel = activity.toolName ?? activity.label;
+    this.lastActivity = classifyPetActivity(activity.toolName, activity.kind);
     if (activityToolRunning(activity)) this.toolRunning = true;
     if (activity.phase === "result" && activity.status === "error") {
       this.lastTurnError = true;
@@ -77,7 +79,6 @@ export class PetRuntimeTracker {
   }
 
   endTurn(ok: boolean): void {
-    if (!this.enabled) return;
     this.turnBusy = false;
     this.toolRunning = false;
     this.lastTurnOk = ok;
@@ -87,7 +88,6 @@ export class PetRuntimeTracker {
   }
 
   touchIdle(): void {
-    if (!this.enabled) return;
     this.turnBusy = false;
     this.toolRunning = false;
     this.lastEventAtMs = Date.now();
@@ -95,7 +95,6 @@ export class PetRuntimeTracker {
   }
 
   snapshot(nowMs = Date.now()): PetStateSnapshot | null {
-    if (!this.petDir) return null;
     const state = resolvePetState({
       turnBusy: this.turnBusy,
       toolRunning: this.toolRunning,
@@ -104,8 +103,9 @@ export class PetRuntimeTracker {
       lastEventAtMs: this.lastEventAtMs,
       nowMs,
     });
-    const manifest = loadPetManifest(this.petDir);
-    const assetPath = resolvePetAssetPath(this.petDir, state, this.theme, manifest);
+    const assetPath = this.petDir
+      ? resolvePetAssetPath(this.petDir, state, this.theme, loadPetManifest(this.petDir))
+      : null;
     const assetUrl = assetPath ? pathToFileUrl(assetPath) : null;
     return {
       version: 1,
@@ -119,6 +119,7 @@ export class PetRuntimeTracker {
       lastTurnOk: this.lastTurnOk || undefined,
       lastTurnError: this.lastTurnError || undefined,
       label: this.lastLabel,
+      activity: this.lastActivity,
     };
   }
 
@@ -175,6 +176,7 @@ export function readPetStateSnapshot(dir: string): PetStateSnapshot | null {
       lastTurnOk: raw.lastTurnOk,
       lastTurnError: raw.lastTurnError,
       label: raw.label,
+      activity: raw.activity,
     };
   } catch {
     return null;

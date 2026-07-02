@@ -1,32 +1,130 @@
-// Desktop overlay for the csagent blue-dog pet — a Clippy-style floating
-// companion. The main process owns a transparent, frameless, always-on-top
-// window and feeds it pet state polled from `.agent/pet-state.json` (the same
-// snapshot the agent runtime already writes via src/petRuntime.ts).
+// Wisp desktop companion (I-146) — the irida pet in the macOS menu bar plus a
+// floating always-on-top overlay. Frames are imported from the repo's compiled
+// dist/petTerminal.js, so the overlay always draws the exact art the TUI shows.
 //
-//   npm start            follow the live agent snapshot
+//   npm start            follow the live agent snapshot (.agent/pet-state.json)
 //   npm run demo         cycle through every state (no agent needed)
 //   PET_STATE_PATH=...   point at a specific snapshot file
-const { app, BrowserWindow, ipcMain, screen } = require("electron");
+//
+// Requires `npm run build` in the repo root first (dist/ must exist).
+const { app, BrowserWindow, Tray, Menu, nativeImage, nativeTheme, ipcMain, screen } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const STATE_PATH =
   process.env.PET_STATE_PATH || path.join(REPO_ROOT, ".agent", "pet-state.json");
 const DEMO = process.argv.includes("--demo");
-const POLL_MS = 700;
-const STALE_MS = 15 * 60 * 1000; // snapshot older than this → treat as idle
+const TICK_MS = 600; // frame advance + snapshot poll
+const STALE_MS = 15 * 60 * 1000; // ignore busy/ok flags from a dead agent process
 
-const WIN_W = 460;
-const WIN_H = 340;
+const WIN_W = 240;
+const WIN_H = 210;
 
-/** Resolve the transparent sprite directory for a theme. */
-function assetsDir(theme) {
-  const t = theme === "dark" ? "dark" : "light";
-  return path.join(REPO_ROOT, "deploy", "assets", "pet", "dist", t);
+let wisp = null; // dist/petTerminal.js: petTerminalFrame, petTerminalLabel
+let resolvePetState = null; // dist/petState.js — the agent's own state machine
+
+async function loadWispModules() {
+  const dist = (f) => pathToFileURL(path.join(REPO_ROOT, "dist", f)).href;
+  try {
+    wisp = await import(dist("petTerminal.js"));
+    ({ resolvePetState } = await import(dist("petState.js")));
+  } catch (e) {
+    console.error("wisp: cannot load dist/petTerminal.js — run `npm run build` in the repo root first");
+    console.error(String((e && e.message) || e));
+    app.exit(1);
+  }
+}
+
+function readSnapshot() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATE_PATH, "utf8"));
+    if (!raw || typeof raw.state !== "string") return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+// Re-derive the state with a live clock (happy fades after 8s, sleep kicks in
+// at 20min) via the same state machine the agent runs. A snapshot older than
+// STALE_MS has its turn flags ignored so a crashed agent can't pin "working".
+function liveSignals(snap) {
+  const at = snap && snap.updatedAt ? Date.parse(snap.updatedAt) : NaN;
+  const lastEventAtMs = Number.isFinite(at) ? at : 0;
+  const stale = !snap || Date.now() - lastEventAtMs > STALE_MS;
+  return {
+    state: resolvePetState({
+      turnBusy: !stale && Boolean(snap.turnBusy),
+      toolRunning: !stale && Boolean(snap.toolRunning),
+      lastTurnOk: stale ? undefined : snap.lastTurnOk,
+      lastTurnError: stale ? undefined : snap.lastTurnError,
+      lastEventAtMs,
+    }),
+    activity: !stale && snap.activity ? snap.activity : undefined,
+  };
+}
+
+// The single glyph living in the menu bar: row 2 of every frame carries exactly
+// one eye (frame invariant in petTerminal.ts) between the │ body walls.
+function eyeGlyph(lines) {
+  const row = lines[2];
+  if (!row) return "◉";
+  for (const part of row.parts) {
+    const t = String(part.t).trim();
+    if (t && !t.includes("│")) return t;
+  }
+  return "◉";
 }
 
 let win = null;
+let tray = null;
+let tick = 0;
+let lastEye = "";
+let lastTooltip = "";
+
+// Demo: hold each state a few ticks so its animation loop is visible.
+const DEMO_SEQ = [
+  { state: "idle" },
+  { state: "working", activity: "search" },
+  { state: "working", activity: "shell" },
+  { state: "happy" },
+  { state: "sad" },
+  { state: "sleep" },
+];
+const DEMO_TICKS_PER_STATE = 6;
+
+function currentSignals() {
+  if (DEMO) {
+    const step = Math.floor(tick / DEMO_TICKS_PER_STATE) % DEMO_SEQ.length;
+    return DEMO_SEQ[step];
+  }
+  return liveSignals(readSnapshot());
+}
+
+function tickOnce() {
+  tick += 1;
+  const { state, activity } = currentSignals();
+  const lines = wisp.petTerminalFrame(state, tick, activity);
+  const label = wisp.petTerminalLabel(state, activity);
+  const theme = nativeTheme.shouldUseDarkColors ? "dark" : "light";
+
+  const eye = eyeGlyph(lines);
+  if (tray) {
+    if (eye !== lastEye) {
+      lastEye = eye;
+      tray.setTitle(eye, { fontType: "monospaced" });
+    }
+    if (label !== lastTooltip) {
+      lastTooltip = label;
+      tray.setToolTip(label);
+    }
+  }
+  if (win && !win.isDestroyed() && win.isVisible()) {
+    win.webContents.send("pet:state", { lines, label, state, theme });
+  }
+}
 
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
@@ -54,75 +152,45 @@ function createWindow() {
   win.setAlwaysOnTop(true, "screen-saver");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
-
-  win.webContents.on("did-finish-load", () => {
-    pushOnce();
-    if (DEMO) startDemo();
-    else startPolling();
-  });
 }
 
-let lastSig = "";
-
-function send(snap) {
-  if (!win || win.isDestroyed()) return;
-  const theme = snap.theme === "dark" ? "dark" : "light";
-  win.webContents.send("pet:state", {
-    state: snap.state || "idle",
-    theme,
-    label: snap.label || null,
-    assetsDir: assetsDir(theme),
-    updatedAt: snap.updatedAt || null,
-  });
-}
-
-function readSnapshot() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(STATE_PATH, "utf8"));
-    if (!raw || typeof raw.state !== "string") return null;
-    // Age out stale snapshots so the pet doesn't sit "happy" forever.
-    if (raw.updatedAt) {
-      const age = Date.now() - Date.parse(raw.updatedAt);
-      if (Number.isFinite(age) && age > STALE_MS) return { ...raw, state: "idle" };
-    }
-    return raw;
-  } catch {
-    return null;
+function toggleWindow() {
+  if (!win || win.isDestroyed()) {
+    createWindow();
+    return;
   }
+  if (win.isVisible()) win.hide();
+  else win.show();
 }
 
-function pushOnce() {
-  const snap = readSnapshot();
-  send(snap || { state: "idle", theme: "light" });
+function createTray() {
+  tray = new Tray(nativeImage.createEmpty());
+  tray.setToolTip("irida wisp");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Show / hide Wisp", click: toggleWindow },
+      { type: "separator" },
+      { label: "Quit", role: "quit" },
+    ])
+  );
 }
 
-function startPolling() {
-  setInterval(() => {
-    const snap = readSnapshot() || { state: "idle", theme: "light" };
-    const sig = `${snap.state}|${snap.theme}|${snap.label || ""}|${snap.updatedAt || ""}`;
-    if (sig === lastSig) return;
-    lastSig = sig;
-    send(snap);
-  }, POLL_MS);
-}
-
-function startDemo() {
-  const states = ["idle", "working", "happy", "sad", "sleep"];
-  const labels = { working: "Grep", happy: null, sad: null, idle: null, sleep: null };
-  let i = 0;
-  const tick = () => {
-    const state = states[i % states.length];
-    send({ state, theme: "light", label: labels[state], updatedAt: new Date().toISOString() });
-    i += 1;
-  };
-  tick();
-  setInterval(tick, 3500);
-}
-
+ipcMain.on("pet:hide", () => {
+  if (win && !win.isDestroyed()) win.hide();
+});
 ipcMain.on("pet:quit", () => app.quit());
 
-app.whenReady().then(createWindow);
-app.on("window-all-closed", () => app.quit());
+app.whenReady().then(async () => {
+  await loadWispModules();
+  if (process.platform === "darwin" && app.dock) app.dock.hide(); // menu-bar app
+  createTray();
+  createWindow();
+  tickOnce();
+  setInterval(tickOnce, TICK_MS);
+});
+
+// Menu-bar app: closing/hiding the overlay must not quit — the tray owns quit.
+app.on("window-all-closed", () => {});
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });

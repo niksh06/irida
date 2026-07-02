@@ -190,6 +190,12 @@ export function resolveSanitizeInput(engine: EngineConfig): boolean {
 /** Default model for the claude-agent engine when none is configured. */
 export const DEFAULT_CLAUDE_AGENT_MODEL = "claude-opus-4-8";
 
+/** Wisp pet snapshot bus (.agent/pet-state.json) — on unless disabled. */
+export interface PetConfig {
+  enabled?: boolean;
+  theme?: "light" | "dark";
+}
+
 export interface AgentConfig {
   model: string;
   runtime: "local" | "cloud";
@@ -203,6 +209,7 @@ export interface AgentConfig {
   browser: BrowserConfig;
   hooks?: HooksConfig;
   skillPolicy?: SkillPolicyConfig;
+  pet?: PetConfig;
 }
 
 export class ConfigError extends Error {}
@@ -392,7 +399,7 @@ const skillPolicySchema = z.object({ allowUnsafe: trimmedStringArray.optional() 
 
 const toolPolicySchema = z.object({
   denyDestructive: z.boolean().optional(),
-  bySurface: z.record(z.boolean()).optional(),
+  bySurface: z.record(z.string(), z.boolean()).optional(),
   sanitizeInput: z.boolean().optional(),
 });
 
@@ -408,18 +415,24 @@ const engineSchema = z.object({
   evolution: evolutionSchema.optional(),
 });
 
+const petSchema = z.object({
+  enabled: z.boolean().optional(),
+  theme: z.enum(["light", "dark"]).optional(),
+});
+
 const agentConfigSchema = z.object({
   model: z.string().refine((s) => s.trim().length > 0, "must be a non-empty string").optional(),
   runtime: z.enum(["local", "cloud"]).optional(),
   engine: engineSchema.optional(),
   skillsPath: z.string().optional(),
   stateDir: z.string().optional(),
-  mcpServers: z.record(z.unknown()).optional(),
+  mcpServers: z.record(z.string(), z.unknown()).optional(),
   safety: safetySchema.optional(),
   memory: memorySchema.optional(),
   browser: browserSchema.optional(),
   hooks: hooksSchema.optional(),
   skillPolicy: skillPolicySchema.optional(),
+  pet: petSchema.optional(),
 });
 
 function formatZodIssue(e: z.ZodError): string {
@@ -469,6 +482,7 @@ function validate(obj: unknown, dir: string): AgentConfig {
   if (parsed.memory !== undefined) cfg.memory = parsed.memory;
   if (parsed.browser !== undefined) cfg.browser = parsed.browser;
   if (parsed.hooks !== undefined) cfg.hooks = parsed.hooks;
+  if (parsed.pet !== undefined) cfg.pet = parsed.pet;
   // Old behavior: skillPolicy only materializes when allowUnsafe is present.
   if (parsed.skillPolicy?.allowUnsafe !== undefined) {
     cfg.skillPolicy = { allowUnsafe: parsed.skillPolicy.allowUnsafe };

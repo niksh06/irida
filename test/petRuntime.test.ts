@@ -57,13 +57,46 @@ describe("PetRuntimeTracker", () => {
     process.env.CSAGENT_ROOT = home;
     try {
       const tracker = new PetRuntimeTracker({ dir: home });
-      assert.ok(tracker.enabled);
       tracker.beginTurn();
       tracker.endTurn(true);
       const snap = readPetStateSnapshot(home);
       assert.ok(snap);
       assert.equal(snap!.state, "happy");
       assert.ok(snap!.assetPath);
+    } finally {
+      if (prevRoot === undefined) delete process.env.CSAGENT_ROOT;
+      else process.env.CSAGENT_ROOT = prevRoot;
+    }
+  });
+
+  // I-146: the Wisp overlay renders glyph frames from the snapshot alone, so
+  // the tracker must run with no PNG pipeline at all (assetPath just stays
+  // null on machines without built assets — not asserted, machine-dependent).
+  it("tracks state and activity with no pet assets (I-146)", () => {
+    const home = join(tmpdir(), `wisp-noassets-${Date.now()}`);
+    mkdirSync(join(home, ".agent"), { recursive: true });
+    const prevRoot = process.env.CSAGENT_ROOT;
+    process.env.CSAGENT_ROOT = home; // no manifest under this root
+    try {
+      const tracker = new PetRuntimeTracker({ dir: home });
+      tracker.beginTurn();
+      tracker.onActivity({
+        label: "grep",
+        kind: "tool",
+        toolName: "grep",
+        phase: "call",
+        status: "running",
+      });
+      let snap = readPetStateSnapshot(home);
+      assert.ok(snap);
+      assert.equal(snap!.state, "working");
+      assert.equal(snap!.activity, "search");
+      tracker.endTurn(false);
+      snap = readPetStateSnapshot(home);
+      assert.equal(snap!.state, "sad");
+      tracker.endTurn(true);
+      snap = readPetStateSnapshot(home);
+      assert.equal(snap!.state, "happy");
     } finally {
       if (prevRoot === undefined) delete process.env.CSAGENT_ROOT;
       else process.env.CSAGENT_ROOT = prevRoot;

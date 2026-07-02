@@ -1,57 +1,53 @@
-# irida pet — desktop overlay (prototype)
+# Wisp — irida desktop companion (menu bar + overlay)
 
-A Clippy-style floating companion for the blue dog (`tparser-dog-butterfly`).
-It's a transparent, frameless, always-on-top window that shows the dog and a
-speech bubble reacting to what the agent is doing.
+The irida pet living in the macOS menu bar: an animated eye-glyph in the tray
+(watching → spinning while the agent works → ✕/celebration on turn results) and
+an optional floating always-on-top overlay drawing the exact 5-line Wisp frames
+the TUI renders.
+
+One source of truth for the art: the app imports `../dist/petTerminal.js` /
+`../dist/petState.js` — the same modules `irida tui` uses. No sprites, no copies.
 
 ## Run
 
 ```bash
+npm run build      # in the REPO ROOT first — the app imports dist/
 cd desktop
-npm install        # fetches Electron (~one-time, downloads a Chromium binary)
-npm run demo       # cycle through every state — no agent needed (best for eval)
+npm install        # fetches Electron (one-time)
+npm run demo       # cycle through every state — no agent needed
 npm start          # follow the live agent: reads ../.agent/pet-state.json
 ```
 
-Point it at another snapshot (e.g. prod under `$IRIDA_HOME`):
+Point it at another snapshot (e.g. prod copy under `~/.irida/irida`):
 
 ```bash
-PET_STATE_PATH=/path/to/.agent/pet-state.json npm start
+PET_STATE_PATH=$HOME/.irida/irida/.agent/pet-state.json npm start
 ```
 
-- **Drag** the dog (or bubble) to move it. Hover to reveal the **×** close button.
-- The window parks itself bottom-right of the primary display.
+- **Menu bar**: the eye animates with the pet state; tooltip shows the label
+  (`wisp · running…`); menu → Show/hide Wisp, Quit. The Dock icon is hidden.
+- **Overlay**: drag to move; hover → × hides it (the tray keeps running);
+  parks bottom-right of the primary display; light/dark follows the system.
 
 ## How it connects to the agent
 
-The agent runtime already writes `.agent/pet-state.json`
-([src/petRuntime.ts](../src/petRuntime.ts)) with `state` / `theme` / `label`.
-The overlay polls that file (`main.js`) and pushes changes to the renderer,
-which swaps the sprite + bubble text and applies a per-state CSS animation.
+`chatEngine.sendTurn` (every surface: TUI, Telegram gateway, cron, chat CLI)
+feeds a `PetRuntimeTracker` that persists `.agent/pet-state.json`
+([src/petRuntime.ts](../src/petRuntime.ts)) — state machine, activity bucket,
+turn flags. Disable with `"pet": {"enabled": false}` in `agent.config.json`.
+The app polls the snapshot (600ms), re-derives the state with a live clock
+(happy fades in 8s, sleep at 20min — same rules as the agent), and animates.
 
-## Assets
+A snapshot older than 15min has its busy flags ignored, so a crashed agent
+can't pin the pet in "working".
 
-Every state is an animated, transparent WebP in
-`../deploy/assets/pet/dist/<theme>/`:
+## Legacy
 
-- `working.webp` — the real hand-drawn chase loop: white background keyed out,
-  ground line removed, rebuilt from the GIF (440×238, 88 frames) by
-  `python3 deploy/scripts/build-dog-overlay.py`.
-- `idle/happy/sad/sleep.webp` — synthesized from the static RGBA sprites with
-  foot-anchored procedural motion (breathing, bounce, droop, sleep + zZz) by
-  `python3 deploy/scripts/build-dog-states.py`.
+The previous blue-dog PNG overlay (csagent era) is gone; the PNG pipeline under
+`deploy/assets/pet/` still resolves `assetPath` in snapshots for anything that
+wants bitmaps, but nothing in this app uses it.
 
-`build-dog-overlay.py` will pick up a real GIF for ANY state if you drop a
-`dist/<theme>/<state>.gif`, so swapping a synthesized state for hand-drawn art
-later is a no-code change.
+## Next (этап 2)
 
-## Status / next steps
-
-This is an evaluation prototype, on the path to a polished desktop pet:
-
-- [x] Transparent animated `working` from the chase GIF (floor line removed)
-- [x] Every state animated (synthesized from static art)
-- [ ] Hand-drawn GIFs for idle/happy/sad/sleep (drop-in via build-dog-overlay.py)
-- [ ] Normalize dog scale between chase and synthesized states
-- [ ] Tray icon + show/hide + "snap to corner"; click-through when idle
-- [ ] Package as a `.app` (electron-builder) and/or port the renderer to Tauri
+Chat popover in this same app on top of the gateway webhook adapter — see
+`issues/I-146-wisp-desktop.md` / I-147.

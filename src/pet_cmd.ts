@@ -3,7 +3,6 @@
  */
 import { EXIT, type ExitCode } from "./exit.js";
 import { iridaHome } from "./env.js";
-import { petAssetsReady, petDirCandidates, resolvePetDir } from "./petAssets.js";
 import { PetRuntimeTracker, readPetStateSnapshot } from "./petRuntime.js";
 
 function resolveDir(): string {
@@ -12,16 +11,6 @@ function resolveDir(): string {
 
 export function cmdPetStatus(_args: string[]): ExitCode {
   const dir = resolveDir();
-  const petDir = resolvePetDir(dir);
-  if (!petDir) {
-    console.error("pet: manifest not found — expected deploy/assets/pet/manifest.json under CSAGENT_ROOT");
-    return EXIT.config;
-  }
-  if (!petAssetsReady(petDir)) {
-    console.error("pet: assets missing — run: python3 deploy/scripts/build-pet-assets.py");
-    console.error(`pet: searched: ${petDirCandidates(dir).join(", ")}`);
-    return EXIT.config;
-  }
   const snap = readPetStateSnapshot(dir) ?? new PetRuntimeTracker({ dir }).snapshot();
   if (!snap) {
     console.log("state idle (no snapshot yet)");
@@ -31,8 +20,9 @@ export function cmdPetStatus(_args: string[]): ExitCode {
   console.log(`theme ${snap.theme}`);
   if (snap.assetPath) console.log(`asset ${snap.assetPath}`);
   if (snap.label) console.log(`label ${snap.label}`);
+  if (snap.activity) console.log(`activity ${snap.activity}`);
   console.log(`updated ${snap.updatedAt}`);
-  console.log("note: TUI shows the in-terminal pet; this file is optional/debug");
+  console.log("note: TUI shows the in-terminal pet; desktop overlay: cd desktop && npm start");
   return EXIT.ok;
 }
 
