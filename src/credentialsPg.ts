@@ -13,7 +13,12 @@ import { dualEnv } from "./env.js";
 /** Canonical secrets-key env var. The legacy CSAGENT_SECRETS_KEY is still read via dualEnv. */
 export const SECRETS_KEY_ENV = "IRIDA_SECRETS_KEY";
 
-export const CREDENTIAL_SECRET_NAMES = ["cursor_api_key", "telegram_bot_token"] as const;
+export const CREDENTIAL_SECRET_NAMES = [
+  "cursor_api_key",
+  "telegram_bot_token",
+  "anthropic_api_key",
+  "claude_code_oauth_token",
+] as const;
 export type CredentialSecretName = (typeof CREDENTIAL_SECRET_NAMES)[number];
 
 const CREDENTIALS_MIGRATION = readFileSync(

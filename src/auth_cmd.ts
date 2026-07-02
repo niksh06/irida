@@ -18,6 +18,8 @@ import {
   credentialsPath,
   hasStoredCredentials,
   hasStoredTelegramToken,
+  persistAnthropicApiKey,
+  persistClaudeOAuthToken,
   persistCursorApiKey,
   persistTelegramBotToken,
   pgSecretsEnabled,
@@ -26,11 +28,13 @@ import {
   saveCredentials,
   saveTelegramBotToken,
   telegramTokenSourceLabel,
+  validateAnthropicApiKeyFormat,
+  validateClaudeOAuthTokenFormat,
   validateCursorApiKeyFormat,
   validateTelegramBotTokenFormat,
   warmCredentialsCache,
 } from "./credentials.js";
-import { listPgCredentialHistory, readPgCredentialHistoryValue } from "./credentialsPg.js";
+import { deletePgCredentialSecret, listPgCredentialHistory, readPgCredentialHistoryValue } from "./credentialsPg.js";
 import type { CredentialSecretName } from "./credentialsPg.js";
 import { EXIT, type ExitCode } from "./exit.js";
 
@@ -117,15 +121,23 @@ async function cmdAuthAnthropic(args: string[], dir: string): Promise<ExitCode> 
     case "login": {
       const r = await readSecretArg(rest, "ANTHROPIC_API_KEY", "auth anthropic login");
       if ("error" in r) return r.error;
-      saveAnthropicApiKey(r.value, dir);
-      console.log(`auth: anthropic API key saved to ${credentialsPath(dir)} (mode 600)`);
-      return EXIT.ok;
-    }
-    case "logout":
+      if (pgSecretsEnabled()) await persistAnthropicApiKey(r.value, dir);
+      else saveAnthropicApiKey(r.value, dir);
       console.log(
-        clearAnthropicApiKey(dir) ? "auth: anthropic API key removed" : "auth: no stored anthropic API key"
+        pgSecretsEnabled()
+          ? "auth: anthropic API key saved (postgres credential_secrets, pgcrypto)"
+          : `auth: anthropic API key saved to ${credentialsPath(dir)} (mode 600)`
       );
       return EXIT.ok;
+    }
+    case "logout": {
+      let removed = clearAnthropicApiKey(dir);
+      if (pgSecretsEnabled()) {
+        removed = (await deletePgCredentialSecret("anthropic_api_key")) || removed;
+      }
+      console.log(removed ? "auth: anthropic API key removed" : "auth: no stored anthropic API key");
+      return EXIT.ok;
+    }
     case undefined:
     case "-h":
     case "--help":
@@ -145,15 +157,23 @@ async function cmdAuthClaude(args: string[], dir: string): Promise<ExitCode> {
     case "token": {
       const r = await readSecretArg(rest, "CLAUDE_CODE_OAUTH_TOKEN", "auth claude token");
       if ("error" in r) return r.error;
-      saveClaudeOAuthToken(r.value, dir);
-      console.log(`auth: claude OAuth token saved to ${credentialsPath(dir)} (mode 600)`);
-      return EXIT.ok;
-    }
-    case "logout":
+      if (pgSecretsEnabled()) await persistClaudeOAuthToken(r.value, dir);
+      else saveClaudeOAuthToken(r.value, dir);
       console.log(
-        clearClaudeOAuthToken(dir) ? "auth: claude OAuth token removed" : "auth: no stored claude OAuth token"
+        pgSecretsEnabled()
+          ? "auth: claude OAuth token saved (postgres credential_secrets, pgcrypto)"
+          : `auth: claude OAuth token saved to ${credentialsPath(dir)} (mode 600)`
       );
       return EXIT.ok;
+    }
+    case "logout": {
+      let removed = clearClaudeOAuthToken(dir);
+      if (pgSecretsEnabled()) {
+        removed = (await deletePgCredentialSecret("claude_code_oauth_token")) || removed;
+      }
+      console.log(removed ? "auth: claude OAuth token removed" : "auth: no stored claude OAuth token");
+      return EXIT.ok;
+    }
     case undefined:
     case "-h":
     case "--help":
@@ -359,8 +379,20 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
         return EXIT.usage;
       }
       // persistSecret re-validates format and archives the current value first.
-      if (entry.name === "cursor_api_key") await persistCursorApiKey(entry.value, dir);
-      else await persistTelegramBotToken(entry.value, dir);
+      switch (entry.name) {
+        case "cursor_api_key":
+          await persistCursorApiKey(entry.value, dir);
+          break;
+        case "telegram_bot_token":
+          await persistTelegramBotToken(entry.value, dir);
+          break;
+        case "anthropic_api_key":
+          await persistAnthropicApiKey(entry.value, dir);
+          break;
+        case "claude_code_oauth_token":
+          await persistClaudeOAuthToken(entry.value, dir);
+          break;
+      }
       console.log(`auth: restored ${entry.name} from history #${id} (previous value archived)`);
       return EXIT.ok;
     }
@@ -377,7 +409,14 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
 }
 
 function validateSecretFormat(name: CredentialSecretName, value: string): boolean {
-  return name === "cursor_api_key"
-    ? validateCursorApiKeyFormat(value).ok
-    : validateTelegramBotTokenFormat(value).ok;
+  switch (name) {
+    case "cursor_api_key":
+      return validateCursorApiKeyFormat(value).ok;
+    case "anthropic_api_key":
+      return validateAnthropicApiKeyFormat(value).ok;
+    case "claude_code_oauth_token":
+      return validateClaudeOAuthTokenFormat(value).ok;
+    case "telegram_bot_token":
+      return validateTelegramBotTokenFormat(value).ok;
+  }
 }

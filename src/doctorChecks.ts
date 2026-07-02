@@ -16,6 +16,8 @@ import {
   resolveClaudeOAuthToken,
   resolveTelegramBotToken,
   telegramTokenSourceLabel,
+  validateAnthropicApiKeyFormat,
+  validateClaudeOAuthTokenFormat,
   validateCursorApiKeyFormat,
   validateTelegramBotTokenFormat,
 } from "./credentials.js";
@@ -251,6 +253,29 @@ function gatherDoctorSecretFormatChecks(dir: string): DoctorCheck[] {
       detail: fmt.ok
         ? `ok (${tg.value.length} chars, ${telegramTokenSourceLabel(tg.source, dir)})`
         : `${fmt.detail} — ${telegramTokenSourceLabel(tg.source, dir)}`,
+    });
+  }
+  // claude-agent engine credentials (I-145 — pgcrypto parity with cursor/telegram).
+  const anthropic = resolveAnthropicKey(dir);
+  if (anthropic.key) {
+    const fmt = validateAnthropicApiKeyFormat(anthropic.key);
+    checks.push({
+      name: "ANTHROPIC_API_KEY format",
+      ok: fmt.ok,
+      detail: fmt.ok
+        ? `ok (${anthropic.key.length} chars, ${anthropic.source})`
+        : `${fmt.detail} — ${anthropic.source}`,
+    });
+  }
+  const oauth = resolveClaudeOAuthToken(dir);
+  if (oauth.key) {
+    const fmt = validateClaudeOAuthTokenFormat(oauth.key);
+    checks.push({
+      name: "CLAUDE_CODE_OAUTH_TOKEN format",
+      ok: fmt.ok,
+      detail: fmt.ok
+        ? `ok (${oauth.key.length} chars, ${oauth.source})`
+        : `${fmt.detail} — ${oauth.source}`,
     });
   }
   return checks;

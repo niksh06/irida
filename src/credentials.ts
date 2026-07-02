@@ -92,6 +92,35 @@ export function validateCursorApiKeyFormat(key: string): SecretFormatCheck {
   };
 }
 
+/** Anthropic API keys are `sk-ant-…` (~100 chars). */
+export function validateAnthropicApiKeyFormat(key: string): SecretFormatCheck {
+  const k = key.trim();
+  if (k.length < 20) {
+    return {
+      ok: false,
+      detail: `too short (${k.length} chars) — likely corrupt decryption or wrong secret`,
+    };
+  }
+  if (k.startsWith("sk-ant-")) return { ok: true, detail: "ok" };
+  if (k.length >= 40) return { ok: true, detail: "ok" };
+  return {
+    ok: false,
+    detail: `unexpected shape (${k.length} chars) — expected sk-ant-… prefix or length ≥40`,
+  };
+}
+
+/** `claude setup-token` emits `sk-ant-oat…`; stay loose beyond a corruption floor. */
+export function validateClaudeOAuthTokenFormat(token: string): SecretFormatCheck {
+  const t = token.trim();
+  if (t.length < 20) {
+    return {
+      ok: false,
+      detail: `too short (${t.length} chars) — likely corrupt decryption or wrong secret`,
+    };
+  }
+  return { ok: true, detail: "ok" };
+}
+
 /** Bot API tokens are `{bot_id}:{secret}` (~46 chars). Catches PG garbage like 6-char blobs. */
 export function validateTelegramBotTokenFormat(token: string): SecretFormatCheck {
   const t = token.trim();
@@ -184,13 +213,12 @@ function writeCredentialsFile(dir: string, data: CredentialsFile): void {
 }
 
 function stripPlaintextSecretFromFile(dir: string, name: CredentialSecretName): void {
+  // Preserve every OTHER field (I-145 — the old cursor/telegram-only rebuild
+  // silently dropped anthropic fields from the file on any strip).
   const existing = readCredentialsFileFromDisk(dir);
-  const next: CredentialsFile = { version: CREDENTIALS_VERSION };
+  const next: CredentialsFile = { ...existing, version: CREDENTIALS_VERSION };
   if (pgSecretsEnabled()) next.storage = "pg";
-  if (name !== "cursor_api_key" && existing.cursor_api_key) next.cursor_api_key = existing.cursor_api_key;
-  if (name !== "telegram_bot_token" && existing.telegram_bot_token) {
-    next.telegram_bot_token = existing.telegram_bot_token;
-  }
+  delete next[name];
   writeCredentialsFile(dir, next);
 }
 
@@ -200,10 +228,24 @@ function pgCachedSecret(name: CredentialSecretName): string {
 }
 
 function checkSecretFormat(name: CredentialSecretName, value: string): SecretFormatCheck {
-  return name === "cursor_api_key"
-    ? validateCursorApiKeyFormat(value)
-    : validateTelegramBotTokenFormat(value);
+  switch (name) {
+    case "cursor_api_key":
+      return validateCursorApiKeyFormat(value);
+    case "anthropic_api_key":
+      return validateAnthropicApiKeyFormat(value);
+    case "claude_code_oauth_token":
+      return validateClaudeOAuthTokenFormat(value);
+    case "telegram_bot_token":
+      return validateTelegramBotTokenFormat(value);
+  }
 }
+
+const SECRET_RESAVE_HINT: Record<CredentialSecretName, string> = {
+  cursor_api_key: "irida auth login --stdin",
+  telegram_bot_token: "irida auth telegram login --stdin",
+  anthropic_api_key: "irida auth anthropic login --stdin",
+  claude_code_oauth_token: "irida auth claude token --stdin",
+};
 
 /**
  * Read-path format guard (I-136). A corrupt stored value (the I-132 incident:
@@ -224,7 +266,7 @@ function guardResolvedSecret(
   const fmt = checkSecretFormat(name, value);
   if (fmt.ok) return value;
   const where = source === "pg" ? "postgres" : "credentials.json";
-  const hint = name === "cursor_api_key" ? "irida auth login --stdin" : "irida auth telegram login --stdin";
+  const hint = SECRET_RESAVE_HINT[name];
   console.error(
     `[credentials] ${name} from ${where} is corrupt (${fmt.detail}) — ignoring; re-save with: ${hint}`
   );
@@ -302,10 +344,7 @@ export async function warmCredentialsCache(dir: string = process.cwd()): Promise
 async function persistSecret(name: CredentialSecretName, value: string, dir: string): Promise<void> {
   const trimmed = value.trim();
   if (!trimmed) throw new Error("secret must be a non-empty string");
-  const fmt =
-    name === "cursor_api_key"
-      ? validateCursorApiKeyFormat(trimmed)
-      : validateTelegramBotTokenFormat(trimmed);
+  const fmt = checkSecretFormat(name, trimmed);
   if (!fmt.ok) {
     throw new Error(`refusing to save ${name}: ${fmt.detail}`);
   }
@@ -337,14 +376,19 @@ export function resolveApiKey(dir: string = process.cwd()): ResolvedApiKey {
 
 /**
  * Resolve the Anthropic API key for the claude-agent engine (I-100).
- * Env `ANTHROPIC_API_KEY` overrides the plaintext credentials.json field.
- * (pg-encrypted storage is intentionally not wired yet — env is the primary path,
- * and the Claude Agent SDK reads `ANTHROPIC_API_KEY` from the environment.)
+ * Env `ANTHROPIC_API_KEY` overrides postgres (pgcrypto, I-145) and the
+ * plaintext credentials.json field — same precedence chain as cursor/telegram.
  */
 export function resolveAnthropicKey(dir: string = process.cwd()): ResolvedApiKey {
   const fromEnv = (process.env.ANTHROPIC_API_KEY ?? "").trim();
   if (fromEnv) return { key: fromEnv, source: "env" };
-  const fromFile = readCredentialsFileFromDisk(dir).anthropic_api_key ?? "";
+  const fromPg = guardResolvedSecret("anthropic_api_key", pgCachedSecret("anthropic_api_key"), "pg");
+  if (fromPg) return { key: fromPg, source: "pg" };
+  const fromFile = guardResolvedSecret(
+    "anthropic_api_key",
+    readCredentialsFileFromDisk(dir).anthropic_api_key ?? "",
+    "file"
+  );
   if (fromFile) return { key: fromFile, source: "file" };
   return { key: "", source: "none" };
 }
@@ -359,7 +403,17 @@ export function resolveAnthropicKey(dir: string = process.cwd()): ResolvedApiKey
 export function resolveClaudeOAuthToken(dir: string = process.cwd()): ResolvedApiKey {
   const fromEnv = (process.env.CLAUDE_CODE_OAUTH_TOKEN ?? "").trim();
   if (fromEnv) return { key: fromEnv, source: "env" };
-  const fromFile = readCredentialsFileFromDisk(dir).claude_code_oauth_token ?? "";
+  const fromPg = guardResolvedSecret(
+    "claude_code_oauth_token",
+    pgCachedSecret("claude_code_oauth_token"),
+    "pg"
+  );
+  if (fromPg) return { key: fromPg, source: "pg" };
+  const fromFile = guardResolvedSecret(
+    "claude_code_oauth_token",
+    readCredentialsFileFromDisk(dir).claude_code_oauth_token ?? "",
+    "file"
+  );
   if (fromFile) return { key: fromFile, source: "file" };
   return { key: "", source: "none" };
 }
@@ -385,7 +439,9 @@ export function resolveTelegramBotToken(
 
 export function hasPlaintextCredentialsOnDisk(dir: string = process.cwd()): boolean {
   const file = readCredentialsFileFromDisk(dir);
-  return Boolean(file.cursor_api_key || file.telegram_bot_token);
+  return Boolean(
+    file.cursor_api_key || file.telegram_bot_token || file.anthropic_api_key || file.claude_code_oauth_token
+  );
 }
 
 export function hasStoredCredentials(dir: string = process.cwd()): boolean {
@@ -419,8 +475,16 @@ export async function persistCursorApiKey(apiKey: string, dir: string = process.
 export function saveAnthropicApiKey(key: string, dir: string = process.cwd()): void {
   const v = key.trim();
   if (!v) throw new Error("Anthropic API key must be a non-empty string");
+  if (pgSecretsEnabled()) {
+    throw new Error("saveAnthropicApiKey: use persistAnthropicApiKey when the secrets key is set");
+  }
   const existing = readCredentialsFileFromDisk(dir);
   writeCredentialsFile(dir, { ...existing, anthropic_api_key: v });
+}
+
+/** Persist the Anthropic API key to postgres (pgcrypto) or file — I-145 parity with cursor/telegram. */
+export async function persistAnthropicApiKey(key: string, dir: string = process.cwd()): Promise<void> {
+  await persistSecret("anthropic_api_key", key, dir);
 }
 
 export function clearAnthropicApiKey(dir: string = process.cwd()): boolean {
@@ -436,8 +500,16 @@ export function clearAnthropicApiKey(dir: string = process.cwd()): boolean {
 export function saveClaudeOAuthToken(token: string, dir: string = process.cwd()): void {
   const v = token.trim();
   if (!v) throw new Error("Claude OAuth token must be a non-empty string");
+  if (pgSecretsEnabled()) {
+    throw new Error("saveClaudeOAuthToken: use persistClaudeOAuthToken when the secrets key is set");
+  }
   const existing = readCredentialsFileFromDisk(dir);
   writeCredentialsFile(dir, { ...existing, claude_code_oauth_token: v });
+}
+
+/** Persist the Claude OAuth token to postgres (pgcrypto) or file — I-145 parity with cursor/telegram. */
+export async function persistClaudeOAuthToken(token: string, dir: string = process.cwd()): Promise<void> {
+  await persistSecret("claude_code_oauth_token", token, dir);
 }
 
 export function clearClaudeOAuthToken(dir: string = process.cwd()): boolean {
