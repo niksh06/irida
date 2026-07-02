@@ -59,6 +59,7 @@ import type { SessionRecord } from "../store.js";
 import { resolveAgentLogger } from "../agentLog.js";
 import { resolve as resolvePath } from "node:path";
 import { loadConfig } from "../config.js";
+import { parseEngineArg } from "../gatewayEngineStore.js";
 import { indexOfLastAssistant, indexOfStreamingAssistant } from "./streamingTarget.js";
 import {
   formatToolProgressLine,
@@ -189,6 +190,9 @@ export function App(props: TuiOptions) {
   const [thinkingText, setThinkingText] = useState("");
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [modelOverride, setModelOverride] = useState<string | undefined>(undefined);
+  // /engine override (I-143). A ref, not state: the switch handler reboots the
+  // session immediately after setting it — setState would race the reboot.
+  const engineOverrideRef = useRef<string | undefined>(undefined);
   const [modelPickerIndex, setModelPickerIndex] = useState(0);
   const [pickerModels, setPickerModels] = useState<string[]>(() => listPickerModelsFallback(dir));
   const [modelListSource, setModelListSource] = useState<ModelListSource>("fallback");
@@ -335,7 +339,7 @@ export function App(props: TuiOptions) {
         dir,
         skills: props.skills,
         yesIUnderstand: props.yesIUnderstand,
-        engine: props.engine,
+        engine: engineOverrideRef.current ?? props.engine,
         auth: props.auth,
         model: modelOverride,
         resumeSessionId,
@@ -783,6 +787,52 @@ export function App(props: TuiOptions) {
           }
           setBusy(false);
           return;
+        case "engine": {
+          // I-143: engines cannot swap inside a live SDK session — switching
+          // always reboots into a fresh session.
+          const cfgProvider = (() => {
+            try {
+              return loadConfig(dir).engine?.provider ?? "cursor";
+            } catch {
+              return "cursor";
+            }
+          })();
+          const current = engineOverrideRef.current ?? props.engine ?? cfgProvider;
+          if (!slash.engine) {
+            pushMessage({
+              role: "system",
+              text: `engine: ${current}${engineOverrideRef.current ? " (override)" : ""} · switch: /engine cursor | claude · reset: /engine off`,
+            });
+            return;
+          }
+          const argNorm = slash.engine.trim().toLowerCase();
+          if (argNorm === "off" || argNorm === "clear" || argNorm === "none") {
+            engineOverrideRef.current = undefined;
+          } else {
+            const parsed = parseEngineArg(argNorm);
+            if (!parsed) {
+              pushMessage({
+                role: "error",
+                text: `unknown engine «${slash.engine}» — use cursor | claude (or off)`,
+              });
+              return;
+            }
+            if (parsed === current) {
+              pushMessage({ role: "system", text: `engine already ${parsed}` });
+              return;
+            }
+            engineOverrideRef.current = parsed;
+          }
+          setBusy(true);
+          {
+            const next = engineOverrideRef.current ?? props.engine ?? cfgProvider;
+            pushMessage({ role: "system", text: `engine → ${next} · opening a fresh session…` });
+            const out = await bootSession();
+            if (out && !out.ok) pushMessage({ role: "error", text: out.message });
+          }
+          setBusy(false);
+          return;
+        }
         case "resume":
           setBusy(true);
           {

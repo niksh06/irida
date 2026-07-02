@@ -12,6 +12,7 @@ export type SlashAction =
   | { type: "doctor" }
   | { type: "tools" }
   | { type: "model" }
+  | { type: "engine"; engine?: string }
   | { type: "mcp" }
   | { type: "copy" }
   | { type: "find"; query?: string }
@@ -62,6 +63,9 @@ export function parseSlash(input: string): SlashAction | null {
     case "model":
     case "models":
       return { type: "model" };
+    case "engine":
+      // Bare = show current; arg = switch (validated by the App handler, I-143).
+      return { type: "engine", engine: arg || undefined };
     case "mcp":
       return { type: "mcp" };
     case "copy":

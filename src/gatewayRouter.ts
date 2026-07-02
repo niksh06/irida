@@ -14,6 +14,7 @@ import { buildDigestFollowupTurn, parseDigestFollowup } from "./gatewayDigestFol
 import { loadLastDigestContext } from "./digestQa.js";
 import { handleGatewaySlash, isGatewaySlashCommand } from "./gatewaySlash.js";
 import { getChatMode, applyChatModePrefix } from "./gatewayModeStore.js";
+import { getChatEngine } from "./gatewayEngineStore.js";
 import { getPendingQuestion, clearPendingQuestion } from "./gatewayPendingQuestionStore.js";
 import { loadGatewayConfig, type GatewayConfig } from "./gatewayConfig.js";
 import { defaultServiceLogSink } from "./serviceLog.js";
@@ -87,6 +88,8 @@ export class GatewaySessionRouter {
     if (cached) return cached;
 
     const resumeId = this.peers.peers[key];
+    // Sticky per-chat engine (I-143) overrides agent.config.json's provider.
+    const chatEngine = getChatEngine(this.dir, this.adapter, chatId);
     const opened = await openChatSession({
       dir: this.dir,
       sdk: this.sdk,
@@ -96,6 +99,7 @@ export class GatewaySessionRouter {
       interactive: false,
       channel: this.adapter as SessionChannel,
       gatewayPeer: { adapter: this.adapter, chatId },
+      engine: chatEngine,
       onLog: this.onLog,
     });
     if (!opened.ok) {
@@ -142,6 +146,7 @@ export class GatewaySessionRouter {
           skills: this.skills,
           yesIUnderstand: this.yesIUnderstand,
           getSession: () => this.getOrCreateSession(chatId),
+          resetSession: () => this.resetPeer(chatId),
         });
         if (slashReply) return { reply: slashReply };
       }

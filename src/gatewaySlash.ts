@@ -14,6 +14,8 @@ import { loadRunMetrics, formatRunMetrics, loadSessionUsage, formatSessionUsage 
 import { loadProposals } from "./evolutionCycle.js";
 import { loadSkillLedger, rollbackAgentSkill } from "./skillApply.js";
 import { getChatMode, setChatMode, clearChatMode } from "./gatewayModeStore.js";
+import { clearChatEngine, getChatEngine, parseEngineArg, setChatEngine } from "./gatewayEngineStore.js";
+import { resolveApiKey, resolveAnthropicKey } from "./credentials.js";
 import { clearPendingQuestion } from "./gatewayPendingQuestionStore.js";
 import { listFollowups, clearFollowup, getFollowup } from "./gatewayFollowupStore.js";
 import { parseModeArg, TURN_MODES } from "./preTurn.js";
@@ -89,6 +91,8 @@ export interface GatewaySlashContext {
   skills: string[];
   /** Required for /delegate — inject summary into the peer session. */
   getSession?: () => Promise<ChatSession>;
+  /** Drop the peer's cached session (I-143 /engine) — next message opens fresh. */
+  resetSession?: () => Promise<string | null>;
   yesIUnderstand?: boolean;
 }
 
@@ -197,6 +201,48 @@ export async function handleGatewaySlash(
       return had
         ? "Снял ожидание ответа на вопрос агента. Пиши что угодно — продолжим с нового."
         : "Нет ожидающего вопроса от агента. (Для отложенной задачи: /cancel <fu_id>.)";
+    }
+
+    case "engine": {
+      // I-143: sticky per-chat SDK engine. Engines cannot swap inside a live
+      // SDK session, so every change resets the peer session.
+      const cfgDefault = loadConfig(ctx.dir).engine.provider;
+      const arg = p.arg.trim().toLowerCase();
+      if (!arg) {
+        const sticky = getChatEngine(ctx.dir, ctx.adapter, ctx.chatId);
+        const active = sticky ?? cfgDefault;
+        return [
+          `engine: **${active}**${sticky ? " (sticky для чата)" : " (из конфига)"}`,
+          `Сменить: /engine cursor | claude · сброс к конфигу: /engine off`,
+          `Смена движка всегда открывает новую сессию.`,
+        ].join("\n");
+      }
+      if (arg === "off" || arg === "clear" || arg === "none") {
+        const had = clearChatEngine(ctx.dir, ctx.adapter, ctx.chatId);
+        if (!had) return `sticky-движок не был задан — работает конфиг (**${cfgDefault}**)`;
+        await ctx.resetSession?.();
+        return `движок → **${cfgDefault}** (из конфига). Сессия сброшена.`;
+      }
+      const engine = parseEngineArg(arg);
+      if (!engine) return `неизвестный движок «${arg}». Варианты: cursor | claude (или off)`;
+      const current = getChatEngine(ctx.dir, ctx.adapter, ctx.chatId) ?? cfgDefault;
+      if (engine === current) {
+        return `движок уже **${engine}** — ничего не меняю. (Сбросить сессию: /new)`;
+      }
+      setChatEngine(ctx.dir, ctx.adapter, ctx.chatId, engine);
+      await ctx.resetSession?.();
+      const lines = [`движок → **${engine}** (sticky). Новая сессия — следующее сообщение пойдёт на нём.`];
+      // Soft credential heads-up — the turn itself will surface a hard error.
+      if (engine === "cursor" && !resolveApiKey(ctx.dir).key) {
+        lines.push("⚠️ CURSOR_API_KEY не найден — turn упадёт, пока не сделаешь irida auth login.");
+      }
+      if (engine === "claude-agent") {
+        const auth = loadConfig(ctx.dir).engine.auth ?? "api-key";
+        if (auth === "api-key" && !resolveAnthropicKey(ctx.dir).key) {
+          lines.push("⚠️ ANTHROPIC_API_KEY не найден (engine.auth=api-key) — задай ключ или переключи auth на account.");
+        }
+      }
+      return lines.join("\n");
     }
 
     case "stop": {

@@ -46,6 +46,7 @@ export const SLASH_REGISTRY: SlashRegistryEntry[] = [
   { cmd: "cancel", desc: "Abandon pending question / a follow-up by id", descGateway: "Отменить вопрос агента или отложенную задачу (/cancel <fu_id>)", args: "[fu_id]", surfaces: ["gateway"] },
   { cmd: "stop", desc: "Discard current turn + clear queue", descGateway: "Прервать: отбросить текущий ответ и очистить очередь", surfaces: ["gateway"] },
   { cmd: "followups", desc: "List scheduled deferred follow-ups", descGateway: "Отложенные задачи агента (defer_followup)", surfaces: ["gateway"] },
+  { cmd: "engine", desc: "Pick SDK engine (new session)", descGateway: "Движок SDK: cursor | claude (sticky, новая сессия)", args: "[cursor|claude|off]", surfaces: ["tui", "gateway"] },
 ];
 
 export function slashEntriesForSurface(surface: SlashSurface): SlashRegistryEntry[] {
