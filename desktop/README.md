@@ -47,7 +47,17 @@ The previous blue-dog PNG overlay (csagent era) is gone; the PNG pipeline under
 `deploy/assets/pet/` still resolves `assetPath` in snapshots for anything that
 wants bitmaps, but nothing in this app uses it.
 
-## Next (этап 2)
+## Chat (этап 2, I-147)
 
-Chat popover in this same app on top of the gateway webhook adapter — see
-`issues/I-146-wisp-desktop.md` / I-147.
+Tray → **Chat…** (or `npm run chat`) opens a chat window talking to the SAME
+gateway brain as Telegram, via its local webhook:
+
+- The gateway (telegram adapter) also listens on `http://127.0.0.1:18789/hook`
+  **only when** `GATEWAY_WEBHOOK_SECRET` is configured (deny by default).
+- The app reads the secret from its environment or from `~/.irida/irida.env`
+  (never shown to the renderer, never logged).
+- The `desktop` chatId must be in the gateway allowlist. Override with
+  `IRIDA_DESKTOP_CHAT_ID` / `IRIDA_WEBHOOK_URL`.
+- Slash commands work (`/engine`, `/status`, `/stop`, …) — same router.
+- No streaming (webhook is request/response): the window shows an elapsed
+  "думаю…" row; the menu-bar eye animates through the pet bridge meanwhile.

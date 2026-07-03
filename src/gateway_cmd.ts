@@ -8,6 +8,7 @@ import { API_KEY_HELP, resolveApiKey, warmCredentialsCache } from "./credentials
 import { EXIT, type ExitCode } from "./exit.js";
 import {
   GatewayConfigError,
+  gatewayWebhookSecret,
   loadGatewayConfig,
   type GatewayConfig,
 } from "./gatewayConfig.js";
@@ -67,23 +68,33 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
 
   if (cfg.adapter === "telegram") {
     const telegram = startTelegramPoller({ cfg, router, dir });
+    // I-147: a configured webhook secret opts the Telegram gateway into ALSO
+    // serving the local HTTP hook (Wisp desktop chat peer). Same router, same
+    // allowlist; the side-listener failing (port busy, …) must not take the
+    // Telegram loop down.
+    let webhook: WebhookServer | undefined;
+    try {
+      webhook = await maybeStartSideWebhook(cfg, router, dir);
+    } catch (e) {
+      emitServiceLog(
+        `[gateway] webhook side-listener failed — continuing telegram-only: ${e instanceof Error ? e.message : String(e)}`,
+        "error"
+      );
+    }
     return {
       cfg,
       router,
       telegram,
+      webhook,
       close: async () => {
         await telegram.stop();
         await router.closeAll();
+        await webhook?.close().catch(() => {});
       },
     };
   }
 
-  const webhook = startWebhookServer(cfg, router, dir);
-  await new Promise<void>((resolve, reject) => {
-    webhook.server.once("error", reject);
-    webhook.server.listen(cfg.port, cfg.host, () => resolve());
-  });
-  emitServiceLog(`[gateway] webhook listening http://${cfg.host}:${cfg.port}${cfg.webhookPath}`, "info");
+  const webhook = await listenWebhook(cfg, router, dir);
 
   return {
     cfg,
@@ -94,6 +105,34 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
       await webhook.close();
     },
   };
+}
+
+async function listenWebhook(
+  cfg: GatewayConfig,
+  router: GatewaySessionRouter,
+  dir: string
+): Promise<WebhookServer> {
+  const webhook = startWebhookServer(cfg, router, dir);
+  await new Promise<void>((resolve, reject) => {
+    webhook.server.once("error", reject);
+    webhook.server.listen(cfg.port, cfg.host, () => resolve());
+  });
+  emitServiceLog(`[gateway] webhook listening http://${cfg.host}:${cfg.port}${cfg.webhookPath}`, "info");
+  return webhook;
+}
+
+/**
+ * Start the webhook listener NEXT TO another adapter when a secret is
+ * configured (deny-by-default: no secret → no HTTP surface). Exported for
+ * tests — callers treat a thrown listen error as non-fatal.
+ */
+export async function maybeStartSideWebhook(
+  cfg: GatewayConfig,
+  router: GatewaySessionRouter,
+  dir: string
+): Promise<WebhookServer | undefined> {
+  if (!gatewayWebhookSecret(cfg)) return undefined;
+  return listenWebhook(cfg, router, dir);
 }
 
 export async function cmdGatewayRun(opts: GatewayRunOptions = {}): Promise<ExitCode> {

@@ -9,6 +9,7 @@
 // Requires `npm run build` in the repo root first (dist/ must exist).
 const { app, BrowserWindow, Tray, Menu, nativeImage, nativeTheme, ipcMain, screen } = require("electron");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -16,11 +17,38 @@ const REPO_ROOT = path.join(__dirname, "..");
 const STATE_PATH =
   process.env.PET_STATE_PATH || path.join(REPO_ROOT, ".agent", "pet-state.json");
 const DEMO = process.argv.includes("--demo");
+const OPEN_CHAT = process.argv.includes("--chat");
 const TICK_MS = 600; // frame advance + snapshot poll
 const STALE_MS = 15 * 60 * 1000; // ignore busy/ok flags from a dead agent process
 
 const WIN_W = 240;
 const WIN_H = 210;
+
+// ---- Chat peer (I-147) — talks to the gateway's local webhook ----
+// The secret stays in the MAIN process only; the renderer never sees it.
+const CHAT_TIMEOUT_MS = 10 * 60 * 1000; // a turn can legitimately run minutes
+
+function iridaHomeDir() {
+  return process.env.IRIDA_HOME || process.env.CSAGENT_HOME || path.join(os.homedir(), ".irida");
+}
+
+// Prod convenience: the launchd env file already holds the webhook secret
+// (mode 0600, same user). Value is never logged and never leaves this process.
+function readSecretFromIridaEnv() {
+  try {
+    const raw = fs.readFileSync(path.join(iridaHomeDir(), "irida.env"), "utf8");
+    const m = raw.match(/^\s*(?:export\s+)?GATEWAY_WEBHOOK_SECRET=["']?([^"'\r\n#]+)/m);
+    return m ? m[1].trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+const CHAT = {
+  url: process.env.IRIDA_WEBHOOK_URL || "http://127.0.0.1:18789/hook",
+  chatId: process.env.IRIDA_DESKTOP_CHAT_ID || "desktop",
+  secret: process.env.GATEWAY_WEBHOOK_SECRET || readSecretFromIridaEnv(),
+};
 
 let wisp = null; // dist/petTerminal.js: petTerminalFrame, petTerminalLabel
 let resolvePetState = null; // dist/petState.js — the agent's own state machine
@@ -163,11 +191,51 @@ function toggleWindow() {
   else win.show();
 }
 
+// ---- Chat window (I-147) ----
+let chatWin = null;
+let quitting = false;
+
+function createChatWindow() {
+  chatWin = new BrowserWindow({
+    width: 420,
+    height: 560,
+    minWidth: 320,
+    minHeight: 400,
+    title: "irida — chat",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  chatWin.loadFile(path.join(__dirname, "renderer", "chat.html"));
+  // Menu-bar app: closing the chat hides it; Quit lives in the tray menu.
+  chatWin.on("close", (e) => {
+    if (!quitting) {
+      e.preventDefault();
+      chatWin.hide();
+    }
+  });
+}
+
+function toggleChat() {
+  if (!chatWin || chatWin.isDestroyed()) {
+    createChatWindow();
+    return;
+  }
+  if (chatWin.isVisible()) chatWin.hide();
+  else {
+    chatWin.show();
+    chatWin.focus();
+  }
+}
+
 function createTray() {
   tray = new Tray(nativeImage.createEmpty());
   tray.setToolTip("irida wisp");
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: "Chat…", click: toggleChat },
       { label: "Show / hide Wisp", click: toggleWindow },
       { type: "separator" },
       { label: "Quit", role: "quit" },
@@ -180,16 +248,62 @@ ipcMain.on("pet:hide", () => {
 });
 ipcMain.on("pet:quit", () => app.quit());
 
+// Renderer gets connection facts for its header — never the secret itself.
+ipcMain.handle("chat:info", () => ({
+  url: CHAT.url,
+  chatId: CHAT.chatId,
+  hasSecret: Boolean(CHAT.secret),
+}));
+
+ipcMain.handle("chat:send", async (_e, rawText) => {
+  const text = String(rawText ?? "").trim();
+  if (!text) return { ok: false, error: "пустое сообщение" };
+  if (!CHAT.secret) {
+    return {
+      ok: false,
+      error:
+        "нет секрета вебхука — задай GATEWAY_WEBHOOK_SECRET в окружении (или он должен лежать в ~/.irida/irida.env)",
+    };
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS);
+  try {
+    const res = await fetch(CHAT.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-secret": CHAT.secret },
+      body: JSON.stringify({ chatId: CHAT.chatId, text }),
+      signal: ctrl.signal,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 429) return { ok: false, busy: true, error: "агент занят другим ходом — повтори чуть позже" };
+    if (res.status === 401) return { ok: false, error: "gateway отверг секрет (401) — секрет не совпадает" };
+    if (res.status === 403) return { ok: false, error: `chatId «${CHAT.chatId}» не в allowlist gateway (403)` };
+    if (!res.ok || !body || body.ok !== true) {
+      return { ok: false, error: String((body && body.error) || `HTTP ${res.status}`) };
+    }
+    return { ok: true, reply: String(body.reply ?? "") };
+  } catch (e) {
+    if (e && e.name === "AbortError") return { ok: false, error: "таймаут (10 мин) — ход не завершился" };
+    return { ok: false, error: "нет связи с gateway — он запущен и webhook включён (секрет настроен)?" };
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 app.whenReady().then(async () => {
   await loadWispModules();
   if (process.platform === "darwin" && app.dock) app.dock.hide(); // menu-bar app
   createTray();
   createWindow();
+  if (OPEN_CHAT) createChatWindow();
   tickOnce();
   setInterval(tickOnce, TICK_MS);
 });
 
 // Menu-bar app: closing/hiding the overlay must not quit — the tray owns quit.
+app.on("before-quit", () => {
+  quitting = true;
+});
 app.on("window-all-closed", () => {});
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -13,3 +13,14 @@ contextBridge.exposeInMainWorld("petAPI", {
     ipcRenderer.send("pet:quit");
   },
 });
+
+// Chat window (I-147): text out, {ok, reply|error, busy?} back. The webhook
+// secret never crosses this bridge — requests happen in the main process.
+contextBridge.exposeInMainWorld("chatAPI", {
+  send(text) {
+    return ipcRenderer.invoke("chat:send", text);
+  },
+  info() {
+    return ipcRenderer.invoke("chat:info");
+  },
+});
