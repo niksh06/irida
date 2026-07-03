@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import stringWidth from "string-width";
 import { readTerminalSize } from "../src/tui/terminal.js";
-import { estimateVisibleLines } from "../src/tui/transcript.js";
+import { estimateVisibleLines, wrapToWidth } from "../src/tui/transcript.js";
 import { bannerFor, compactBanner, COMPACT_BANNER_COLS } from "../src/tui/theme.js";
 
 // I-156: TUI responsiveness. The reactive hook (useTerminalSize) needs a React
@@ -28,6 +29,32 @@ describe("estimateVisibleLines chrome (I-156)", () => {
     assert.equal(estimateVisibleLines(10, 30), 6);
     // Back-compat default keeps old callers stable.
     assert.equal(estimateVisibleLines(40), 40 - 11);
+  });
+});
+
+describe("wrapToWidth display-width (I-156b)", () => {
+  const budget = (w: number) => Math.max(16, w - 8);
+  const fits = (text: string, w: number) =>
+    wrapToWidth(text, w).every((l) => stringWidth(l) <= budget(w));
+
+  it("never overflows the budget for emoji / CJK / mixed (measured by cells)", () => {
+    for (const w of [24, 40, 80]) {
+      assert.ok(fits("✨".repeat(60), w), `emoji @${w}`);
+      assert.ok(fits("你好世界".repeat(20), w), `cjk @${w}`);
+      assert.ok(fits("план ✨ 你好 rebalance the terminal layout properly now", w), `mixed @${w}`);
+      assert.ok(fits("supercalifragilisticexpialidocious".repeat(3), w), `longword @${w}`);
+    }
+  });
+
+  it("still word-wraps ASCII on spaces (no mid-word breaks when it fits)", () => {
+    const lines = wrapToWidth("the quick brown fox jumps over the lazy dog", 24);
+    assert.ok(lines.length >= 2);
+    // No line ends mid-word with a dangling partial that a space would've broken.
+    for (const l of lines) assert.equal(l, l.replace(/\s+$/, ""), "no trailing space");
+  });
+
+  it("preserves explicit newlines as separate lines", () => {
+    assert.deepEqual(wrapToWidth("a\n\nb", 40), ["a", "", "b"]);
   });
 });
 

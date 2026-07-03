@@ -1,3 +1,4 @@
+import stringWidth from "string-width";
 import type { RunRecord } from "../store.js";
 import type { ChatMessage, MessageRole } from "./types.js";
 
@@ -37,25 +38,65 @@ export interface TranscriptViewport {
   totalLines: number;
 }
 
-/** Word-wrap plain text to fit transcript column width. */
+/**
+ * Word-wrap plain text to the transcript column, measured by DISPLAY WIDTH
+ * (I-156b): the old code cut by code-point count, so emoji / CJK (2 cells each)
+ * overflowed the terminal by up to 2× and drifted the layout. We accumulate
+ * display cells per line, break on the last space that fits, and hard-split
+ * any single token wider than the budget (a wall of emoji with no spaces).
+ */
 export function wrapToWidth(text: string, width: number): string[] {
   const max = Math.max(16, width - 8);
   if (!text) return [""];
   const out: string[] = [];
   for (const paragraph of text.split("\n")) {
-    let rest = paragraph;
-    if (!rest) {
+    if (!paragraph) {
       out.push("");
       continue;
     }
-    while (rest.length > max) {
-      let cut = max;
-      const sp = rest.lastIndexOf(" ", max);
-      if (sp > Math.floor(max * 0.35)) cut = sp;
-      out.push(rest.slice(0, cut).trimEnd());
-      rest = rest.slice(cut).trimStart();
+    let line = "";
+    let lineW = 0;
+    const flush = () => {
+      out.push(line.replace(/\s+$/, ""));
+      line = "";
+      lineW = 0;
+    };
+    // Split into words but keep the trailing spaces so wrapping stays natural;
+    // words themselves may still exceed the budget and get hard-split below.
+    for (const word of paragraph.match(/\s+|\S+/g) ?? []) {
+      const isSpace = /^\s+$/.test(word);
+      let w = word;
+      // Leading whitespace at the start of a fresh line is dropped.
+      if (isSpace && lineW === 0) continue;
+      let wl = stringWidth(w);
+      if (lineW + wl <= max) {
+        line += w;
+        lineW += wl;
+        continue;
+      }
+      // A space that doesn't fit just ends the line.
+      if (isSpace) {
+        flush();
+        continue;
+      }
+      // A whole word that doesn't fit: break the current line first (unless the
+      // word is itself wider than the budget — then hard-split it across lines).
+      if (lineW > 0 && wl <= max) {
+        flush();
+        line = w;
+        lineW = wl;
+        continue;
+      }
+      // Hard-split an over-long token by display cells.
+      for (const ch of w) {
+        const cw = stringWidth(ch);
+        if (lineW + cw > max && lineW > 0) flush();
+        line += ch;
+        lineW += cw;
+      }
+      void wl;
     }
-    out.push(rest);
+    flush();
   }
   return out.length ? out : [""];
 }
