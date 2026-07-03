@@ -11,6 +11,16 @@ set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="${IRIDA_ROOT:-${CSAGENT_ROOT:?IRIDA_ROOT or CSAGENT_ROOT must be set}}"
 
+# Single source of truth for service env (I-147): the plist carries a fixed
+# rendered snapshot; irida.env is canonical (same convention as prod-check /
+# digest-qa / gateway-smoke). Lets new vars (e.g. GATEWAY_WEBHOOK_SECRET)
+# reach the gateway without re-rendering launchd plists.
+ENV_FILE="${IRIDA_HOME:-$HOME/.irida}/irida.env"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
 # Best effort: never block gateway start indefinitely on a store problem — the
 # gateway's own status/turn handling now surfaces a down store (I-108/I-109).
 bash "$DIR/ensure-postgres.sh" || echo "[gateway-launch] ensure-postgres failed — starting gateway anyway" >&2
