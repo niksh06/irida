@@ -31,6 +31,15 @@ const OPTIONAL_BY_EXTENSION: Record<string, string> = {
 /** One schema pass per database per process — concurrent callers share it. */
 const inflight = new Map<string, Promise<void>>();
 
+/**
+ * Cross-PROCESS serialization (H-7 finding): two runners on a fresh database
+ * (gateway + cron tick, or parallel test files) race CREATE EXTENSION /
+ * CREATE TABLE / the schema_migrations insert itself into duplicate-key
+ * errors. A session-level advisory lock lets the first pass win; waiters
+ * re-read schema_migrations after acquiring and no-op.
+ */
+const MIGRATIONS_ADVISORY_LOCK = 7_712_001;
+
 export async function runPgMigrations(pool: pg.Pool, key: string): Promise<void> {
   let p = inflight.get(key);
   if (!p) {
@@ -59,39 +68,49 @@ async function extensionAvailable(pool: pg.Pool, name: string): Promise<boolean>
 }
 
 async function apply(pool: pg.Pool): Promise<void> {
-  await pool.query(
-    `CREATE TABLE IF NOT EXISTS schema_migrations (
-       filename text PRIMARY KEY,
-       applied_at timestamptz NOT NULL DEFAULT now()
-     )`
-  );
-  const done = new Set<string>(
-    (await pool.query("SELECT filename FROM schema_migrations")).rows.map(
-      (r: { filename: string }) => r.filename
-    )
-  );
-  for (const file of listMigrationFiles()) {
-    if (done.has(file)) continue;
-    const requiredExt = OPTIONAL_BY_EXTENSION[file];
-    if (requiredExt && !(await extensionAvailable(pool, requiredExt))) {
-      console.error(
-        `[pg] migration ${file} skipped — extension "${requiredExt}" not available (optional feature; retried next start)`
-      );
-      continue;
-    }
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
-    const client = await pool.connect();
+  // The advisory lock is session-scoped: hold ONE client for the whole pass
+  // and run every statement on it, so a concurrent runner blocks on acquire
+  // and then sees the winner's schema_migrations rows.
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock($1)", [MIGRATIONS_ADVISORY_LOCK]);
     try {
-      await client.query("BEGIN");
-      await client.query(sql);
-      await client.query("INSERT INTO schema_migrations(filename) VALUES ($1)", [file]);
-      await client.query("COMMIT");
-      console.error(`[pg] migration applied: ${file}`);
-    } catch (e) {
-      await client.query("ROLLBACK").catch(() => {});
-      throw new Error(`migration ${file} failed: ${e instanceof Error ? e.message : String(e)}`);
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS schema_migrations (
+           filename text PRIMARY KEY,
+           applied_at timestamptz NOT NULL DEFAULT now()
+         )`
+      );
+      const done = new Set<string>(
+        (await client.query("SELECT filename FROM schema_migrations")).rows.map(
+          (r: { filename: string }) => r.filename
+        )
+      );
+      for (const file of listMigrationFiles()) {
+        if (done.has(file)) continue;
+        const requiredExt = OPTIONAL_BY_EXTENSION[file];
+        if (requiredExt && !(await extensionAvailable(pool, requiredExt))) {
+          console.error(
+            `[pg] migration ${file} skipped — extension "${requiredExt}" not available (optional feature; retried next start)`
+          );
+          continue;
+        }
+        const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
+        try {
+          await client.query("BEGIN");
+          await client.query(sql);
+          await client.query("INSERT INTO schema_migrations(filename) VALUES ($1)", [file]);
+          await client.query("COMMIT");
+          console.error(`[pg] migration applied: ${file}`);
+        } catch (e) {
+          await client.query("ROLLBACK").catch(() => {});
+          throw new Error(`migration ${file} failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
     } finally {
-      client.release();
+      await client.query("SELECT pg_advisory_unlock($1)", [MIGRATIONS_ADVISORY_LOCK]).catch(() => {});
     }
+  } finally {
+    client.release();
   }
 }

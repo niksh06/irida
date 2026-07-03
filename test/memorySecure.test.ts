@@ -11,7 +11,7 @@ import {
 } from "../src/memoryStore.js";
 import { EMBEDDINGS_DIM } from "../src/embeddings.js";
 
-const PG_URL = process.env.CSAGENT_TEST_PG_URL?.trim();
+const PG_URL = (process.env.IRIDA_TEST_PG_URL ?? process.env.CSAGENT_TEST_PG_URL)?.trim();
 
 test("sqlite store refuses secure wing (no pgcrypto)", async () => {
   const dir = mkdtempSync(resolve(tmpdir(), "securemem-"));
@@ -25,7 +25,7 @@ test("sqlite store refuses secure wing (no pgcrypto)", async () => {
 
 test(
   "postgres semantic search orders by cosine distance (I-36)",
-  { skip: !PG_URL ? "set CSAGENT_TEST_PG_URL to run" : false },
+  { skip: !PG_URL ? "set IRIDA_TEST_PG_URL to run" : false },
   async () => {
     // Deterministic fake embedder: axis-aligned vectors per known text.
     const axis = (i: number) => {
@@ -67,10 +67,10 @@ test(
 
 test(
   "postgres secure wing: encrypted at rest, decrypt on show, masked in list/search (I-20)",
-  { skip: !PG_URL ? "set CSAGENT_TEST_PG_URL to run" : false },
+  { skip: !PG_URL ? "set IRIDA_TEST_PG_URL to run" : false },
   async () => {
     const prevKey = process.env.CSAGENT_SECRETS_KEY;
-    process.env.CSAGENT_SECRETS_KEY = "test-secrets-key";
+    process.env.CSAGENT_SECRETS_KEY = "memory-secure-test-key-32chars-ok";
     const store = new PostgresMemoryStore(PG_URL!);
     const name = `securetest-${Date.now()}`;
     try {
@@ -105,12 +105,12 @@ test(
       delete process.env.CSAGENT_SECRETS_KEY;
       const noKey = await store.getNote(name);
       assert.equal(noKey!.body, SECURE_BODY_PLACEHOLDER);
-      process.env.CSAGENT_SECRETS_KEY = "test-secrets-key";
+      process.env.CSAGENT_SECRETS_KEY = "memory-secure-test-key-32chars-ok";
 
       // Wrong key → pgcrypto error, not silent plaintext.
-      process.env.CSAGENT_SECRETS_KEY = "wrong-key";
+      process.env.CSAGENT_SECRETS_KEY = "wrong-key-but-long-enough-32char";
       await assert.rejects(() => store.getNote(name));
-      process.env.CSAGENT_SECRETS_KEY = "test-secrets-key";
+      process.env.CSAGENT_SECRETS_KEY = "memory-secure-test-key-32chars-ok";
     } finally {
       await store.deleteNote(name).catch(() => {});
       await store.close();

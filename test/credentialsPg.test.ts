@@ -10,7 +10,7 @@ import {
   SECRETS_KEY_ENV,
 } from "../src/credentialsPg.js";
 
-const PG_URL = process.env.CSAGENT_TEST_PG_URL?.trim();
+const PG_URL = (process.env.IRIDA_TEST_PG_URL ?? process.env.CSAGENT_TEST_PG_URL)?.trim();
 
 function withEnv(
   vars: Record<string, string | undefined>,
@@ -60,10 +60,10 @@ test("pgSecretsEnabled requires database url and secrets key", async () => {
 
 test(
   "secret overwrite archives previous version; restore round-trips (postmortem fix)",
-  { skip: !PG_URL ? "set CSAGENT_TEST_PG_URL to run" : false },
+  { skip: !PG_URL ? "set IRIDA_TEST_PG_URL to run" : false },
   async () => {
     await withEnv(
-      { CSAGENT_DATABASE_URL: PG_URL, [SECRETS_KEY_ENV]: "history-test-key" },
+      { CSAGENT_DATABASE_URL: PG_URL, [SECRETS_KEY_ENV]: "history-test-key-32chars-long-ok" },
       async () => {
         const v1 = "1234567890:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         const v2 = "1234567890:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";

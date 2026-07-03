@@ -1,7 +1,9 @@
 name: CI
 
-# Minimal gate: typecheck + the full test suite on every push and PR.
-# The 4 Postgres-integration tests self-skip without CSAGENT_TEST_PG_URL.
+# Gate: typecheck + full test suite (WITH the Postgres integration tests —
+# a pgvector service container feeds IRIDA_TEST_PG_URL, so the pgcrypto/
+# migration/secure-memory tests no longer self-skip) + the offline eval
+# battery + shellcheck over the ops scripts (H-7).
 on:
   push:
   pull_request:
@@ -14,14 +16,33 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector image: migration 008 (memory vectors) needs the extension.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5499:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       # No test launches a real browser, so skip puppeteer's Chromium download.
       PUPPETEER_SKIP_DOWNLOAD: "true"
+      # Gates the Postgres integration tests (tests manage the rest of their
+      # env themselves — no global IRIDA_DATABASE_URL here on purpose: it
+      # would flip pgSecretsEnabled() under unrelated file-mode tests).
+      IRIDA_TEST_PG_URL: postgres://test:test@127.0.0.1:5499/test
     steps:
       - uses: actions/checkout@v4
 
-      # Node 22: the store layer uses node:sqlite (DatabaseSync), which needs
-      # Node >= 22.5 even though package.json engines says >=20.
+      # Node 22: the store layer uses node:sqlite (DatabaseSync), Node >= 22.5
+      # (also the package.json engines floor).
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -34,3 +55,14 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Eval battery (offline cases)
+        run: npm run eval
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Error severity only: catches real breakage without style noise.
+      - name: shellcheck deploy scripts
+        run: shellcheck -S error deploy/*.sh deploy/scripts/*.sh eval/cases/*/verify.sh
