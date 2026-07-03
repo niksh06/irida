@@ -2,7 +2,6 @@
  * Subagent delegate (issue 040) — isolated one-shot SDK run, summary only.
  */
 import { loadConfig } from "./config.js";
-import { resolveApiKey } from "./credentials.js";
 import { runPrompt } from "./run.js";
 import type { SdkLike } from "./host.js";
 
@@ -26,10 +25,9 @@ export async function runDelegate(opts: DelegateOptions): Promise<DelegateResult
   const cfg = loadConfig(dir);
   const workDir = opts.cwd?.trim() || cfg.cwd || dir;
   const wrapped = `[delegate] ${opts.prompt.trim()}\n\nReply with a concise summary for the parent agent (bullet points, max 400 words).`;
-  const { key } = resolveApiKey(dir);
-  if (!key) {
-    return { ok: false, summary: "CURSOR_API_KEY not set", runId: null };
-  }
+  // No engine-specific key gate here (H-10): runPrompt resolves credentials
+  // per configured provider (cursor/claude-agent/…) and returns the right
+  // help text — a hard CURSOR_API_KEY check broke delegate on other engines.
   const out = await runPrompt(wrapped, {
     dir,
     cwd: workDir,

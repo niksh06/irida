@@ -32,7 +32,8 @@ import { sessionStartMemoryBlocks } from "./memory.js";
 import { autoRagMemoryBlocks } from "./autoRag.js";
 import { buildPreTurnBlocks } from "./preTurn.js";
 import { redact } from "./redact.js";
-import { newId, preview, resultPreview, nowIso } from "./util.js";
+import { newId, preview, resultPreview, nowIso, sleep } from "./util.js";
+import { formatSdkError, OVERLOAD_RETRY_DELAYS_MS } from "./sdkErrors.js";
 import { pickRunErrorDetail } from "./runErrors.js";
 import { formatErrorDetail } from "./runErrorDetail.js";
 import { EXIT, type ExitCode } from "./exit.js";
@@ -198,7 +199,22 @@ export async function cmdResume(
     const runId = newId("run");
     const startedAt = nowIso();
     try {
-      const run: RunLike = await sendAgentTurn(agent, finalPrompt, cfg.model);
+      // Bounded overload retry on the early throw path (H-10) — a mid-stream
+      // failure is NOT retried (partial output already reached the user).
+      let run: RunLike;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          run = await sendAgentTurn(agent, finalPrompt, cfg.model);
+          break;
+        } catch (e) {
+          if (attempt < OVERLOAD_RETRY_DELAYS_MS.length && formatSdkError(e).errorKind === "overload") {
+            console.error(`resume: overload retry attempt=${attempt + 1} delayMs=${OVERLOAD_RETRY_DELAYS_MS[attempt]}`);
+            await sleep(OVERLOAD_RETRY_DELAYS_MS[attempt]!);
+            continue;
+          }
+          throw e;
+        }
+      }
       let turnText = "";
       if (typeof run.stream === "function") {
         for await (const ev of run.stream()) {

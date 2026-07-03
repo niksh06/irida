@@ -24,7 +24,8 @@ import { sessionStartMemoryBlocks } from "./memory.js";
 import { autoRagMemoryBlocks } from "./autoRag.js";
 import { buildPreTurnBlocks } from "./preTurn.js";
 import { redact } from "./redact.js";
-import { newId, preview, resultPreview, nowIso } from "./util.js";
+import { newId, preview, resultPreview, nowIso, sleep } from "./util.js";
+import { formatSdkError, isOverloadErrorText, OVERLOAD_RETRY_DELAYS_MS } from "./sdkErrors.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import {
   API_KEY_HELP,
@@ -64,6 +65,8 @@ export interface RunOptions {
   engine?: string;
   /** Override engine.auth for this invocation (--auth). */
   auth?: string;
+  /** Overload retry backoff override (tests only; default OVERLOAD_RETRY_DELAYS_MS). */
+  overloadRetryDelaysMs?: number[];
 }
 
 export interface RunResult {
@@ -114,7 +117,8 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     apiKey = resolveApiKey(dir).key;
     if (!apiKey) {
       if (!quiet) console.error(`run: ${API_KEY_HELP}`);
-      return { exitCode: EXIT.config, text: "" };
+      // Programmatic callers (delegate) surface `text` — not just the exit code.
+      return { exitCode: EXIT.config, text: API_KEY_HELP };
     }
   } else if (authMode === "account") {
     // Account mode: an empty token is fine — the Agent SDK falls back to an existing
@@ -124,7 +128,7 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     apiKey = resolveAnthropicKey(dir).key;
     if (!apiKey) {
       if (!quiet) console.error(`run: ${ANTHROPIC_API_KEY_HELP}`);
-      return { exitCode: EXIT.config, text: "" };
+      return { exitCode: EXIT.config, text: ANTHROPIC_API_KEY_HELP };
     }
   }
 
@@ -201,14 +205,35 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
       const pkg = provider === "claude-agent" ? "@anthropic-ai/claude-agent-sdk" : "@cursor/sdk";
       throw new StartupError(`cannot load ${pkg}: ` + (e as Error).message);
     });
-    const r = await runOneShot(sdk, {
-      prompt: finalPrompt,
-      apiKey,
-      model: effectiveModel,
-      cwd: agentCwd,
-      mcpServers,
-      disallowedTools: opts.disallowedTools,
-    });
+    // One-shot overload retry (H-10, parity with I-133 in chat): a transient
+    // 529/429/503 must not fail a cron/delegate run that a 5s wait would save.
+    const overloadDelays = opts.overloadRetryDelaysMs ?? OVERLOAD_RETRY_DELAYS_MS;
+    let r!: Awaited<ReturnType<typeof runOneShot>>;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        r = await runOneShot(sdk, {
+          prompt: finalPrompt,
+          apiKey,
+          model: effectiveModel,
+          cwd: agentCwd,
+          mcpServers,
+          disallowedTools: opts.disallowedTools,
+        });
+      } catch (e) {
+        if (attempt < overloadDelays.length && formatSdkError(e).errorKind === "overload") {
+          if (!quiet) console.error(`run: overload retry attempt=${attempt + 1} delayMs=${overloadDelays[attempt]}`);
+          await sleep(overloadDelays[attempt]!);
+          continue;
+        }
+        throw e;
+      }
+      if (r.status === "error" && attempt < overloadDelays.length && isOverloadErrorText(r.text)) {
+        if (!quiet) console.error(`run: overload retry attempt=${attempt + 1} delayMs=${overloadDelays[attempt]}`);
+        await sleep(overloadDelays[attempt]!);
+        continue;
+      }
+      break;
+    }
     if (!quiet) console.error(`[run] agentId=${r.agentId ?? "-"} runId=${r.runId ?? "-"} status=${r.status}`);
     const failed = r.status === "error";
     if (!persistRun || !store) {

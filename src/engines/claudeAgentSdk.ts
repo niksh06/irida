@@ -384,11 +384,12 @@ export function createClaudeAgentSdk(opts?: {
     },
 
     resume(agentId, o) {
-      // host.ts's resume opts carry no cwd; default to the process cwd. The Agent
-      // SDK re-establishes context from `resume`, but tools run in this cwd.
+      // The Agent SDK re-establishes context from `resume`, but tools run in
+      // this cwd — callers pass the session's stored cwd (H-10); process.cwd()
+      // is only the legacy fallback.
       return makeAgent({
         model: o.model?.id?.trim() || DEFAULT_CLAUDE_AGENT_MODEL,
-        cwd: process.cwd(),
+        cwd: o.cwd?.trim() || process.cwd(),
         apiKey: o.apiKey,
         mcpServers: toAgentMcpServers(o.mcpServers),
         sessionId: agentId,

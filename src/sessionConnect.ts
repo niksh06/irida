@@ -56,7 +56,7 @@ export async function connectAgentForSession(
 
   if (session.sdk_agent_id) {
     try {
-      const agent = await resumeSession(sdk, session.sdk_agent_id, apiKey, mcpServers, cfg.model);
+      const agent = await resumeSession(sdk, session.sdk_agent_id, apiKey, mcpServers, cfg.model, cwd);
       return { agent, mode: "resumed", replayPrefix: "", liveResumeError: "" };
     } catch (e) {
       liveResumeError = e instanceof StartupError ? e.message : String(e);

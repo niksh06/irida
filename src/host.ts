@@ -108,9 +108,11 @@ export function eventThinkingText(ev: unknown): string {
     if (typeof e.text === "string") return e.text;
   }
   if (e?.type === "assistant" && Array.isArray(e.message?.content)) {
+    // Anthropic thinking blocks carry the text in `thinking`, not `text` —
+    // matching only `text` dropped the claude-agent thinking stream (H-10).
     return (e.message.content as Array<{ type?: string; text?: string; thinking?: string }>)
-      .filter((b) => b.type === "thinking" && typeof b.text === "string")
-      .map((b) => b.text as string)
+      .filter((b) => b.type === "thinking" && (typeof b.text === "string" || typeof b.thinking === "string"))
+      .map((b) => (b.text ?? b.thinking) as string)
       .join("");
   }
   return "";
@@ -212,7 +214,7 @@ export async function createSession(
 export interface SdkResumeLike {
   resume(
     agentId: string,
-    opts: { apiKey: string; model?: { id: string }; mcpServers?: McpServers }
+    opts: { apiKey: string; model?: { id: string }; mcpServers?: McpServers; cwd?: string }
   ): Promise<AgentLike> | AgentLike;
 }
 
@@ -221,13 +223,17 @@ export async function resumeSession(
   agentId: string,
   apiKey: string,
   mcpServers?: McpServers,
-  model?: string
+  model?: string,
+  cwd?: string
 ): Promise<AgentLike> {
   try {
     return await sdk.resume(agentId, {
       apiKey,
       ...(model?.trim() ? { model: { id: model.trim() } } : {}),
       ...(mcpServers && Object.keys(mcpServers).length ? { mcpServers } : {}),
+      // H-10: tools of a resumed session must run where the session ran, not
+      // wherever the resuming process happens to sit.
+      ...(cwd?.trim() ? { cwd: cwd.trim() } : {}),
     });
   } catch (e) {
     throw new StartupError((e as Error)?.message ?? String(e));

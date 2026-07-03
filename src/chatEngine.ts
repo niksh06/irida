@@ -586,13 +586,21 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           };
         }
       } else if (isAgentIdle(lastAgentTouchAt)) {
-        log(
-          `[chat] idle refresh due lastTouch=${lastAgentTouchAt} idleMs=${resolveAgentIdleMs()} agoMs=${Date.now() - lastAgentTouchAt}`
-        );
-        // Proactive, best-effort refresh: must not consume the error-retry budget
-        // and must not strand the turn if the SDK is briefly unreachable (I-111) —
-        // on failure the live agent is kept and the turn proceeds on it.
-        await rotateAgent(`idle_ttl ${resolveAgentIdleMs()}ms`, { preserveOldOnFailure: true });
+        // Idle refresh exists for stale CURSOR handles. The claude-agent engine
+        // reconnects by session id on every send (`resume: sessionId`), so a
+        // fresh+replay rotation there only THREW AWAY server-side context
+        // (H-10: 20-min idle lost everything past the 4-run replay window).
+        if (cfg.engine.provider === "claude-agent") {
+          log(`[chat] idle refresh skipped (claude-agent resumes per turn) agoMs=${Date.now() - lastAgentTouchAt}`);
+        } else {
+          log(
+            `[chat] idle refresh due lastTouch=${lastAgentTouchAt} idleMs=${resolveAgentIdleMs()} agoMs=${Date.now() - lastAgentTouchAt}`
+          );
+          // Proactive, best-effort refresh: must not consume the error-retry budget
+          // and must not strand the turn if the SDK is briefly unreachable (I-111) —
+          // on failure the live agent is kept and the turn proceeds on it.
+          await rotateAgent(`idle_ttl ${resolveAgentIdleMs()}ms`, { preserveOldOnFailure: true });
+        }
       }
 
       for (;;) {
