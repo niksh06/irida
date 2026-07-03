@@ -78,9 +78,13 @@ describe("idle rotation (H-10)", () => {
           await new Promise((r) => setTimeout(r, 10)); // exceed the 1ms idle TTL
           await opened.session.sendTurn("two");
           if (provider === "claude-agent") {
+            // The strong invariant: NO rotation ever, however slow the runner.
             assert.equal(created, 1, "claude-agent must NOT rotate on idle (session resumes per turn)");
           } else {
-            assert.equal(created, 2, "cursor must still refresh the idle handle");
+            // Timing-robust: with a 1ms TTL a slow CI runner can trigger the
+            // idle refresh before turn one too — assert "rotated at least
+            // once", not an exact count (CI flaked on 3 !== 2).
+            assert.ok(created >= 2, `cursor must refresh the idle handle (created=${created})`);
           }
           await opened.session.close();
         }
