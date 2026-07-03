@@ -14,8 +14,33 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
 const REPO_ROOT = path.join(__dirname, "..");
-const STATE_PATH =
-  process.env.PET_STATE_PATH || path.join(REPO_ROOT, ".agent", "pet-state.json");
+// Snapshot resolution: explicit env wins; otherwise follow the FRESHEST of
+// the dev-repo snapshot and the prod gateway home one (<IRIDA_HOME>/.agent/) —
+// so a plain `npm start` on the prod host follows the live agent with zero
+// config, and a stale dev file can't shadow it.
+function defaultStatePath() {
+  if (process.env.PET_STATE_PATH) return process.env.PET_STATE_PATH;
+  const home = process.env.IRIDA_HOME || process.env.CSAGENT_HOME || path.join(os.homedir(), ".irida");
+  const candidates = [
+    path.join(REPO_ROOT, ".agent", "pet-state.json"),
+    path.join(home, ".agent", "pet-state.json"),
+  ];
+  let best = candidates[0];
+  let bestM = -1;
+  for (const p of candidates) {
+    try {
+      const m = fs.statSync(p).mtimeMs;
+      if (m > bestM) {
+        bestM = m;
+        best = p;
+      }
+    } catch {
+      /* missing candidate */
+    }
+  }
+  return best;
+}
+const STATE_PATH = defaultStatePath();
 const DEMO = process.argv.includes("--demo");
 const OPEN_CHAT = process.argv.includes("--chat");
 const TICK_MS = 600; // frame advance + snapshot poll

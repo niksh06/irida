@@ -18,10 +18,12 @@ npm run demo       # cycle through every state — no agent needed
 npm start          # follow the live agent: reads ../.agent/pet-state.json
 ```
 
-Point it at another snapshot (e.g. prod copy under `~/.irida/irida`):
+Snapshot pick order: `PET_STATE_PATH` env → freshest of the dev repo's
+`.agent/pet-state.json` and the prod gateway's `~/.irida/.agent/pet-state.json`
+(the gateway writes to its home dir, not the prod repo copy). Pin explicitly:
 
 ```bash
-PET_STATE_PATH=$HOME/.irida/irida/.agent/pet-state.json npm start
+PET_STATE_PATH=$HOME/.irida/.agent/pet-state.json npm start
 ```
 
 - **Menu bar**: the eye animates with the pet state; tooltip shows the label
