@@ -43,13 +43,14 @@ test("pairing: same chat reuses code, pending capped, stale expired (I-35)", () 
   const dir = mkdtempSync(resolve(tmpdir(), "pair-limit-"));
   seedGateway(dir, ["admin-chat"]);
 
-  // Same chat twice → same code, one entry.
+  // Same chat twice → one entry; the repeat is SILENT inside the reply
+  // cooldown (H-12) but keeps the same pending code.
   const first = tryRegisterPairing(dir, "telegram", "spammer");
   const second = tryRegisterPairing(dir, "telegram", "spammer");
-  const c1 = first.message.match(/([A-F0-9]{12})/)![1];
-  const c2 = second.message.match(/([A-F0-9]{12})/)![1];
-  assert.equal(c1, c2);
+  const c1 = first.message!.match(/([A-F0-9]{12})/)![1];
+  assert.equal(second.message, undefined);
   assert.equal(loadPairingFile(dir).pending.length, 1);
+  assert.equal(loadPairingFile(dir).pending[0]!.code, c1);
 
   // Flood of distinct chats → capped, oldest evicted.
   for (let i = 0; i < PAIRING_PENDING_MAX + 10; i++) {

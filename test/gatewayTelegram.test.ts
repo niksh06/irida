@@ -148,7 +148,7 @@ test("processTelegramUpdate routes text to router", async () => {
   });
 });
 
-test("processTelegramUpdate routes edited_message and channel_post", async () => {
+test("processTelegramUpdate ignores edited_message, still routes channel_post (H-12)", async () => {
   await withKey("k", async () => {
     const dir = tmp();
     // Channel posts now require explicit opt-in (allowChannelPosts).
@@ -158,14 +158,14 @@ test("processTelegramUpdate routes edited_message and channel_post", async () =>
       telegramAllowChannelPosts: true,
     });
     const router = new GatewaySessionRouter({ dir, adapter: "telegram", sdk: mockSdk({ v: false }) });
+    // H-12: an edit of an already-processed message must NOT re-run a turn.
     const edited = await processTelegramUpdate(
       cfg,
       router,
       { update_id: 2, edited_message: { message_id: 2, chat: { id: 42, type: "private" }, text: "edited hello" } },
       { token: "tok" }
     );
-    assert.equal(edited.handled, true);
-    assert.match(edited.reply ?? "", /reply/);
+    assert.deepEqual(edited, { handled: false });
 
     const channel = await processTelegramUpdate(
       cfg,

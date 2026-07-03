@@ -1,9 +1,10 @@
 /**
  * Persist Telegram getUpdates offset across gateway restarts.
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config.js";
+import { writeFileAtomic } from "./util.js";
 
 export const GATEWAY_TELEGRAM_OFFSET_FILE = "gateway.telegram.offset";
 
@@ -28,5 +29,7 @@ export function saveTelegramPollOffset(dir: string, offset: number): void {
   if (!Number.isFinite(offset) || offset < 0) return;
   const path = gatewayTelegramOffsetPath(dir);
   mkdirSync(resolve(path, ".."), { recursive: true });
-  writeFileSync(path, String(offset), "utf8");
+  // Atomic (H-12): a torn write here re-polls old updates after a crash —
+  // duplicate turns and double replies.
+  writeFileAtomic(path, String(offset));
 }

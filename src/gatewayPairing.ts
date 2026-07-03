@@ -29,15 +29,30 @@ function newCode(): string {
   return randomBytes(6).toString("hex").toUpperCase();
 }
 
+/**
+ * Reply-spam guard (H-12): an unknown chat gets the pairing code at most once
+ * per cooldown window — otherwise any stranger (or bot-scanner) can milk the
+ * bot for a reply per message, burning API quota and filling the chat.
+ */
+export const PAIRING_REPLY_COOLDOWN_MS = 10 * 60 * 1000;
+
 /** Unknown chat requests access — returns message with pairing code. */
 export function tryRegisterPairing(
   dir: string,
   adapter: string,
   chatId: string
-): { registered: boolean; message: string } {
+): { registered: boolean; message?: string } {
   const data = loadPairingFile(dir);
   const existing = data.pending.find((p) => p.chatId === chatId);
   if (existing) {
+    const last = existing.lastNotifiedAt ? Date.parse(existing.lastNotifiedAt) : 0;
+    if (Number.isFinite(last) && Date.now() - last < PAIRING_REPLY_COOLDOWN_MS) {
+      // Within cooldown: stay silent (callers skip empty replies) — the code
+      // was already delivered; repeating it only rewards reply-milking.
+      return { registered: true };
+    }
+    existing.lastNotifiedAt = new Date().toISOString();
+    savePairingFile(dir, data);
     return {
       registered: true,
       message:
@@ -50,6 +65,7 @@ export function tryRegisterPairing(
     chatId,
     adapter,
     createdAt: new Date().toISOString(),
+    lastNotifiedAt: new Date().toISOString(),
   });
   // Cap: evict oldest pending codes so unknown chats cannot grow the file unbounded.
   if (data.pending.length > PAIRING_PENDING_MAX) {

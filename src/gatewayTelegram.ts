@@ -570,6 +570,12 @@ export async function processTelegramUpdate(
   update: TelegramUpdate,
   opts: ProcessTelegramUpdateOptions
 ): Promise<ProcessTelegramUpdateResult> {
+  // Edits of already-processed messages must not re-fire the agent (H-12): a
+  // typo fix on an old message would silently re-run a whole turn. The poll
+  // loop still advances the offset past these updates.
+  if (update.edited_message || update.edited_channel_post) {
+    return { handled: false };
+  }
   const msg = telegramInboundMessage(update);
   if (!msg?.text?.trim()) return { handled: false };
   const chatId = String(msg.chat.id);

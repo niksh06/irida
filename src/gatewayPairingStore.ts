@@ -19,6 +19,8 @@ export interface PairingPending {
   chatId: string;
   adapter: string;
   createdAt: string;
+  /** Last time the code was (re)sent to this chat — reply cooldown gate (H-12). */
+  lastNotifiedAt?: string;
 }
 
 export interface PairingFile {

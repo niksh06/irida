@@ -21,6 +21,9 @@ import { emitServiceLog } from "./serviceLog.js";
 import { warmGatewayAllowlistCache, resolveAllowedChatIds } from "./gatewayAllowlist.js";
 import type { SdkCreateLike, SdkResumeLike } from "./host.js";
 
+/** PG-allowlist cache refresh cadence (H-12) — revocation lag ceiling. */
+export const ALLOWLIST_REWARM_MS = 5 * 60 * 1000;
+
 export interface GatewayRunOptions {
   dir?: string;
   adapter?: string;
@@ -66,6 +69,14 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
     sdk: opts.sdk,
   });
 
+  // Re-warm the PG allowlist cache periodically (H-12): revoking a peer in
+  // Postgres must take effect without a gateway restart. isChatAllowed reads
+  // the live cache on every inbound, so a refreshed cache = live revocation.
+  const allowlistRewarm = setInterval(() => {
+    void warmGatewayAllowlistCache(dir).catch(() => {});
+  }, ALLOWLIST_REWARM_MS);
+  allowlistRewarm.unref();
+
   if (cfg.adapter === "telegram") {
     const telegram = startTelegramPoller({ cfg, router, dir });
     // I-147: a configured webhook secret opts the Telegram gateway into ALSO
@@ -87,6 +98,7 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
       telegram,
       webhook,
       close: async () => {
+        clearInterval(allowlistRewarm);
         await telegram.stop();
         await router.closeAll();
         await webhook?.close().catch(() => {});
@@ -101,6 +113,7 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
     router,
     webhook,
     close: async () => {
+      clearInterval(allowlistRewarm);
       await router.closeAll();
       await webhook.close();
     },
