@@ -53,6 +53,7 @@ import {
   parseContextRefPrefix,
 } from "./pathComplete.js";
 import { useAltScreen, useTerminalSize } from "./terminal.js";
+import { decideClaudeAuth } from "./engineAuth.js";
 import type { ActivityDetail } from "../host.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, TurnStats } from "./types.js";
 import type { SessionRecord } from "../store.js";
@@ -60,7 +61,7 @@ import { resolveAgentLogger } from "../agentLog.js";
 import { resolve as resolvePath } from "node:path";
 import { loadConfig } from "../config.js";
 import { parseEngineArg } from "../gatewayEngineStore.js";
-import { resolveApiKey, resolveAnthropicKey } from "../credentials.js";
+import { resolveApiKey, resolveAnthropicKey, claudeAccountAvailable } from "../credentials.js";
 import { indexOfLastAssistant, indexOfStreamingAssistant } from "./streamingTarget.js";
 import {
   formatToolProgressLine,
@@ -201,6 +202,9 @@ export function App(props: TuiOptions) {
   // /engine override (I-143). A ref, not state: the switch handler reboots the
   // session immediately after setting it — setState would race the reboot.
   const engineOverrideRef = useRef<string | undefined>(undefined);
+  // Auth mode chosen alongside an /engine claude switch (I-156). Mirrors the
+  // engine override so a switch can reach account mode without editing config.
+  const engineAuthRef = useRef<string | undefined>(undefined);
   const [modelPickerIndex, setModelPickerIndex] = useState(0);
   const [pickerModels, setPickerModels] = useState<string[]>(() => listPickerModelsFallback(dir));
   const [modelListSource, setModelListSource] = useState<ModelListSource>("fallback");
@@ -352,7 +356,7 @@ export function App(props: TuiOptions) {
         skills: props.skills,
         yesIUnderstand: props.yesIUnderstand,
         engine: engineOverrideRef.current ?? props.engine,
-        auth: props.auth,
+        auth: engineAuthRef.current ?? props.auth,
         model: modelOverride,
         resumeSessionId,
         channel: SESSION_CHANNEL.tui,
@@ -832,12 +836,15 @@ export function App(props: TuiOptions) {
           if (!slash.engine) {
             pushMessage({
               role: "system",
-              text: `engine: ${current}${engineOverrideRef.current ? " (override)" : ""} · switch: /engine cursor | claude · reset: /engine off`,
+              text: `engine: ${current}${engineOverrideRef.current ? " (override)" : ""} · switch: /engine cursor | claude [account|api-key] · reset: /engine off`,
             });
             return;
           }
-          const argNorm = slash.engine.trim().toLowerCase();
+          // Accept an optional auth hint: `/engine claude account|api-key`.
+          const [engineTok, authTok] = slash.engine.trim().toLowerCase().split(/\s+/);
+          const argNorm = engineTok ?? "";
           let nextOverride: string | undefined;
+          let nextAuth: string | undefined;
           if (argNorm === "off" || argNorm === "clear" || argNorm === "none") {
             nextOverride = undefined;
           } else {
@@ -849,7 +856,7 @@ export function App(props: TuiOptions) {
               });
               return;
             }
-            if (parsed === current) {
+            if (parsed === current && !authTok) {
               pushMessage({ role: "system", text: `engine already ${parsed}` });
               return;
             }
@@ -863,37 +870,44 @@ export function App(props: TuiOptions) {
               return;
             }
             if (parsed === "claude-agent") {
-              const auth =
-                props.auth ??
-                (() => {
-                  try {
-                    return loadConfig(dir).engine?.auth;
-                  } catch {
-                    return undefined;
-                  }
-                })() ??
-                "api-key";
-              if (auth === "api-key" && !resolveAnthropicKey(dir).key) {
-                pushMessage({
-                  role: "error",
-                  text: "ANTHROPIC_API_KEY is not set (engine.auth=api-key) — export it or set engine.auth=account (claude login)",
-                });
+              const configAuth = (() => {
+                try {
+                  return loadConfig(dir).engine?.auth;
+                } catch {
+                  return undefined;
+                }
+              })();
+              const decision = decideClaudeAuth({
+                authHint: authTok,
+                propsAuth: props.auth,
+                configAuth,
+                hasApiKey: Boolean(resolveAnthropicKey(dir).key),
+                hasAccount: claudeAccountAvailable(dir),
+              });
+              if (!decision.ok) {
+                pushMessage({ role: "error", text: decision.error });
                 return;
               }
+              if (decision.note) pushMessage({ role: "system", text: decision.note });
+              nextAuth = decision.auth;
             }
             nextOverride = parsed;
           }
           setBusy(true);
           {
             const prevOverride = engineOverrideRef.current;
+            const prevAuth = engineAuthRef.current;
             engineOverrideRef.current = nextOverride;
+            engineAuthRef.current = nextAuth;
             const next = nextOverride ?? props.engine ?? cfgProvider;
-            pushMessage({ role: "system", text: `engine → ${next} · opening a fresh session…` });
+            const authNote = nextAuth ? ` (${nextAuth})` : "";
+            pushMessage({ role: "system", text: `engine → ${next}${authNote} · opening a fresh session…` });
             const out = await bootSession();
             if (out && !out.ok) {
               // A failed switch must not brick the TUI in the fatal state —
               // roll the override back and reboot onto the working engine.
               engineOverrideRef.current = prevOverride;
+              engineAuthRef.current = prevAuth;
               const back = await bootSession();
               pushMessage({
                 role: "error",

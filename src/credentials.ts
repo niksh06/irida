@@ -13,7 +13,8 @@
  * postmortems; unify with care.
  */
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, chmodSync } from "node:fs";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { loadConfig } from "./config.js";
 import { redact } from "./redact.js";
 import { withPgRetry } from "./pg/pool.js";
@@ -416,6 +417,21 @@ export function resolveClaudeOAuthToken(dir: string = process.cwd()): ResolvedAp
   );
   if (fromFile) return { key: fromFile, source: "file" };
   return { key: "", source: "none" };
+}
+
+/**
+ * Whether the claude-agent engine could run in ACCOUNT mode right now (I-156):
+ * a stored/env OAuth token, or an existing `claude login` session that the
+ * Agent SDK reads from ~/.claude/.credentials.json. Lets `/engine claude` fall
+ * back to account instead of dead-ending on a missing ANTHROPIC_API_KEY.
+ */
+export function claudeAccountAvailable(dir: string = process.cwd()): boolean {
+  if (resolveClaudeOAuthToken(dir).key) return true;
+  try {
+    return existsSync(join(homedir(), ".claude", ".credentials.json"));
+  } catch {
+    return false;
+  }
 }
 
 /** Resolve Telegram bot token: environment overrides postgres/file. */
