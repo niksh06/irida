@@ -855,6 +855,20 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         /* snapshot write failure must not affect the turn */
       }
     };
+    // Retry/degrade fire via session-level opts callbacks, which the turn loop
+    // reads at call time — wrapping the properties here (I-150) feeds the pet
+    // without threading the tracker through sendTurn. opts is this session's
+    // own options bag; the original callbacks keep running.
+    const prevRetry = opts.onTurnRetry;
+    opts.onTurnRetry = (reason) => {
+      if (!reason?.startsWith("idle_ttl")) pet(() => petTracker.noteRetry());
+      prevRetry?.(reason);
+    };
+    const prevDegraded = opts.onStoreDegraded;
+    opts.onStoreDegraded = (label) => {
+      pet(() => petTracker.noteStoreDegraded());
+      prevDegraded?.(label);
+    };
     const coreSendTurn = session.sendTurn.bind(session);
     session.sendTurn = async (userMessage, turnHooks) => {
       if (!userMessage.trim()) return coreSendTurn(userMessage, turnHooks);

@@ -100,6 +100,40 @@ describe("PetRuntimeTracker", () => {
     }
   });
 
+  // I-150: retry/worried flow through the tracker so the overlay sees them
+  // from gateway/cron turns too; worry only clears on a turn that degraded
+  // nothing (an ok turn whose own persist failed must stay worried).
+  it("noteRetry windows to retry; worried sticks until a CLEAN turn (I-150)", () => {
+    const home = join(tmpdir(), `wisp-signals-${Date.now()}`);
+    mkdirSync(join(home, ".agent"), { recursive: true });
+    const prevRoot = process.env.CSAGENT_ROOT;
+    process.env.CSAGENT_ROOT = home;
+    try {
+      const tracker = new PetRuntimeTracker({ dir: home });
+      tracker.beginTurn();
+      tracker.noteRetry();
+      let snap = readPetStateSnapshot(home);
+      assert.equal(snap!.state, "retry"); // hiccup interrupts working
+      assert.equal(typeof snap!.retryAtMs, "number");
+
+      // Degrade mid-turn, then finish OK: the worry must survive this turn…
+      tracker.noteStoreDegraded();
+      tracker.endTurn(true);
+      snap = readPetStateSnapshot(home);
+      assert.equal(snap!.storeDegraded, true);
+
+      // …and clear only after a fully clean turn.
+      tracker.beginTurn();
+      tracker.endTurn(true);
+      snap = readPetStateSnapshot(home);
+      assert.equal(snap!.storeDegraded, undefined);
+      assert.equal(snap!.state, "happy");
+    } finally {
+      if (prevRoot === undefined) delete process.env.CSAGENT_ROOT;
+      else process.env.CSAGENT_ROOT = prevRoot;
+    }
+  });
+
   // I-146: the Wisp overlay renders glyph frames from the snapshot alone, so
   // the tracker must run with no PNG pipeline at all (assetPath just stays
   // null on machines without built assets — not asserted, machine-dependent).

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openChatSession } from "../src/chatEngine.js";
 import { readPetStateSnapshot } from "../src/petRuntime.js";
+import { createStore, type IStore } from "../src/store.js";
 import type { RunLike, SdkCreateLike } from "../src/host.js";
 
 // I-146: every surface funnels through sendTurn, so the Wisp bridge there must
@@ -53,6 +54,26 @@ describe("Wisp bridge in sendTurn (I-146)", () => {
       assert.equal(snap!.state, "happy");
       assert.equal(snap!.lastTurnOk, true);
       assert.equal(snap!.activity, "search"); // the grep call was classified
+      await opened.session.close();
+    });
+  });
+
+  it("a store outage during an OK turn leaves the pet worried (I-150)", async () => {
+    await withKey(async () => {
+      const dir = mkdtempSync(resolve(tmpdir(), "pet-degrade-"));
+      const real = createStore(dir, ".agent");
+      const broken = Object.create(real) as IStore;
+      (broken as unknown as Record<string, unknown>).recordRun = async () => {
+        throw new Error("connect ECONNREFUSED (simulated PG outage)");
+      };
+      const opened = await openChatSession({ sdk: sdkOf(), dir, interactive: false, store: broken });
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+      const out = await opened.session.sendTurn("hello");
+      assert.equal(out.kind, "ok"); // outcome preserved (I-137)…
+      const snap = readPetStateSnapshot(dir);
+      assert.equal(snap!.storeDegraded, true); // …but the pet knows (worried > happy)
+      assert.equal(snap!.state, "worried");
       await opened.session.close();
     });
   });

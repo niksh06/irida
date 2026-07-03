@@ -113,6 +113,9 @@ function liveSignals(snap) {
       toolRunning: !stale && Boolean(snap.toolRunning),
       lastTurnOk: stale ? undefined : snap.lastTurnOk,
       lastTurnError: stale ? undefined : snap.lastTurnError,
+      // retry self-expires (6s window); worry obeys the stale guard like the rest
+      retryAtMs: typeof snap.retryAtMs === "number" ? snap.retryAtMs : undefined,
+      storeDegraded: !stale && Boolean(snap.storeDegraded),
       lastEventAtMs,
     }),
     activity: !stale && snap.activity ? snap.activity : undefined,

@@ -185,6 +185,9 @@ export function App(props: TuiOptions) {
   const [petClock, setPetClock] = useState(0);
   const [petRetryAt, setPetRetryAt] = useState<number | null>(null);
   const [petStoreDegraded, setPetStoreDegraded] = useState(false);
+  // Did THIS turn degrade the store? An ok turn only clears the worry when its
+  // own persists were clean (I-150) — otherwise worried would never be visible.
+  const petDegradeTurnRef = useRef(false);
   const [petLevel, setPetLevel] = useState(() => levelForXp(readPetStateSnapshot(props.dir ?? process.cwd())?.xp ?? 0));
   const [lastTurnOk, setLastTurnOk] = useState(false);
   const [lastTurnError, setLastTurnError] = useState(false);
@@ -359,7 +362,10 @@ export function App(props: TuiOptions) {
         onThinkingDelta: (d) => patchThinking(d),
         onActivity: (entry) => noteActivity(entry),
         onTurnRetry: resetTurnRetry,
-        onStoreDegraded: () => setPetStoreDegraded(true),
+        onStoreDegraded: () => {
+          petDegradeTurnRef.current = true;
+          setPetStoreDegraded(true);
+        },
         onAgentRotating: (info) => {
           const idle = (info.reason ?? "").startsWith("idle_ttl");
           noteActivity({
@@ -942,6 +948,7 @@ export function App(props: TuiOptions) {
     setBusy(true);
     setTurnStartedAt(Date.now());
     lastPetEventAtRef.current = Date.now();
+    petDegradeTurnRef.current = false;
     setLastTurnOk(false);
     setLastTurnError(false);
     setLastTurnStats(null);
@@ -959,7 +966,8 @@ export function App(props: TuiOptions) {
         setLastTurnError(false);
         lastPetEventAtRef.current = Date.now();
         // A clean turn reassures the pet and banks XP (bridge wrote the snapshot).
-        setPetStoreDegraded(false);
+        // "Clean" = this turn itself degraded nothing (I-150).
+        if (!petDegradeTurnRef.current) setPetStoreDegraded(false);
         setPetRetryAt(null);
         setPetLevel(levelForXp(readPetStateSnapshot(dir)?.xp ?? 0));
         if (!out.assistantText.trim()) {

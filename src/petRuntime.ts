@@ -34,6 +34,10 @@ export interface PetStateSnapshot {
   xp?: number;
   /** Consecutive ok turns (feeds the streak bonus; resets on error). */
   streakOk?: number;
+  /** Last overload-retry moment (I-150) — consumers window it via PET_RETRY_MS. */
+  retryAtMs?: number;
+  /** Store/memory degraded (I-150) — sticky until a turn passes with no degrade. */
+  storeDegraded?: boolean;
 }
 
 export interface PetRuntimeOptions {
@@ -54,6 +58,9 @@ export class PetRuntimeTracker {
   private lastActivity: PetActivityKind | undefined;
   private xp = 0;
   private streakOk = 0;
+  private lastRetryAtMs: number | undefined;
+  private storeDegraded = false;
+  private degradedThisTurn = false;
 
   constructor(opts: PetRuntimeOptions) {
     this.dir = opts.dir;
@@ -74,7 +81,22 @@ export class PetRuntimeTracker {
     this.lastTurnOk = false;
     this.lastTurnError = false;
     this.lastActivity = undefined;
+    this.degradedThisTurn = false;
     this.lastEventAtMs = Date.now();
+    this.persist();
+  }
+
+  /** Overload retry hiccup (I-150) — consumers window it via PET_RETRY_MS. */
+  noteRetry(): void {
+    this.lastRetryAtMs = Date.now();
+    this.lastEventAtMs = this.lastRetryAtMs;
+    this.persist();
+  }
+
+  /** Store/memory degraded mid-turn (I-150) — worry sticks until a CLEAN turn. */
+  noteStoreDegraded(): void {
+    this.storeDegraded = true;
+    this.degradedThisTurn = true;
     this.persist();
   }
 
@@ -97,6 +119,11 @@ export class PetRuntimeTracker {
     if (ok) {
       this.streakOk += 1;
       this.xp += 1 + (this.streakOk % 10 === 0 ? 3 : 0);
+      // Only a turn that degraded NOTHING proves the store recovered — an ok
+      // turn whose own persists failed must not wipe the worry it just raised.
+      if (!this.degradedThisTurn) this.storeDegraded = false;
+      // The hiccup belonged to this turn; it ended well (mirrors the TUI).
+      this.lastRetryAtMs = undefined;
     } else {
       this.streakOk = 0;
     }
@@ -117,6 +144,8 @@ export class PetRuntimeTracker {
       toolRunning: this.toolRunning,
       lastTurnOk: this.lastTurnOk,
       lastTurnError: this.lastTurnError,
+      retryAtMs: this.lastRetryAtMs,
+      storeDegraded: this.storeDegraded,
       lastEventAtMs: this.lastEventAtMs,
       nowMs,
     });
@@ -139,6 +168,8 @@ export class PetRuntimeTracker {
       activity: this.lastActivity,
       xp: this.xp,
       streakOk: this.streakOk,
+      retryAtMs: this.lastRetryAtMs,
+      storeDegraded: this.storeDegraded || undefined,
     };
   }
 
@@ -178,6 +209,8 @@ export function readPetStateSnapshot(dir: string): PetStateSnapshot | null {
       toolRunning: Boolean(raw.toolRunning),
       lastTurnOk: raw.lastTurnOk,
       lastTurnError: raw.lastTurnError,
+      retryAtMs: typeof raw.retryAtMs === "number" ? raw.retryAtMs : undefined,
+      storeDegraded: Boolean(raw.storeDegraded),
       lastEventAtMs: raw.updatedAt ? Date.parse(raw.updatedAt) : Date.now(),
     });
     const assetPath =
@@ -198,6 +231,8 @@ export function readPetStateSnapshot(dir: string): PetStateSnapshot | null {
       activity: raw.activity,
       xp: typeof raw.xp === "number" ? raw.xp : undefined,
       streakOk: typeof raw.streakOk === "number" ? raw.streakOk : undefined,
+      retryAtMs: typeof raw.retryAtMs === "number" ? raw.retryAtMs : undefined,
+      storeDegraded: raw.storeDegraded ? true : undefined,
     };
   } catch {
     return null;
