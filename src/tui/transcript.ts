@@ -210,9 +210,14 @@ export function useNativeTrackpadScroll(opts: {
   );
 }
 
-export function estimateVisibleLines(rows: number): number {
-  const chrome = 11;
-  return Math.max(6, rows - chrome);
+/**
+ * Rows available to the transcript = terminal rows minus the surrounding chrome
+ * (banner, tab bar, box borders, composer, status bar, and any live bars). The
+ * caller passes the measured chrome height (I-156); the constant fallback keeps
+ * old callers/tests working.
+ */
+export function estimateVisibleLines(rows: number, chromeLines = 11): number {
+  return Math.max(6, rows - Math.max(0, chromeLines));
 }
 
 /** @deprecated message-index viewport — kept for tests */

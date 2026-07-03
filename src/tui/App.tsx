@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import { openChatSession, type ChatSession } from "../chatEngine.js";
 import { SESSION_CHANNEL } from "../sessionChannel.js";
 import { formatSdkError } from "../sdkErrors.js";
-import { banner, theme } from "./theme.js";
+import { bannerFor, COMPACT_BANNER_COLS, theme } from "./theme.js";
 import { Composer } from "./components/Composer.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { MessageList } from "./components/MessageList.js";
@@ -52,7 +52,7 @@ import {
   completeContextRef,
   parseContextRefPrefix,
 } from "./pathComplete.js";
-import { useAltScreen } from "./terminal.js";
+import { useAltScreen, useTerminalSize } from "./terminal.js";
 import type { ActivityDetail } from "../host.js";
 import type { ActivityEntry, ChatMessage, ConfirmState, Overlay, SessionMeta, TurnStats } from "./types.js";
 import type { SessionRecord } from "../store.js";
@@ -136,9 +136,9 @@ export interface TuiOptions {
 
 export function App(props: TuiOptions) {
   const { exit } = useApp();
-  const { stdout } = useStdout();
-  const cols = stdout?.columns ?? 80;
-  const rows = stdout?.rows ?? 24;
+  // Reactive size (I-156): re-renders on terminal resize so cols/rows-derived
+  // layout (wrap width, viewport height, tab-bar width) never drifts.
+  const { cols, rows } = useTerminalSize();
   const dir = props.dir ?? process.cwd();
   const altScreen = useAltScreen();
 
@@ -468,7 +468,22 @@ export function App(props: TuiOptions) {
     };
   }, [bootSession]);
 
-  const visibleLines = useMemo(() => estimateVisibleLines(rows), [rows]);
+  // Chrome = every non-transcript row, computed from what is actually on screen
+  // (I-156) instead of a fixed guess: banner box, optional tab bar, transcript
+  // borders, live bars, composer + slash hint, status bar. Feeds the scroll
+  // viewport height so paging/virtualization track the real layout.
+  const chromeLines = useMemo(() => {
+    const bannerLines = cols < COMPACT_BANNER_COLS ? 1 : 4; // compact 1 vs box 4
+    const tabBar = visibleTabSessions(tabBarSessions).length > 1 ? 1 : 0;
+    const thinking = thinkingText ? (thinkingExpanded ? 6 : 1) : 0;
+    const activity = busy || activityLog.length > 0 ? 1 : 0;
+    const slash = slashSuggestions.length > 0 ? 1 : 0;
+    const boxBorders = 2;
+    const composer = 3;
+    const statusBar = 3;
+    return bannerLines + tabBar + boxBorders + thinking + activity + slash + composer + statusBar;
+  }, [cols, tabBarSessions, thinkingText, thinkingExpanded, busy, activityLog.length, slashSuggestions.length]);
+  const visibleLines = useMemo(() => estimateVisibleLines(rows, chromeLines), [rows, chromeLines]);
   const allRows = useMemo(
     () => messagesToRowsCached(messages, cols, rowCacheRef.current),
     [messages, cols]
@@ -1073,7 +1088,7 @@ export function App(props: TuiOptions) {
     <Box flexDirection="column" width="100%">
       <Box flexDirection="row" justifyContent="space-between" width="100%">
         <Box flexDirection="column" flexGrow={1}>
-          <Text color={theme.primary}>{banner.trimEnd()}</Text>
+          <Text color={theme.primary}>{bannerFor(cols).trimEnd()}</Text>
           <SessionTabBar sessions={tabBarSessions} activeId={meta?.sessionId ?? null} width={cols} />
         </Box>
         <PetCorner state={petState} animTick={petClock} activity={petActivity} level={petLevel} />
@@ -1189,6 +1204,7 @@ export function App(props: TuiOptions) {
         turnElapsedMs={turnElapsedMs}
         mcpCount={mcpView.entries.length}
         sessionToolCalls={sessionToolCalls}
+        cols={cols}
         subscription={subscription}
       />
     </Box>

@@ -5,6 +5,9 @@ import type { SessionMeta, TurnStats } from "../types.js";
 import { formatDuration } from "../../toolFormat.js";
 import { estimateCostUsd, formatUsd } from "../../pricing.js";
 
+/** Below this width the two status blocks collide — collapse to the essentials (I-156). */
+const NARROW_STATUS_COLS = 72;
+
 export function StatusBar(props: {
   meta: SessionMeta | null;
   busy: boolean;
@@ -14,11 +17,16 @@ export function StatusBar(props: {
   turnElapsedMs?: number;
   mcpCount?: number;
   sessionToolCalls?: number;
+  /** Terminal width — drives the narrow-mode collapse (I-156). */
+  cols?: number;
   /** Account/subscription engine — the $ is metered-equivalent, not billed. */
   subscription?: boolean;
 }) {
-  const { meta, busy, error, scrollHint, lastTurn, turnElapsedMs, mcpCount, sessionToolCalls, subscription } = props;
-  const shortCwd = meta?.cwd ? shorten(meta.cwd, 24) : "—";
+  const { meta, busy, error, scrollHint, lastTurn, turnElapsedMs, mcpCount, sessionToolCalls, cols, subscription } = props;
+  const narrow = cols != null && cols < NARROW_STATUS_COLS;
+  // On a narrow terminal the cwd and secondary run details push the two blocks
+  // into each other — keep brand+model+state, drop the rest.
+  const shortCwd = meta?.cwd ? shorten(meta.cwd, narrow ? 12 : 24) : "—";
   const shortSid = meta?.sessionId ? meta.sessionId.slice(0, 10) : "—";
 
   const runLine = formatRunLine(busy, turnElapsedMs, lastTurn, sessionToolCalls, mcpCount, meta?.model, subscription);
@@ -35,8 +43,12 @@ export function StatusBar(props: {
         {theme.icon} {theme.brand}
         {"  ·  "}
         <Text color={theme.primary}>{meta?.model ?? "—"}</Text>
-        {"  ·  "}
-        <Text dimColor>{shortCwd}</Text>
+        {narrow ? null : (
+          <>
+            {"  ·  "}
+            <Text dimColor>{shortCwd}</Text>
+          </>
+        )}
       </Text>
       <Text backgroundColor={theme.statusBg}>
         {error ? (
@@ -52,8 +64,12 @@ export function StatusBar(props: {
             <Text dimColor>{runLine}</Text>
           </>
         ) : null}
-        {"  sid "}
-        <Text dimColor>{shortSid}</Text>
+        {narrow ? null : (
+          <>
+            {"  sid "}
+            <Text dimColor>{shortSid}</Text>
+          </>
+        )}
         {scrollHint ? (
           <>
             {"  ·  "}

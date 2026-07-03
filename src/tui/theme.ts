@@ -21,5 +21,16 @@ export const theme = {
 
 export const banner = `
  ╭──────────────────────────────────────╮
- │  ◆ irida  ·  SDK agent             │
+ │  ◆ irida  ·  SDK agent               │
  ╰──────────────────────────────────────╯`;
+
+/** Below this width the boxed banner overflows/wraps — use a one-liner (I-156). */
+export const COMPACT_BANNER_COLS = 44;
+
+/** One-line banner for narrow terminals. */
+export const compactBanner = ` ◆ irida · SDK agent`;
+
+/** Width-aware banner: boxed when it fits, compact otherwise. */
+export function bannerFor(cols: number): string {
+  return cols < COMPACT_BANNER_COLS ? compactBanner : banner.replace(/^\n/, "");
+}
