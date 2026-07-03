@@ -2,8 +2,61 @@ import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import type { TranscriptRow } from "../transcript.js";
+import type { MdSegment } from "../markdown.js";
 import { petTerminalFrame } from "../../petTerminal.js";
 import { WispGlyphLine } from "./wispGlyph.js";
+
+/** Render one markdown line's styled segments as colored/weighted Ink spans. */
+function MarkdownLine(props: { segments: MdSegment[]; fallback: string; streaming?: boolean }) {
+  return (
+    <Text color={theme.assistant}>
+      {props.segments.map((s, i) => {
+        switch (s.style) {
+          case "bold":
+            return (
+              <Text key={i} bold color={theme.assistant}>
+                {s.text}
+              </Text>
+            );
+          case "italic":
+            return (
+              <Text key={i} italic>
+                {s.text}
+              </Text>
+            );
+          case "code":
+          case "codeblock":
+            return (
+              <Text key={i} color={theme.warn}>
+                {s.text}
+              </Text>
+            );
+          case "heading":
+            return (
+              <Text key={i} bold color={theme.accent}>
+                {s.text}
+              </Text>
+            );
+          case "bullet":
+            return (
+              <Text key={i} color={theme.accent}>
+                {s.text}
+              </Text>
+            );
+          case "quote":
+            return (
+              <Text key={i} color={theme.muted}>
+                {s.text}
+              </Text>
+            );
+          default:
+            return <Text key={i}>{s.text}</Text>;
+        }
+      })}
+      {props.streaming ? <Text color={theme.muted}>▍</Text> : null}
+    </Text>
+  );
+}
 
 const roleLabel: Record<TranscriptRow["role"], { glyph: string; color: string }> = {
   user: { glyph: "you ›", color: theme.user },
@@ -106,10 +159,14 @@ export function MessageList(props: {
                 )}
               </Box>
               <Box flexGrow={1}>
-                <Text color={row.role === "error" ? theme.error : style.color}>
-                  {row.text}
-                  {row.streaming ? <Text color={theme.muted}>▍</Text> : null}
-                </Text>
+                {row.segments ? (
+                  <MarkdownLine segments={row.segments} fallback={row.text} streaming={row.streaming} />
+                ) : (
+                  <Text color={row.role === "error" ? theme.error : style.color}>
+                    {row.text}
+                    {row.streaming ? <Text color={theme.muted}>▍</Text> : null}
+                  </Text>
+                )}
               </Box>
             </Box>
           </Box>

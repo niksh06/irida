@@ -1,6 +1,7 @@
 import stringWidth from "string-width";
 import type { RunRecord } from "../store.js";
 import type { ChatMessage, MessageRole } from "./types.js";
+import { renderMarkdown, type MdSegment } from "./markdown.js";
 
 let histSeq = 0;
 function histId(role: string): string {
@@ -24,7 +25,10 @@ export function runsToMessages(runs: RunRecord[]): ChatMessage[] {
 export interface TranscriptRow {
   key: string;
   role: MessageRole;
+  /** Plain projection of the line — used for search, copy, and measurement. */
   text: string;
+  /** Rich markdown segments (assistant lines) — renderer falls back to `text`. */
+  segments?: MdSegment[];
   showRole: boolean;
   showSep: boolean;
   streaming?: boolean;
@@ -110,6 +114,18 @@ export type MessageRowCache = Map<
   }
 >;
 
+/** Lines for one message: markdown-rendered for assistant, plain otherwise. */
+function messageLines(
+  role: MessageRole,
+  text: string,
+  width: number
+): Array<{ text: string; segments?: MdSegment[] }> {
+  if (role === "assistant") {
+    return renderMarkdown(text, width).map((l) => ({ text: l.plain, segments: l.segments }));
+  }
+  return wrapToWidth(text, width).map((line) => ({ text: line }));
+}
+
 export function messagesToRows(messages: ChatMessage[], width: number): TranscriptRow[] {
   const cache: MessageRowCache = new Map();
   return messagesToRowsCached(messages, width, cache);
@@ -138,11 +154,12 @@ export function messagesToRowsCached(
         streaming: Boolean(m.streaming && li === cached.rows.length - 1),
       }));
     } else {
-      const lines = wrapToWidth(m.text, width);
+      const lines = messageLines(m.role, m.text, width);
       msgRows = lines.map((line, li) => ({
         key: `${m.id}:${li}`,
         role: m.role,
-        text: line,
+        text: line.text,
+        ...(line.segments ? { segments: line.segments } : {}),
         showRole: li === 0,
         showSep: li === 0 && showSep,
         streaming: Boolean(m.streaming && li === lines.length - 1),
@@ -150,7 +167,13 @@ export function messagesToRowsCached(
       cache.set(m.id, {
         text: m.text,
         width,
-        rows: msgRows.map(({ role, text, showRole, showSep }) => ({ role, text, showRole, showSep })),
+        rows: msgRows.map(({ role, text, segments, showRole, showSep }) => ({
+          role,
+          text,
+          ...(segments ? { segments } : {}),
+          showRole,
+          showSep,
+        })),
       });
     }
     rows.push(...msgRows);
