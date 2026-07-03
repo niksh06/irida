@@ -455,6 +455,21 @@ export function classifyPetActivity(
   return "tool";
 }
 
+/** Telegram-facing mood (I-149): one emoji per state for the /status line. */
+const MOOD_EMOJI: Record<PetState, string> = {
+  idle: "🔮",
+  working: "⚙️",
+  happy: "✨",
+  sad: "😔",
+  sleep: "😴",
+  retry: "🤧",
+  worried: "🤒",
+};
+
+export function petMoodEmoji(state: PetState): string {
+  return MOOD_EMOJI[state];
+}
+
 const WORKING_VERB: Record<PetActivityKind, string> = {
   shell: "running…",
   read: "reading…",

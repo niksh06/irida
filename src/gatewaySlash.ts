@@ -20,6 +20,9 @@ import { clearPendingQuestion } from "./gatewayPendingQuestionStore.js";
 import { listFollowups, clearFollowup, getFollowup } from "./gatewayFollowupStore.js";
 import { parseModeArg, TURN_MODES } from "./preTurn.js";
 import { createStore } from "./store.js";
+import { readPetStateSnapshot } from "./petRuntime.js";
+import { petMoodEmoji, petTerminalLabel } from "./petTerminal.js";
+import { levelForXp } from "./petState.js";
 import { searchSessions } from "./sessionSearch.js";
 import { listSkills } from "./skills.js";
 import {
@@ -112,7 +115,13 @@ export async function handleGatewaySlash(
     case "status": {
       const rows = gatherGatewayStatus(ctx.dir);
       const lines = rows.map((r) => `${r.ok ? "OK" : "FAIL"} ${r.name}: ${r.detail}`);
-      return ["irida gateway status", ...lines].join("\n");
+      // Wisp mood first (I-149): the snapshot re-derives with a live clock, so
+      // happy fades and sleep kicks in even between turns. No snapshot → no line.
+      const pet = readPetStateSnapshot(ctx.dir);
+      const wisp = pet
+        ? [`${petMoodEmoji(pet.state)} ${petTerminalLabel(pet.state, pet.activity, levelForXp(pet.xp ?? 0))}`]
+        : [];
+      return ["irida gateway status", ...wisp, ...lines].join("\n");
     }
 
     case "doctor": {

@@ -7,6 +7,7 @@ import {
   deriveTuiPetState,
   petTerminalFrame,
   petTerminalLabel,
+  petMoodEmoji,
   petActivityGlyph,
   PET_WISP_FRAMES,
 } from "../src/petTerminal.js";
@@ -150,6 +151,16 @@ describe("petTerminalFrame", () => {
     const hard = petTerminalFrame("idle", 0, undefined, 3).map((l) => l.parts.map((p) => p.t).join("")).join("\n");
     assert.ok(soft.includes("◇") && !soft.includes("◆"));
     assert.ok(hard.includes("◆") && !hard.includes("◇"));
+  });
+
+  it("petMoodEmoji maps every state to a unique emoji (I-149)", () => {
+    const seen = new Set<string>();
+    for (const s of PET_STATES) {
+      const e = petMoodEmoji(s);
+      assert.ok(e.length > 0, s);
+      assert.ok(!seen.has(e), `${s} duplicates ${e}`);
+      seen.add(e);
+    }
   });
 
   it("labels: retry/worried get words; the lv badge appears from lv.2 (I-148)", () => {

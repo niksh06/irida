@@ -127,3 +127,34 @@ test("/mode sets, shows, and clears a sticky per-chat mode (I-91)", async () => 
     sb.restore();
   }
 });
+
+import { writePetStateSnapshot } from "../src/petRuntime.js";
+
+test("/status leads with the Wisp mood line when a snapshot exists (I-149)", async () => {
+  const sb = slashSandbox();
+  try {
+    const bare = await handleGatewaySlash("/status", sb.ctx);
+    assert.doesNotMatch(bare!, /wisp/);
+
+    mkdirSync(j2(sb.dir, ".agent"), { recursive: true });
+    writePetStateSnapshot(sb.dir, {
+      version: 1,
+      state: "happy",
+      theme: "light",
+      assetPath: null,
+      assetUrl: null,
+      updatedAt: new Date().toISOString(),
+      turnBusy: false,
+      toolRunning: false,
+      lastTurnOk: true,
+      xp: 30,
+      streakOk: 3,
+    });
+    const out = await handleGatewaySlash("/status", sb.ctx);
+    const lines = out!.split("\n");
+    assert.equal(lines[0], "irida gateway status");
+    assert.match(lines[1]!, /^✨ wisp · nice! · lv\.3$/u);
+  } finally {
+    sb.restore();
+  }
+});
