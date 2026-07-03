@@ -48,7 +48,7 @@ function renderFrame(state: PetState, tick: number, activity?: PetActivityKind):
   return `${body}\n${label}`;
 }
 
-const STATES: PetState[] = ["idle", "working", "happy", "sad", "sleep"];
+const STATES: PetState[] = ["idle", "working", "happy", "sad", "sleep", "retry", "worried"];
 const ACTIVITIES: PetActivityKind[] = ["read", "edit", "search", "shell", "mcp", "tool"];
 
 const once = process.argv.includes("--once");

@@ -8,15 +8,16 @@ export function PetCorner(props: {
   state: PetState;
   animTick: number;
   activity?: PetActivityKind;
+  level?: number;
 }) {
-  const lines = petTerminalFrame(props.state, props.animTick, props.activity);
+  const lines = petTerminalFrame(props.state, props.animTick, props.activity, props.level);
 
   return (
     <Box flexDirection="column" alignItems="flex-end" marginLeft={1}>
       {lines.map((line, i) => (
         <WispGlyphLine key={i} parts={line.parts} state={props.state} />
       ))}
-      <Text dimColor>{petTerminalLabel(props.state, props.activity)}</Text>
+      <Text dimColor>{petTerminalLabel(props.state, props.activity, props.level)}</Text>
     </Box>
   );
 }

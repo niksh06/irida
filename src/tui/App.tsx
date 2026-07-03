@@ -75,7 +75,8 @@ import {
   visibleTabSessions,
 } from "./sessionTabs.js";
 import { classifyPetActivity, deriveTuiPetState, type PetActivityKind } from "../petTerminal.js";
-import type { PetState } from "../petState.js";
+import { levelForXp, type PetState } from "../petState.js";
+import { readPetStateSnapshot } from "../petRuntime.js";
 
 let msgSeq = 0;
 function nextId(prefix: string): string {
@@ -182,6 +183,9 @@ export function App(props: TuiOptions) {
   const [lastTurnStats, setLastTurnStats] = useState<TurnStats | null>(null);
   const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
   const [petClock, setPetClock] = useState(0);
+  const [petRetryAt, setPetRetryAt] = useState<number | null>(null);
+  const [petStoreDegraded, setPetStoreDegraded] = useState(false);
+  const [petLevel, setPetLevel] = useState(() => levelForXp(readPetStateSnapshot(props.dir ?? process.cwd())?.xp ?? 0));
   const [lastTurnOk, setLastTurnOk] = useState(false);
   const [lastTurnError, setLastTurnError] = useState(false);
   const lastPetEventAtRef = useRef(Date.now());
@@ -265,10 +269,12 @@ export function App(props: TuiOptions) {
         activityLog,
         lastTurnOk,
         lastTurnError,
+        retryAtMs: petRetryAt ?? undefined,
+        storeDegraded: petStoreDegraded,
         lastEventAtMs: lastPetEventAtRef.current,
         nowMs: Date.now(),
       }),
-    [busy, activityLog, lastTurnOk, lastTurnError, petClock]
+    [busy, activityLog, lastTurnOk, lastTurnError, petRetryAt, petStoreDegraded, petClock]
   );
 
   const petActivity: PetActivityKind | undefined = useMemo(() => {
@@ -327,6 +333,8 @@ export function App(props: TuiOptions) {
   const resetTurnRetry = useCallback((reason?: string) => {
     const idle = reason?.startsWith("idle_ttl");
     setThinkingText(idle ? "Refreshing agent after idle…" : "Continuing after refresh…");
+    // Overload retries hiccup the pet; idle-ttl rotation is routine, not a jolt.
+    if (!idle) setPetRetryAt(Date.now());
   }, []);
 
   const bootSession = useCallback(
@@ -351,6 +359,7 @@ export function App(props: TuiOptions) {
         onThinkingDelta: (d) => patchThinking(d),
         onActivity: (entry) => noteActivity(entry),
         onTurnRetry: resetTurnRetry,
+        onStoreDegraded: () => setPetStoreDegraded(true),
         onAgentRotating: (info) => {
           const idle = (info.reason ?? "").startsWith("idle_ttl");
           noteActivity({
@@ -949,6 +958,10 @@ export function App(props: TuiOptions) {
         setLastTurnOk(true);
         setLastTurnError(false);
         lastPetEventAtRef.current = Date.now();
+        // A clean turn reassures the pet and banks XP (bridge wrote the snapshot).
+        setPetStoreDegraded(false);
+        setPetRetryAt(null);
+        setPetLevel(levelForXp(readPetStateSnapshot(dir)?.xp ?? 0));
         if (!out.assistantText.trim()) {
           setMessages((prev) => {
             const idx = indexOfLastAssistant(prev);
@@ -1055,7 +1068,7 @@ export function App(props: TuiOptions) {
           <Text color={theme.primary}>{banner.trimEnd()}</Text>
           <SessionTabBar sessions={tabBarSessions} activeId={meta?.sessionId ?? null} width={cols} />
         </Box>
-        <PetCorner state={petState} animTick={petClock} activity={petActivity} />
+        <PetCorner state={petState} animTick={petClock} activity={petActivity} level={petLevel} />
       </Box>
 
       <Box

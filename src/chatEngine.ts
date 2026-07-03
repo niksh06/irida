@@ -108,6 +108,8 @@ export interface ChatSessionOptions {
   onActivity?: (entry: ActivityDetail) => void;
   /** Fired before resending a turn after agent rotation (idle refresh or run_error). */
   onTurnRetry?: (reason?: string) => void;
+  /** Fired when a store/memory operation degraded (persistSoft/soft) — UI pet turns worried (I-148). */
+  onStoreDegraded?: (label: string) => void;
   /** Fired when rotation starts — UI can show a pending state (I-13). */
   onAgentRotating?: (info: { reason: string }) => void;
   /** Fired when SDK agent is replaced inside the same irida session. */
@@ -385,6 +387,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           log(
             `[chat] ${label} failed — continuing without it: ${e instanceof Error ? e.message : String(e)}`
           );
+          opts.onStoreDegraded?.(label);
           return fallback;
         }
       };
@@ -474,6 +477,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
           log(
             `[chat] ${label} failed — turn outcome preserved: ${e instanceof Error ? e.message : String(e)}`
           );
+          opts.onStoreDegraded?.(label);
         }
       };
 

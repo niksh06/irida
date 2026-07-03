@@ -30,6 +30,10 @@ export interface PetStateSnapshot {
   label?: string;
   /** Active tool bucket while working — drives the overlay "thought" glyph. */
   activity?: PetActivityKind;
+  /** Lifetime XP (I-148): +1 per ok turn, +3 bonus each 10-turn clean streak. */
+  xp?: number;
+  /** Consecutive ok turns (feeds the streak bonus; resets on error). */
+  streakOk?: number;
 }
 
 export interface PetRuntimeOptions {
@@ -48,6 +52,8 @@ export class PetRuntimeTracker {
   private lastEventAtMs = Date.now();
   private lastLabel: string | undefined;
   private lastActivity: PetActivityKind | undefined;
+  private xp = 0;
+  private streakOk = 0;
 
   constructor(opts: PetRuntimeOptions) {
     this.dir = opts.dir;
@@ -55,6 +61,11 @@ export class PetRuntimeTracker {
     // Legacy PNG pipeline is optional — the Wisp overlay renders glyph frames
     // from the snapshot alone, so the tracker works with no pet assets at all.
     this.petDir = resolvePetDir(opts.dir);
+    // XP is lifetime progress — seed from the existing snapshot so restarts
+    // (and fresh sessions in the same dir) keep the pet's earned level.
+    const prev = readPetStateSnapshot(opts.dir);
+    this.xp = prev?.xp ?? 0;
+    this.streakOk = prev?.streakOk ?? 0;
   }
 
   beginTurn(): void {
@@ -83,6 +94,12 @@ export class PetRuntimeTracker {
     this.toolRunning = false;
     this.lastTurnOk = ok;
     this.lastTurnError = !ok;
+    if (ok) {
+      this.streakOk += 1;
+      this.xp += 1 + (this.streakOk % 10 === 0 ? 3 : 0);
+    } else {
+      this.streakOk = 0;
+    }
     this.lastEventAtMs = Date.now();
     this.persist();
   }
@@ -120,6 +137,8 @@ export class PetRuntimeTracker {
       lastTurnError: this.lastTurnError || undefined,
       label: this.lastLabel,
       activity: this.lastActivity,
+      xp: this.xp,
+      streakOk: this.streakOk,
     };
   }
 
@@ -177,6 +196,8 @@ export function readPetStateSnapshot(dir: string): PetStateSnapshot | null {
       lastTurnError: raw.lastTurnError,
       label: raw.label,
       activity: raw.activity,
+      xp: typeof raw.xp === "number" ? raw.xp : undefined,
+      streakOk: typeof raw.streakOk === "number" ? raw.streakOk : undefined,
     };
   } catch {
     return null;

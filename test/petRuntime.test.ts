@@ -69,6 +69,37 @@ describe("PetRuntimeTracker", () => {
     }
   });
 
+  // I-148: XP banks on ok turns (+1, +3 bonus each 10-streak), resets streak on
+  // error, and survives tracker restarts via the snapshot (additive v1 field).
+  it("earns XP with streak bonus and re-seeds from the snapshot (I-148)", () => {
+    const home = join(tmpdir(), `wisp-xp-${Date.now()}`);
+    mkdirSync(join(home, ".agent"), { recursive: true });
+    const prevRoot = process.env.CSAGENT_ROOT;
+    process.env.CSAGENT_ROOT = home;
+    try {
+      const tracker = new PetRuntimeTracker({ dir: home });
+      for (let i = 0; i < 10; i++) tracker.endTurn(true);
+      let snap = readPetStateSnapshot(home);
+      assert.equal(snap!.xp, 13); // 10×1 + streak bonus at #10
+      assert.equal(snap!.streakOk, 10);
+
+      tracker.endTurn(false); // error: streak resets, xp keeps
+      snap = readPetStateSnapshot(home);
+      assert.equal(snap!.xp, 13);
+      assert.equal(snap!.streakOk, 0);
+
+      // A fresh tracker in the same dir continues, not restarts, the progress.
+      const revived = new PetRuntimeTracker({ dir: home });
+      revived.endTurn(true);
+      snap = readPetStateSnapshot(home);
+      assert.equal(snap!.xp, 14);
+      assert.equal(snap!.streakOk, 1);
+    } finally {
+      if (prevRoot === undefined) delete process.env.CSAGENT_ROOT;
+      else process.env.CSAGENT_ROOT = prevRoot;
+    }
+  });
+
   // I-146: the Wisp overlay renders glyph frames from the snapshot alone, so
   // the tracker must run with no PNG pipeline at all (assetPath just stays
   // null on machines without built assets — not asserted, machine-dependent).

@@ -95,7 +95,8 @@ export function loadGatewayConfig(dir: string = process.cwd()): GatewayConfig {
       ? (o.webhook as Record<string, unknown>)
       : {};
   const host = typeof listen.host === "string" && listen.host.trim() ? listen.host.trim() : "127.0.0.1";
-  const port = typeof listen.port === "number" && listen.port > 0 ? listen.port : 18789;
+  // 0 is a valid explicit choice: bind an OS-assigned ephemeral port (tests).
+  const port = typeof listen.port === "number" && listen.port >= 0 ? listen.port : 18789;
   const webhookPath =
     typeof webhook.path === "string" && webhook.path.trim() ? webhook.path.trim() : "/hook";
   const secretEnv =

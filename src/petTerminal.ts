@@ -18,6 +18,10 @@ export interface TuiPetSignals {
   activityLog: PetActivityLike[];
   lastTurnOk: boolean;
   lastTurnError: boolean;
+  /** Last overload-retry moment (onTurnRetry) — hiccup window (I-148). */
+  retryAtMs?: number;
+  /** Store/memory degraded during a turn (onStoreDegraded) — worried (I-148). */
+  storeDegraded?: boolean;
   lastEventAtMs: number;
   nowMs?: number;
 }
@@ -31,6 +35,8 @@ export function deriveTuiPetState(signals: TuiPetSignals): PetState {
     toolRunning,
     lastTurnOk: signals.lastTurnOk,
     lastTurnError: signals.lastTurnError,
+    retryAtMs: signals.retryAtMs,
+    storeDegraded: signals.storeDegraded,
     lastEventAtMs: signals.lastEventAtMs,
     nowMs: signals.nowMs,
     happyMs: PET_HAPPY_MS,
@@ -259,6 +265,70 @@ export const PET_WISP_FRAMES: Record<PetState, PetAnim> = {
       { parts: [{ t: "    ", c: "muted" }, { t: "‚", c: "accent" }, { t: "   ", c: "muted" }] },
     ],
   ],
+  // retry — a hiccup: the overload jolt rattles the eye ◉↔◎ while a "!" hops
+  // around the aura and the tail crackles. Transient (~6s) by design.
+  retry: [
+    [
+      { parts: [{ t: " · ", c: "muted" }, { t: "!", c: "error" }, { t: " ·  ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◉", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "ϟ", c: "error" }, { t: "    ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ", c: "muted" }, { t: "!", c: "error" }, { t: " ·  · ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◎", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "  ", c: "muted" }, { t: "ϟ", c: "warn" }, { t: "     ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  · ", c: "muted" }, { t: "!", c: "error" }, { t: " ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◉", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "ϟ", c: "error" }, { t: "   ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  ·  ·", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◎", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "↯", c: "warn" }, { t: "    ", c: "muted" }] },
+    ],
+  ],
+  // worried — the store is degrading under it: a sweat drop drifts, the eye
+  // narrows low (◒), the tail wavers. Stays until a clean turn resets it.
+  worried: [
+    [
+      { parts: [{ t: " ·  ", c: "muted" }, { t: "˚", c: "warn" }, { t: " · ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◒", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "~", c: "warn" }, { t: "    ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " · ", c: "muted" }, { t: "˚", c: "warn" }, { t: "  · ", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◒", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "~", c: "muted" }, { t: "   ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·   ", c: "muted" }, { t: "˚", c: "warn" }, { t: " ·", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◒", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "   ", c: "muted" }, { t: "~", c: "muted" }, { t: "    ", c: "muted" }] },
+    ],
+    [
+      { parts: [{ t: " ·  ·  ·", c: "muted" }] },
+      { parts: [{ t: " ╭─────╮", c: "primary" }] },
+      { parts: [{ t: " │  ", c: "primary" }, { t: "◒", c: "warn" }, { t: "  │", c: "primary" }] },
+      { parts: [{ t: " ╰──┬──╯", c: "primary" }] },
+      { parts: [{ t: "    ", c: "muted" }, { t: "…", c: "muted" }, { t: "   ", c: "muted" }] },
+    ],
+  ],
   // sleep — soft breathing and a zZz that rises and fades.
   sleep: [
     [
@@ -323,10 +393,31 @@ function activityThoughtParts(glyph: string): PetGlyph[] {
   ];
 }
 
+/**
+ * Level decor (I-148): a seasoned Wisp's aura visibly thickens — from lv.3 the
+ * tail diamond hardens (◇→◆, ✧→✦), from lv.5 the aura dots turn to sparks.
+ * Pure char swaps of equal display width, so the 8-col invariant holds.
+ */
+function applyLevelDecor(lines: PetGlyphLine[], level: number): PetGlyphLine[] {
+  if (level < 3) return lines;
+  const deep = level >= 5;
+  return lines.map((line, row) => {
+    if (row !== 0 && row !== 4) return line;
+    return {
+      parts: line.parts.map((p) => {
+        let t = p.t.replace(/◇/g, "◆").replace(/✧/g, "✦");
+        if (deep && row === 0) t = t.replace(/·/g, "✧");
+        return { ...p, t };
+      }),
+    };
+  });
+}
+
 export function petTerminalFrame(
   state: PetState,
   tick: number,
-  activity?: PetActivityKind
+  activity?: PetActivityKind,
+  level?: number
 ): PetGlyphLine[] {
   const frames = PET_WISP_FRAMES[state];
   const idx = frames.length > 1 ? tick % frames.length : 0;
@@ -336,7 +427,7 @@ export function petTerminalFrame(
   if (state === "working" && activity && activity !== "tool" && lines.length > 0) {
     lines[0] = { parts: activityThoughtParts(ACTIVITY_GLYPH[activity]) };
   }
-  return lines;
+  return applyLevelDecor(lines, level ?? 1);
 }
 
 /** @deprecated use petTerminalFrame — flat strings, single color */
@@ -373,21 +464,33 @@ const WORKING_VERB: Record<PetActivityKind, string> = {
   tool: "thinking…",
 };
 
-export function petTerminalLabel(state: PetState, activity?: PetActivityKind): string {
-  switch (state) {
-    case "idle":
-      return "wisp · watching";
-    case "working":
-      return `wisp · ${WORKING_VERB[activity ?? "tool"]}`;
-    case "happy":
-      return "wisp · nice!";
-    case "sad":
-      return "wisp · oops";
-    case "sleep":
-      return "wisp · zzz";
-    default: {
-      const _exhaustive: never = state;
-      return _exhaustive;
+export function petTerminalLabel(
+  state: PetState,
+  activity?: PetActivityKind,
+  level?: number
+): string {
+  const base = (() => {
+    switch (state) {
+      case "idle":
+        return "wisp · watching";
+      case "working":
+        return `wisp · ${WORKING_VERB[activity ?? "tool"]}`;
+      case "happy":
+        return "wisp · nice!";
+      case "sad":
+        return "wisp · oops";
+      case "sleep":
+        return "wisp · zzz";
+      case "retry":
+        return "wisp · hiccup!";
+      case "worried":
+        return "wisp · uneasy";
+      default: {
+        const _exhaustive: never = state;
+        return _exhaustive;
+      }
     }
-  }
+  })();
+  // The badge appears once Wisp has actually earned something (lv.2+).
+  return level && level >= 2 ? `${base} · lv.${level}` : base;
 }

@@ -11,10 +11,11 @@ import {
   PET_WISP_FRAMES,
 } from "../src/petTerminal.js";
 
-const STATES = ["idle", "working", "happy", "sad", "sleep"] as const;
-/** Iterate every frame of a state (self-maintaining as animations grow). */
-const eachFrame = (fn: (state: (typeof STATES)[number], tick: number) => void) => {
-  for (const state of STATES) for (let tick = 0; tick < PET_WISP_FRAMES[state].length; tick++) fn(state, tick);
+import { PET_STATES } from "../src/petState.js";
+
+/** Iterate every frame of every state (self-maintaining as states/animations grow). */
+const eachFrame = (fn: (state: (typeof PET_STATES)[number], tick: number) => void) => {
+  for (const state of PET_STATES) for (let tick = 0; tick < PET_WISP_FRAMES[state].length; tick++) fn(state, tick);
 };
 
 describe("deriveTuiPetState", () => {
@@ -30,6 +31,26 @@ describe("deriveTuiPetState", () => {
       nowMs: now,
     });
     assert.equal(state, "working");
+  });
+
+  it("retry hiccup interrupts working, then working resumes (I-148)", () => {
+    const base = {
+      busy: true,
+      activityLog: [{ phase: "call" as const, status: "running" as const }],
+      lastTurnOk: false,
+      lastTurnError: false,
+      lastEventAtMs: now,
+    };
+    assert.equal(deriveTuiPetState({ ...base, retryAtMs: now - 1000, nowMs: now }), "retry");
+    assert.equal(deriveTuiPetState({ ...base, retryAtMs: now - 7000, nowMs: now }), "working");
+  });
+
+  it("worried while store degraded; a clean turn (flag cleared) goes happy (I-148)", () => {
+    const base = { busy: false, activityLog: [], lastTurnOk: false, lastTurnError: false, lastEventAtMs: now, nowMs: now };
+    assert.equal(deriveTuiPetState({ ...base, storeDegraded: true }), "worried");
+    // sad wins over worried — an actual error is the stronger signal
+    assert.equal(deriveTuiPetState({ ...base, lastTurnError: true, storeDegraded: true }), "sad");
+    assert.equal(deriveTuiPetState({ ...base, lastTurnOk: true, storeDegraded: false }), "happy");
   });
 });
 
@@ -112,6 +133,31 @@ describe("petTerminalFrame", () => {
         assert.equal(stringWidth(text), 8, `${state}@${tick} row${i} "${text}"`);
       }
     });
+  });
+
+  it("level decor thickens the aura but never breaks the 8-col/5-row invariants (I-148)", () => {
+    eachFrame((state, tick) => {
+      for (const level of [1, 3, 5]) {
+        const lines = petTerminalFrame(state, tick, undefined, level);
+        assert.equal(lines.length, 5);
+        for (const line of lines) {
+          assert.equal(stringWidth(line.parts.map((p) => p.t).join("")), 8, `${state}@${tick} lv${level}`);
+        }
+      }
+    });
+    // The visible change is real: idle's soft tail diamond hardens at lv.3.
+    const soft = petTerminalFrame("idle", 0, undefined, 1).map((l) => l.parts.map((p) => p.t).join("")).join("\n");
+    const hard = petTerminalFrame("idle", 0, undefined, 3).map((l) => l.parts.map((p) => p.t).join("")).join("\n");
+    assert.ok(soft.includes("◇") && !soft.includes("◆"));
+    assert.ok(hard.includes("◆") && !hard.includes("◇"));
+  });
+
+  it("labels: retry/worried get words; the lv badge appears from lv.2 (I-148)", () => {
+    assert.equal(petTerminalLabel("retry"), "wisp · hiccup!");
+    assert.equal(petTerminalLabel("worried"), "wisp · uneasy");
+    assert.equal(petTerminalLabel("idle", undefined, 1), "wisp · watching");
+    assert.equal(petTerminalLabel("idle", undefined, 3), "wisp · watching · lv.3");
+    assert.equal(petTerminalLabel("working", "search", 2), "wisp · searching… · lv.2");
   });
 });
 

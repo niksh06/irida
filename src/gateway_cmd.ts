@@ -39,7 +39,7 @@ export interface GatewayRunHandle {
 function applyCliOverrides(cfg: GatewayConfig, opts: GatewayRunOptions): GatewayConfig {
   const next = { ...cfg };
   if (opts.adapter === "webhook" || opts.adapter === "telegram") next.adapter = opts.adapter;
-  if (typeof opts.port === "number" && opts.port > 0) next.port = opts.port;
+  if (typeof opts.port === "number" && opts.port >= 0) next.port = opts.port;
   return next;
 }
 
