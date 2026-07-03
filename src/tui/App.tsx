@@ -17,7 +17,6 @@ import { SlashSuggest } from "./components/SlashSuggest.js";
 import { DoctorPanel } from "./components/DoctorPanel.js";
 import { SkillsPanel } from "./components/SkillsPanel.js";
 import { MemoryPanel } from "./components/MemoryPanel.js";
-import { SessionTabBar } from "./components/SessionTabBar.js";
 import { PetCorner } from "./components/PetCorner.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { McpPanel } from "./components/McpPanel.js";
@@ -68,13 +67,6 @@ import {
   isStreamToolProgressPlaceholder,
   shouldInjectToolProgressIntoStream,
 } from "./toolProgress.js";
-import {
-  mergeTabBarSessions,
-  parseSessionTabHotkey,
-  sessionAtTabIndex,
-  tabCycleIndex,
-  visibleTabSessions,
-} from "./sessionTabs.js";
 import { classifyPetActivity, deriveTuiPetState, type PetActivityKind } from "../petTerminal.js";
 import { levelForXp, type PetState } from "../petState.js";
 import { readPetStateSnapshot } from "../petRuntime.js";
@@ -195,7 +187,6 @@ export function App(props: TuiOptions) {
   const lastPetEventAtRef = useRef(Date.now());
   const [, tick] = useState(0);
   const [pickerSessions, setPickerSessions] = useState<SessionRecord[]>([]);
-  const [tabBarSessions, setTabBarSessions] = useState<SessionRecord[]>([]);
   const [thinkingText, setThinkingText] = useState("");
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [modelOverride, setModelOverride] = useState<string | undefined>(undefined);
@@ -453,8 +444,6 @@ export function App(props: TuiOptions) {
         },
         ...history,
       ]);
-      const fresh = await listStoredSessions(dir);
-      setTabBarSessions((prev) => mergeTabBarSessions(prev, fresh));
       return opened;
       });
       bootChainRef.current = job.catch(() => {});
@@ -478,15 +467,14 @@ export function App(props: TuiOptions) {
   // viewport height so paging/virtualization track the real layout.
   const chromeLines = useMemo(() => {
     const bannerLines = cols < COMPACT_BANNER_COLS ? 1 : 4; // compact 1 vs box 4
-    const tabBar = visibleTabSessions(tabBarSessions).length > 1 ? 1 : 0;
     const thinking = thinkingText ? (thinkingExpanded ? 6 : 1) : 0;
     const activity = busy || activityLog.length > 0 ? 1 : 0;
     const slash = slashSuggestions.length > 0 ? 1 : 0;
     const boxBorders = 2;
     const composer = 3;
     const statusBar = 3;
-    return bannerLines + tabBar + boxBorders + thinking + activity + slash + composer + statusBar;
-  }, [cols, tabBarSessions, thinkingText, thinkingExpanded, busy, activityLog.length, slashSuggestions.length]);
+    return bannerLines + boxBorders + thinking + activity + slash + composer + statusBar;
+  }, [cols, thinkingText, thinkingExpanded, busy, activityLog.length, slashSuggestions.length]);
   const visibleLines = useMemo(() => estimateVisibleLines(rows, chromeLines), [rows, chromeLines]);
   const allRows = useMemo(
     () => messagesToRowsCached(messages, cols, rowCacheRef.current),
@@ -586,27 +574,6 @@ export function App(props: TuiOptions) {
     [bootSession, finishOverlay, pushMessage]
   );
 
-  const cycleSessionTab = useCallback(
-    (delta: number) => {
-      if (busy) return;
-      const tabs = visibleTabSessions(tabBarSessions);
-      const nextIdx = tabCycleIndex(tabs, meta?.sessionId, delta);
-      if (nextIdx == null) return;
-      void switchToSession(tabs[nextIdx]!);
-    },
-    [tabBarSessions, meta?.sessionId, busy, switchToSession]
-  );
-
-  const selectSessionTabByIndex = useCallback(
-    (tabIndex: number) => {
-      if (busy) return;
-      const target = sessionAtTabIndex(tabBarSessions, tabIndex);
-      if (!target || target.id === meta?.sessionId) return;
-      void switchToSession(target);
-    },
-    [tabBarSessions, meta?.sessionId, busy, switchToSession]
-  );
-
   const applyModel = useCallback(
     async (model: string) => {
       finishOverlay();
@@ -635,21 +602,6 @@ export function App(props: TuiOptions) {
         setThinkingExpanded((e) => !e);
         return;
       }
-      if (!overlay && !confirm && !busy && input === "") {
-        const tabIdx = parseSessionTabHotkey(inputKey);
-        if (tabIdx != null) {
-          selectSessionTabByIndex(tabIdx);
-          return;
-        }
-        if (key.ctrl && inputKey === "[") {
-          cycleSessionTab(-1);
-          return;
-        }
-        if (key.ctrl && inputKey === "]") {
-          cycleSessionTab(1);
-          return;
-        }
-      }
     },
     { isActive: !overlay && !confirm && !exiting }
   );
@@ -674,9 +626,6 @@ export function App(props: TuiOptions) {
             setInput(applyContextRefCompletion(input, ref, commonPathPrefix(matches)));
           }
           return;
-        }
-        if (input === "") {
-          cycleSessionTab(key.shift ? -1 : 1);
         }
       }
     },
@@ -806,8 +755,6 @@ export function App(props: TuiOptions) {
             return;
           }
           if (await renameStoredSession(dir, meta.sessionId, slash.title)) {
-            const fresh = await listStoredSessions(dir);
-            setTabBarSessions((prev) => mergeTabBarSessions(prev, fresh));
             pushMessage({ role: "system", text: `Session renamed → ${slash.title}` });
           } else {
             pushMessage({ role: "error", text: "Rename failed" });
@@ -1103,7 +1050,6 @@ export function App(props: TuiOptions) {
       <Box flexDirection="row" justifyContent="space-between" width="100%">
         <Box flexDirection="column" flexGrow={1}>
           <Text color={theme.primary}>{bannerFor(cols).trimEnd()}</Text>
-          <SessionTabBar sessions={tabBarSessions} activeId={meta?.sessionId ?? null} width={cols} />
         </Box>
         <PetCorner state={petState} animTick={petClock} activity={petActivity} level={petLevel} />
       </Box>
@@ -1194,8 +1140,6 @@ export function App(props: TuiOptions) {
         disabled={composerDisabled}
         scrollMode={scrollMode}
         cwd={meta?.cwd ?? dir}
-        onSessionTabSelect={overlay || busy ? undefined : selectSessionTabByIndex}
-        onSessionTabCycle={overlay || busy ? undefined : cycleSessionTab}
         placeholder={
           fatal
             ? "session failed"

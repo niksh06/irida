@@ -44,7 +44,9 @@ export function parseSlash(input: string): SlashAction | null {
     case "session":
       return { type: "sessions" };
     case "resume":
-      if (!arg) return { type: "unknown", command: "/resume requires a session id" };
+      // Bare `/resume` opens the session picker (sessions live here now that the
+      // tab bar is gone); `/resume <id>` still boots a specific session.
+      if (!arg) return { type: "sessions" };
       return { type: "resume", sessionId: arg };
     case "new":
     case "fresh":

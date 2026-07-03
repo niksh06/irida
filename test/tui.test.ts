@@ -37,6 +37,12 @@ describe("tui slash", () => {
     assert.deepEqual(parseSlash("/resume sess-abc"), { type: "resume", sessionId: "sess-abc" });
   });
 
+  it("bare /resume opens the session picker (tabs removed → sessions live here)", () => {
+    // Was an ugly `unknown` message ("//resume requires a session id"); now
+    // it's the picker, same as /sessions.
+    assert.deepEqual(parseSlash("/resume"), { type: "sessions" });
+  });
+
   it("returns null for normal text", () => {
     assert.equal(parseSlash("hello"), null);
   });
