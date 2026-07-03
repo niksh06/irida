@@ -128,7 +128,7 @@ export class GatewaySessionRouter {
         return {
           reply: previousSessionId
             ? `Новая сессия irida (было ${previousSessionId}). Контекст сброшен — можно писать заново.`
-            : "Новая сессия csagent. Контекст сброшен — можно писать заново.",
+            : "Новая сессия irida. Контекст сброшен — можно писать заново.",
         };
       }
       if (isGatewaySlashCommand(text)) {

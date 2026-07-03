@@ -36,7 +36,7 @@ export function pgConfigured(): boolean {
 /** Resolve the configured connection string; throws if unset. */
 export function pgConnectionString(): string {
   const url = pgUrl();
-  if (!url) throw new Error("CSAGENT_DATABASE_URL is not set");
+  if (!url) throw new Error("IRIDA_DATABASE_URL is not set (legacy CSAGENT_DATABASE_URL also honored)");
   return url;
 }
 

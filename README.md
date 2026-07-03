@@ -18,7 +18,7 @@ Local-first personal agent — **one interface, two engines**: pick the runtime 
 
 ## Quickstart (5 minutes, SQLite)
 
-Needs **Node.js ≥ 20** and a **Cursor API key** (Dashboard → Integrations).
+Needs **Node.js ≥ 22.5** (node:sqlite) and a **Cursor API key** (Dashboard → Integrations).
 
 ```bash
 git clone <repo-url> irida && cd irida
@@ -61,13 +61,13 @@ More: [REFERENCE.md](REFERENCE.md#develop).
 
 ## Support the author
 
-If you find **csagent** useful, you can optionally support development on Boosty — entirely voluntary, no perks or obligations:
+If you find **irida** useful, you can optionally support development on Boosty — entirely voluntary, no perks or obligations:
 
 **[Donate on Boosty](https://boosty.to/niksh612/donate)**
 
 ## License
 
-**csagent** (this repository) is licensed under the [ISC License](LICENSE).
+**irida** (this repository) is licensed under the [ISC License](LICENSE).
 
 ### Third-party runtime (not open source)
 
@@ -92,7 +92,7 @@ Transitive licenses are listed in `package-lock.json` (`npm licenses` / `license
 
 ### Trademarks and affiliation
 
-- **csagent** is a community / personal project. It is **not** affiliated with, endorsed by, or maintained by Cursor or Anysphere.
+- **irida** (formerly csagent) is a community / personal project. It is **not** affiliated with, endorsed by, or maintained by Cursor or Anysphere.
 - **Cursor** and related marks belong to their respective owners.
 - UX patterns are **inspired by** [Hermes Agent](https://github.com/NousResearch/hermes-agent); this is a separate codebase, not a fork.
 

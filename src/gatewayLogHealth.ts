@@ -35,7 +35,7 @@ export function assessGatewayLogHealth(opts: {
     return {
       ok: !gatewayRunning,
       detail: `${stream} · empty`,
-      hint: gatewayRunning ? "restart: bash ~/.csagent/csagent/deploy/install-launchd.sh" : undefined,
+      hint: gatewayRunning ? "restart: bash ~/.irida/irida/deploy/install-launchd.sh" : undefined,
     };
   }
 
@@ -43,7 +43,7 @@ export function assessGatewayLogHealth(opts: {
     return {
       ok: false,
       detail: `${stream} · stale ${ageMin}m · ${tailPreview}`,
-      hint: "log not updating — gateway likely stuck; bash ~/.csagent/csagent/deploy/install-launchd.sh",
+      hint: "log not updating — gateway likely stuck; bash ~/.irida/irida/deploy/install-launchd.sh",
     };
   }
 
@@ -97,7 +97,7 @@ export function assessGatewayServiceHealth(opts: {
     return {
       ok: false,
       detail: `stdout stale ${Math.round(infoAgeMs / 60_000)}m · stderr ${Math.round(errorAgeMs / 60_000)}m`,
-      hint: "no log activity — restart: bash ~/.csagent/csagent/deploy/install-launchd.sh",
+      hint: "no log activity — restart: bash ~/.irida/irida/deploy/install-launchd.sh",
     };
   }
 

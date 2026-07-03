@@ -39,7 +39,7 @@
     "smoke": "bash scripts/smoke.sh"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "license": "ISC",
   "dependencies": {

@@ -245,7 +245,7 @@ export async function gatherGatewayStoreStatusLines(): Promise<GatewayStatusLine
     {
       name: "store (postgres)",
       ok: probe.ok,
-      detail: probe.ok ? probe.detail : `${probe.detail} → start Docker/csagent-postgres`,
+      detail: probe.ok ? probe.detail : `${probe.detail} → start Docker/OrbStack (irida postgres :5435)`,
     },
   ];
 }
