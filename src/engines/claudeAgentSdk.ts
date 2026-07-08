@@ -29,6 +29,7 @@ import type {
   AgentSendOptions,
   StreamUsage,
 } from "../host.js";
+import { resolve as resolvePath, sep } from "node:path";
 import { parseStreamUsage } from "../host.js";
 import type { EngineAuth } from "../config.js";
 import { DEFAULT_CLAUDE_AGENT_MODEL } from "../config.js";
@@ -42,6 +43,13 @@ export interface EngineToolPolicy {
   denyDestructive: boolean;
   /** I-117: rewrite borderline inputs to a safer form instead of allowing as-is (opt-in). */
   sanitizeInput?: boolean;
+  /**
+   * I-157: when set, file-mutation tools (Write/Edit/MultiEdit/NotebookEdit) are
+   * DENIED unless their target path resolves inside one of these roots. Enables
+   * path-scoped write envelopes (e.g. the ouroboros yellow tier: an isolated
+   * worktree + the agent's own projects dir). Read tools are unaffected.
+   */
+  allowWriteRoots?: string[];
 }
 
 type ToolDecision =
@@ -148,6 +156,44 @@ export function interceptInteractiveAsk(toolName: string): ToolDecision | null {
   return null;
 }
 
+/** Path field per file-mutation tool the write-roots gate covers (I-157). */
+const WRITE_TOOL_PATH_FIELD: Record<string, string> = {
+  Write: "file_path",
+  Edit: "file_path",
+  MultiEdit: "file_path",
+  NotebookEdit: "notebook_path",
+};
+
+/** Is `p` equal to or inside `root`? Both must already be absolute-resolved. */
+function isInsideRoot(p: string, root: string): boolean {
+  return p === root || p.startsWith(root.endsWith(sep) ? root : root + sep);
+}
+
+/**
+ * I-157: vet a file-mutation tool call against the allowed write roots. Returns
+ * a human-readable violation, or null when the call is fine (non-mutation tool,
+ * or path inside a root). Fail-closed: a mutation tool whose path is missing or
+ * non-string is a violation — an unverifiable write is not allowed through.
+ * Pure + exported for unit tests.
+ */
+export function writeRootsViolation(
+  toolName: string,
+  input: Record<string, unknown>,
+  roots: string[]
+): string | null {
+  const field = WRITE_TOOL_PATH_FIELD[toolName];
+  if (!field) return null; // not a path-gated mutation tool
+  const raw = input[field];
+  if (typeof raw !== "string" || !raw.trim()) {
+    return `${toolName} without a verifiable ${field} is not allowed under a write-roots policy`;
+  }
+  const target = resolvePath(raw.trim());
+  for (const root of roots) {
+    if (isInsideRoot(target, resolvePath(root))) return null;
+  }
+  return `${toolName} target ${target} is outside the allowed write roots (${roots.join(", ")})`;
+}
+
 function restoreEnv(name: string, prev: string | undefined): void {
   if (prev === undefined) delete process.env[name];
   else process.env[name] = prev;
@@ -215,15 +261,18 @@ type QueryOptions = {
 
 /**
  * Permission options for a `query()` call (I-94). Gate OFF → keep the prior
- * `bypassPermissions` (no behavior change). Gate ON → `default` mode so the SDK
- * routes tool calls through `canUseTool`, which allows everything except
- * destructive inputs. `canUseTool` runs every turn and survives `resume`.
+ * `bypassPermissions` (no behavior change). Gate ON (denyDestructive and/or
+ * allowWriteRoots, I-157) → `default` mode so the SDK routes tool calls through
+ * `canUseTool`: write-roots containment first (fail-closed), then the
+ * destructive-input gate. `canUseTool` runs every turn and survives `resume`.
  */
 function permissionOptions(
   denyDestructive: boolean,
-  sanitizeInput = false
+  sanitizeInput = false,
+  allowWriteRoots?: string[]
 ): Pick<QueryOptions, "permissionMode" | "canUseTool"> {
-  if (!denyDestructive) return { permissionMode: "bypassPermissions" };
+  const roots = allowWriteRoots?.filter((r) => typeof r === "string" && r.trim()) ?? [];
+  if (!denyDestructive && !roots.length) return { permissionMode: "bypassPermissions" };
   return {
     permissionMode: "default",
     canUseTool: async (toolName, input) => {
@@ -233,6 +282,15 @@ function permissionOptions(
         console.error(`[tool-policy] deny ${toolName}: steer to ask_user (I-125)`);
         return steer;
       }
+      // I-157: path-scoped write envelope.
+      if (roots.length) {
+        const violation = writeRootsViolation(toolName, input, roots);
+        if (violation) {
+          console.error(`[tool-policy] deny ${toolName}: ${violation}`);
+          return { behavior: "deny", message: `irida tool-policy: ${violation}` };
+        }
+      }
+      if (!denyDestructive) return { behavior: "allow", updatedInput: input };
       const decision = evaluateToolInput(input, { sanitize: sanitizeInput });
       // Both land in stderr → gateway.error.log for the autonomous surfaces.
       if (decision.behavior === "deny") {
@@ -281,6 +339,7 @@ export function createClaudeAgentSdk(opts?: {
   const authMode: EngineAuth = opts?.authMode ?? "api-key";
   const denyDestructive = opts?.toolPolicy?.denyDestructive ?? false;
   const sanitizeInput = opts?.toolPolicy?.sanitizeInput ?? false;
+  const allowWriteRoots = opts?.toolPolicy?.allowWriteRoots;
 
   /** Interactive agent handle: one Agent SDK session, resumed per turn. */
   function makeAgent(init: {
@@ -301,7 +360,7 @@ export function createClaudeAgentSdk(opts?: {
           q = await startQuery(message, {
             model,
             cwd: init.cwd,
-            ...permissionOptions(denyDestructive, sanitizeInput),
+            ...permissionOptions(denyDestructive, sanitizeInput, allowWriteRoots),
             ...(init.mcpServers ? { mcpServers: init.mcpServers } : {}),
             ...(sessionId ? { resume: sessionId } : {}),
           });
@@ -364,7 +423,7 @@ export function createClaudeAgentSdk(opts?: {
         const q = await startQuery(message, {
           model: sdkOpts.model.id,
           cwd: sdkOpts.local.cwd,
-          ...permissionOptions(denyDestructive, sanitizeInput),
+          ...permissionOptions(denyDestructive, sanitizeInput, allowWriteRoots),
           ...(toAgentMcpServers(sdkOpts.mcpServers) ? { mcpServers: toAgentMcpServers(sdkOpts.mcpServers) } : {}),
           ...(sdkOpts.disallowedTools?.length ? { disallowedTools: sdkOpts.disallowedTools } : {}),
         });
