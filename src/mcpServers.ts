@@ -15,6 +15,7 @@ export const MEMORY_MCP_NAME = "csagent-memory";
 export const BROWSER_MCP_NAME = "csagent-browser";
 export const CRON_MCP_NAME = "csagent-cron";
 export const ASK_MCP_NAME = "csagent-ask";
+export const HOMEBASE_MCP_NAME = "csagent-homebase";
 
 export interface McpResolveContext {
   gatewayChatId?: string;
@@ -71,6 +72,33 @@ function browserServerEntry(projectDir: string): { command: string; args: string
 
 export function memoryMcpEnabled(cfg: AgentConfig): boolean {
   return cfg.memory?.mcp !== false;
+}
+
+function homebaseServerEntry(projectDir: string): { command: string; args: string[] } {
+  const roots = [
+    iridaRoot(),
+    projectDir,
+    join(CODE_ROOT, ".."),
+  ].filter(Boolean) as string[];
+
+  for (const root of roots) {
+    const dist = join(root, "dist/mcp/homebaseServer.js");
+    if (existsSync(dist)) {
+      return { command: process.execPath, args: [dist] };
+    }
+    const src = join(root, "src/mcp/homebaseServer.ts");
+    const tsx = join(root, "node_modules/.bin/tsx");
+    if (existsSync(src) && existsSync(tsx)) {
+      return { command: tsx, args: [src] };
+    }
+  }
+
+  const fallback = join(CODE_ROOT, "mcp/homebaseServer.js");
+  return { command: process.execPath, args: [fallback] };
+}
+
+export function homebaseMcpEnabled(cfg: AgentConfig): boolean {
+  return cfg.homebase?.mcp !== false;
 }
 
 export function browserMcpEnabled(cfg: AgentConfig): boolean {
@@ -156,6 +184,19 @@ export function resolveMcpServers(
         CSAGENT_STATE_DIR: stateDir,
         ...withHome,
         ...withDbUrl,
+      },
+    };
+  }
+
+  if (homebaseMcpEnabled(cfg) && !(HOMEBASE_MCP_NAME in merged)) {
+    const { command, args } = homebaseServerEntry(projectDir);
+    merged[HOMEBASE_MCP_NAME] = {
+      command,
+      args,
+      env: {
+        CSAGENT_MEMORY_DIR: resolve(projectDir),
+        CSAGENT_STATE_DIR: stateDir,
+        ...withHome,
       },
     };
   }

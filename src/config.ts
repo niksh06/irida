@@ -196,6 +196,14 @@ export interface PetConfig {
   theme?: "light" | "dark";
 }
 
+/** homebase MCP: deterministic git-derived continuity + situational-awareness (I-159). */
+export interface HomebaseConfig {
+  /** Attach csagent-homebase MCP tools (default true). Set false to disable. */
+  mcp?: boolean;
+  /** Commits shown as baseline context on a repo's first-ever visit (default 10). */
+  baselineCommits?: number;
+}
+
 export interface AgentConfig {
   model: string;
   runtime: "local" | "cloud";
@@ -210,6 +218,7 @@ export interface AgentConfig {
   hooks?: HooksConfig;
   skillPolicy?: SkillPolicyConfig;
   pet?: PetConfig;
+  homebase?: HomebaseConfig;
 }
 
 export class ConfigError extends Error {}
@@ -420,6 +429,11 @@ const petSchema = z.object({
   theme: z.enum(["light", "dark"]).optional(),
 });
 
+const homebaseSchema = z.object({
+  mcp: z.boolean().optional(),
+  baselineCommits: z.number().min(1).max(100).optional(),
+});
+
 const agentConfigSchema = z.object({
   model: z.string().refine((s) => s.trim().length > 0, "must be a non-empty string").optional(),
   runtime: z.enum(["local", "cloud"]).optional(),
@@ -433,6 +447,7 @@ const agentConfigSchema = z.object({
   hooks: hooksSchema.optional(),
   skillPolicy: skillPolicySchema.optional(),
   pet: petSchema.optional(),
+  homebase: homebaseSchema.optional(),
 });
 
 function formatZodIssue(e: z.ZodError): string {
@@ -483,6 +498,7 @@ function validate(obj: unknown, dir: string): AgentConfig {
   if (parsed.browser !== undefined) cfg.browser = parsed.browser;
   if (parsed.hooks !== undefined) cfg.hooks = parsed.hooks;
   if (parsed.pet !== undefined) cfg.pet = parsed.pet;
+  if (parsed.homebase !== undefined) cfg.homebase = parsed.homebase;
   // Old behavior: skillPolicy only materializes when allowUnsafe is present.
   if (parsed.skillPolicy?.allowUnsafe !== undefined) {
     cfg.skillPolicy = { allowUnsafe: parsed.skillPolicy.allowUnsafe };
