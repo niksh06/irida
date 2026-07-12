@@ -40,6 +40,7 @@ export const SLASH_REGISTRY: SlashRegistryEntry[] = [
   { cmd: "usage", desc: "Token + cost usage", descGateway: "Расход токенов и $ (24ч + сессия)", surfaces: ["gateway"] },
   { cmd: "proposals", desc: "Evolution queue + auto-applied skills (rollback <skill>)", descGateway: "Очередь эволюции + авто-скиллы (rollback <skill>)", surfaces: ["gateway"] },
   { cmd: "vesper", desc: "Ouroboros ward: status / message to his inbox", descGateway: "Веспер: статус / письмо ему в inbox", args: "[текст]", surfaces: ["gateway"] },
+  { cmd: "fable", desc: "Interactive Fable session: status / message to its inbox", descGateway: "Fable: статус / письмо в лоток сессии", args: "[текст]", surfaces: ["gateway"] },
   { cmd: "approve", desc: "Approve pairing code", descGateway: "Подтвердить pairing-код", args: "<код>", surfaces: ["gateway"] },
   { cmd: "schedule", desc: "Cron schedule ops", descGateway: "Cron: list/add/approve", args: "[subcommand]", surfaces: ["gateway"] },
   { cmd: "undo", desc: "Undo last reversible mutation", descGateway: "Отменить последнее действие", surfaces: ["tui", "gateway"] },

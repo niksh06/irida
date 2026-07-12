@@ -345,6 +345,13 @@ export async function handleGatewaySlash(
       return p.arg ? vesperTell(p.arg) : vesperStatus();
     }
 
+    case "fable": {
+      // Owner→interactive-session channel (I-160): bare = status, text = to the
+      // session's polling inbox; the session replies back into this Telegram.
+      const { fableStatus, fableTell } = await import("./gatewayFable.js");
+      return p.arg ? fableTell(p.arg) : fableStatus();
+    }
+
     case "approve": {
       if (!p.arg) return "Использование: /approve <код>";
       const out = await tryApprovePairing(ctx.dir, ctx.chatId, p.arg);
