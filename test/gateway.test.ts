@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
@@ -320,6 +320,78 @@ test("startGateway binds port and closes cleanly", async () => {
       assert.equal(disposed.v, true);
     });
   });
+});
+
+test("startGateway accepts claude account mode without a Cursor credential", async () => {
+  await withEnv(
+    {
+      CURSOR_API_KEY: undefined,
+      ANTHROPIC_API_KEY: undefined,
+      CLAUDE_CODE_OAUTH_TOKEN: undefined,
+      IRIDA_DATABASE_URL: undefined,
+      CSAGENT_DATABASE_URL: undefined,
+      IRIDA_HOME: undefined,
+      CSAGENT_HOME: undefined,
+      GATEWAY_WEBHOOK_SECRET: "test-secret",
+    },
+    async () => {
+      const dir = tmp();
+      writeFileSync(
+        resolve(dir, "agent.config.json"),
+        JSON.stringify({
+          stateDir: ".agent",
+          cwd: dir,
+          engine: { provider: "claude-agent", auth: "account" },
+        })
+      );
+      const cfg = writeExampleGatewayConfig(dir, { port: 0 });
+      const handle = await startGateway({ dir, port: 0, sdk: mockSdk({ v: false }) });
+      try {
+        const port = (handle.webhook!.server.address() as { port: number }).port;
+        const res = await fetch(`http://127.0.0.1:${port}${cfg.webhookPath}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Gateway-Secret": "test-secret",
+          },
+          body: JSON.stringify({ chatId: "u1", text: "claude account turn" }),
+        });
+        const body = (await res.json()) as { ok: boolean; reply: string };
+        assert.equal(res.status, 200);
+        assert.equal(body.ok, true);
+        assert.match(body.reply, /claude account turn/);
+      } finally {
+        await handle.close();
+      }
+    }
+  );
+});
+
+test("startGateway defers a missing Cursor credential to the peer session", async () => {
+  await withEnv(
+    {
+      CURSOR_API_KEY: undefined,
+      IRIDA_DATABASE_URL: undefined,
+      CSAGENT_DATABASE_URL: undefined,
+      IRIDA_HOME: undefined,
+      CSAGENT_HOME: undefined,
+      GATEWAY_WEBHOOK_SECRET: "test-secret",
+    },
+    async () => {
+      const dir = tmp();
+      writeFileSync(
+        resolve(dir, "agent.config.json"),
+        JSON.stringify({ stateDir: ".agent", cwd: dir, engine: { provider: "cursor" } })
+      );
+      writeExampleGatewayConfig(dir, { port: 0 });
+      const handle = await startGateway({ dir, port: 0, sdk: mockSdk({ v: false }) });
+      try {
+        await assert.rejects(handle.router.handleInbound("u1", "cursor turn"), /Set CURSOR_API_KEY/);
+      } finally {
+        await handle.close();
+      }
+    }
+  );
 });
 
 test("doctor flags empty allowlist when gateway.json exists", async () => {

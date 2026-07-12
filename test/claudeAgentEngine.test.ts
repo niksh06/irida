@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { applyEngineAuthEnv, toAgentMcpServers } from "../src/engines/claudeAgentSdk.js";
+import { engineAuthEnv, toAgentMcpServers } from "../src/engines/claudeAgentSdk.js";
 import { loadConfig } from "../src/config.js";
 import { createStore } from "../src/store.js";
 import { cmdResume } from "../src/resume.js";
@@ -23,39 +23,54 @@ function withCleanAuthEnv(fn: () => void): void {
   }
 }
 
-test("applyEngineAuthEnv api-key: sets ANTHROPIC_API_KEY, clears OAuth token", () => {
+test("engineAuthEnv api-key: sets ANTHROPIC_API_KEY, clears OAuth token", () => {
   withCleanAuthEnv(() => {
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "stale-oauth";
-    const restore = applyEngineAuthEnv("api-key", "sk-ant-xyz");
-    assert.equal(process.env.ANTHROPIC_API_KEY, "sk-ant-xyz");
-    assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, undefined);
-    restore();
+    const env = engineAuthEnv("api-key", "sk-ant-xyz");
+    assert.equal(env.ANTHROPIC_API_KEY, "sk-ant-xyz");
+    assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, undefined);
+    assert.equal(env.PATH, process.env.PATH); // SDK env replaces, rather than merges with, process.env.
+    assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
     assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, "stale-oauth");
   });
 });
 
-test("applyEngineAuthEnv account: sets OAuth token, clears API key", () => {
+test("engineAuthEnv account: sets OAuth token, clears API key", () => {
   withCleanAuthEnv(() => {
     process.env.ANTHROPIC_API_KEY = "stale-api-key";
-    const restore = applyEngineAuthEnv("account", "oauth-tok");
-    assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, "oauth-tok");
-    assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
-    restore();
+    const env = engineAuthEnv("account", "oauth-tok");
+    assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, "oauth-tok");
+    assert.equal(env.ANTHROPIC_API_KEY, undefined);
     assert.equal(process.env.ANTHROPIC_API_KEY, "stale-api-key");
+    assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, undefined);
   });
 });
 
-test("applyEngineAuthEnv account empty: clears API key, keeps inherited login token", () => {
+test("engineAuthEnv account empty: clears API key, keeps inherited login token", () => {
   withCleanAuthEnv(() => {
     process.env.ANTHROPIC_API_KEY = "stale-api-key";
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "login-session-token";
-    const restore = applyEngineAuthEnv("account", "");
+    const env = engineAuthEnv("account", "");
     // API key cleared so it can't override account auth...
-    assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
+    assert.equal(env.ANTHROPIC_API_KEY, undefined);
     // ...and the inherited `claude login` token is left intact.
-    assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, "login-session-token");
-    restore();
+    assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, "login-session-token");
     assert.equal(process.env.ANTHROPIC_API_KEY, "stale-api-key");
+    assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, "login-session-token");
+  });
+});
+
+test("engineAuthEnv builds independent credential snapshots for overlapping turns", () => {
+  withCleanAuthEnv(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    const first = engineAuthEnv("api-key", "first-key");
+    const second = engineAuthEnv("api-key", "second-key");
+
+    assert.equal(first.ANTHROPIC_API_KEY, "first-key");
+    assert.equal(second.ANTHROPIC_API_KEY, "second-key");
+    assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
+    assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, undefined);
   });
 });
 

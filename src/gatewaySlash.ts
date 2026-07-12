@@ -339,6 +339,12 @@ export async function handleGatewaySlash(
       );
     }
 
+    case "vesper": {
+      // Owner→ward channel (I-158): bare = status, text = letter to his inbox.
+      const { vesperStatus, vesperTell } = await import("./gatewayVesper.js");
+      return p.arg ? vesperTell(p.arg) : vesperStatus();
+    }
+
     case "approve": {
       if (!p.arg) return "Использование: /approve <код>";
       const out = await tryApprovePairing(ctx.dir, ctx.chatId, p.arg);

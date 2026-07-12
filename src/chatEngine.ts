@@ -28,7 +28,7 @@ import {
   type SdkResumeLike,
   type StreamUsage,
 } from "./host.js";
-import { createStore, type IStore } from "./store.js";
+import { createStore, type IStore, type SessionRecord } from "./store.js";
 import {
   sessionAllowedForChannel,
   sessionChannelConflictMessage,
@@ -96,6 +96,8 @@ export interface ChatSessionOptions {
   auth?: string;
   /** Continue an existing stored session (live resume or transcript replay). */
   resumeSessionId?: string;
+  /** Validate this first-turn message and explicit refs before opening an SDK session. */
+  preflightMessage?: string;
   /** Owning channel (telegram, tui, cli, …) — isolates gateway from TUI. */
   channel?: SessionChannel;
   /** Cron job id when channel=cron (I-68 run log). */
@@ -127,6 +129,8 @@ export type TurnOutcome =
       kind: "error";
       message: string;
       fatal: boolean;
+      /** One-shot CLI mapping for input/context failures; engine failures default to EX_SOFTWARE. */
+      exitCode?: ExitCode;
       partialAssistantText?: string;
       /** The SDK run itself failed (status=error), vs. a pre/post-run logic error. */
       runFailed?: boolean;
@@ -250,9 +254,71 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   const store = opts.store ?? createStore(dir, cfg.stateDir);
   const gatewayPeerIds = new Set(Object.values(loadGatewayPeers(dir).peers));
 
+  // Resume metadata is part of the session identity. Load it before resolving
+  // the engine adapter so channel-specific tool policy uses the stored surface.
+  let existingSession: SessionRecord | undefined;
+  if (opts.resumeSessionId) {
+    existingSession = await store.getSession(opts.resumeSessionId);
+    if (!existingSession) {
+      await store.close();
+      return { ok: false, code: EXIT.usage, message: `session '${opts.resumeSessionId}' not found` };
+    }
+    if (!sessionAllowedForChannel(existingSession, opts.channel, gatewayPeerIds)) {
+      await store.close();
+      return {
+        ok: false,
+        code: EXIT.usage,
+        message: sessionChannelConflictMessage(existingSession),
+      };
+    }
+    const sessionEngine = (existingSession.engine ?? "").trim() || "cursor";
+    if (sessionEngine !== provider) {
+      await store.close();
+      return {
+        ok: false,
+        code: EXIT.usage,
+        message: `session '${opts.resumeSessionId}' was created with engine '${sessionEngine}', but the active engine is '${provider}'. Set engine.provider to '${sessionEngine}' or start a new session.`,
+      };
+    }
+  }
+
+  const effectiveChannel = existingSession?.channel?.trim() || opts.channel;
+  const preflightCwd = existingSession ? existingSession.cwd || cfg.cwd : opts.cwd || cfg.cwd;
+  const preflightMessage = opts.preflightMessage;
+
+  // The final prompt depends on whether live resume succeeds (live skips
+  // first-turn injections; replay includes them), so preflight only the
+  // user-controlled message and explicit @file/@dir/@memory refs here. The
+  // fully composed prompt is gated again in sendTurn after connect mode is known.
+  if (preflightMessage !== undefined) {
+    try {
+      const preflightPrompt = await composePrompt({
+        userPrompt: preflightMessage.trim(),
+        cwd: preflightCwd,
+        dir,
+      });
+      const gate = await safetyGate({
+        prompt: preflightPrompt,
+        interactive,
+        confirm: opts.confirm,
+        override: opts.yesIUnderstand,
+      });
+      if (!gate.allowed) {
+        await store.close();
+        return { ok: false, code: EXIT.noperm, message: `blocked — ${gate.reason}` };
+      }
+    } catch (e) {
+      await store.close();
+      if (e instanceof ContextRefError || e instanceof MemoryError) {
+        return { ok: false, code: EXIT.usage, message: e.message };
+      }
+      throw e;
+    }
+  }
+
   let sdk: ChatSdk;
   try {
-    const denyDestructive = resolveDenyDestructive(cfg.engine, opts.channel);
+    const denyDestructive = resolveDenyDestructive(cfg.engine, effectiveChannel);
     sdk = await resolveSdk(provider, authMode, denyDestructive, opts.sdk, resolveSanitizeInput(cfg.engine));
   } catch (e) {
     await store.close();
@@ -264,43 +330,165 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   let sessionId: string;
   let connectMode: ConnectMode | "fresh" = "fresh";
   let replayPrefix = "";
-  let sessionCwd = opts.cwd ?? cfg.cwd;
+  let sessionCwd = preflightCwd;
   let sessionChannel = opts.channel ?? "";
+  let sessionTitle = "chat session";
+  let sessionRuntime: string = cfg.runtime;
   const sessionCronJob = opts.cronJob?.trim() ?? "";
   let lastAgentTouchAt = Date.now();
   /** True when the previous agent was disposed but its replacement failed to start. */
   let agentBroken = false;
+  const confirm: Confirmer = opts.confirm ?? (async () => false);
 
-  if (opts.resumeSessionId) {
-    const existing = await store.getSession(opts.resumeSessionId);
-    if (!existing) {
-      await store.close();
-      return { ok: false, code: EXIT.usage, message: `session '${opts.resumeSessionId}' not found` };
+  type PreparedTurn = {
+    msg: string;
+    sendMsg: string;
+    isFirstTurn: boolean;
+    hookEnv: { prompt: string; sessionId: string; channel: string; cwd: string };
+  };
+  type RejectedTurnOutcome = Exclude<TurnOutcome, { kind: "ok" }>;
+  type PrepareTurnResult =
+    | { ok: true; turn: PreparedTurn }
+    | { ok: false; outcome: RejectedTurnOutcome };
+
+  class ReplayPreparationRejected extends Error {
+    constructor(readonly outcome: RejectedTurnOutcome) {
+      super(outcome.kind === "blocked" ? outcome.reason : outcome.message);
+      this.name = "ReplayPreparationRejected";
     }
+  }
+
+  let stagedReplayTurn: PreparedTurn | undefined;
+
+  // Memory/profile injections are enhancements: when their store is down
+  // the turn must degrade (no memory blocks), not fail — postmortem
+  // 2026-06-18 had PG down keep the poll alive while EVERY turn failed
+  // (I-137). ContextRefError/MemoryError stay user-visible via the catch.
+  const soft = async <T>(label: string, fallback: T, fn: () => Promise<T>): Promise<T> => {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof ContextRefError || e instanceof MemoryError) throw e;
+      log(
+        `[chat] ${label} failed — continuing without it: ${e instanceof Error ? e.message : String(e)}`
+      );
+      opts.onStoreDegraded?.(label);
+      return fallback;
+    }
+  };
+
+  const prepareTurn = async (
+    userMessage: string,
+    isFirstTurn: boolean,
+    onComposed?: () => void
+  ): Promise<PrepareTurnResult> => {
+    const msg = userMessage.trim();
+    if (!msg) {
+      return {
+        ok: false,
+        outcome: { kind: "error", message: "empty message", fatal: false, exitCode: EXIT.usage },
+      };
+    }
+
+    let sendMsg: string;
+    try {
+      const { taskText, blocks: preTurnBlocks } = await soft(
+        "preTurn blocks",
+        { taskText: msg, blocks: [] as string[] },
+        () =>
+          buildPreTurnBlocks({
+            dir,
+            cfg,
+            rawMessage: msg,
+            includeProfile: isFirstTurn,
+            channel: sessionChannel,
+          })
+      );
+      const sessionMemoryBlocks = isFirstTurn
+        ? await soft("session-start memory", [] as string[], () => sessionStartMemoryBlocks(dir, cfg))
+        : [];
+      const autoRagBlocks = await soft("autoRag memory", [] as string[], () =>
+        autoRagMemoryBlocks(dir, taskText, cfg)
+      );
+      sendMsg = await composePrompt({
+        userPrompt: taskText,
+        cwd: sessionCwd,
+        dir,
+        skills: isFirstTurn ? skills : [],
+        sessionMemoryBlocks,
+        preTurnBlocks,
+        autoRagBlocks,
+      });
+    } catch (e) {
+      if (e instanceof ContextRefError || e instanceof MemoryError) {
+        return {
+          ok: false,
+          outcome: { kind: "error", message: e.message, fatal: false, exitCode: EXIT.usage },
+        };
+      }
+      throw e;
+    }
+
+    // Preserve the existing once-per-session rule: a composed first turn is
+    // consumed before hooks/gating, even when either one blocks it.
+    onComposed?.();
+
+    const hookEnv = {
+      prompt: msg,
+      sessionId,
+      channel: sessionChannel,
+      cwd: sessionCwd,
+    };
+    if (cfg.hooks?.preTurn) {
+      const pre = runPreTurnHook(cfg.hooks.preTurn, hookEnv);
+      if (!pre.allowed) {
+        return { ok: false, outcome: { kind: "blocked", reason: pre.reason ?? "preTurn hook denied" } };
+      }
+      if (pre.appendStdout) {
+        sendMsg = `${sendMsg}\n\n[hook:preTurn]\n${pre.appendStdout}`;
+      }
+    }
+
+    const gate = await safetyGate({
+      prompt: sendMsg,
+      interactive,
+      confirm,
+      override: opts.yesIUnderstand,
+    });
+    if (!gate.allowed) {
+      return { ok: false, outcome: { kind: "blocked", reason: gate.reason } };
+    }
+
+    return { ok: true, turn: { msg, sendMsg, isFirstTurn, hookEnv } };
+  };
+
+  if (existingSession) {
+    const existing = existingSession;
     const resumedAt = Date.parse(existing.updated_at);
     if (Number.isFinite(resumedAt)) lastAgentTouchAt = resumedAt;
-    if (!sessionAllowedForChannel(existing, opts.channel, gatewayPeerIds)) {
-      await store.close();
-      return {
-        ok: false,
-        code: EXIT.usage,
-        message: sessionChannelConflictMessage(existing),
-      };
-    }
-    const sessionEngine = (existing.engine ?? "").trim() || "cursor";
-    if (sessionEngine !== provider) {
-      await store.close();
-      return {
-        ok: false,
-        code: EXIT.usage,
-        message: `session '${opts.resumeSessionId}' was created with engine '${sessionEngine}', but the active engine is '${provider}'. Set engine.provider to '${sessionEngine}' or start a new session.`,
-      };
-    }
     sessionId = existing.id;
     sessionCwd = existing.cwd || cfg.cwd;
-    sessionChannel = existing.channel?.trim() || opts.channel || "";
+    sessionChannel = effectiveChannel || "";
+    sessionTitle = existing.title || sessionTitle;
+    sessionRuntime = existing.runtime || sessionRuntime;
     try {
-      const connected = await connectAgentForSession(sdk, store, existing, cfg, apiKey, mcpServers);
+      const beforeReplayCreate =
+        preflightMessage === undefined
+          ? undefined
+          : async () => {
+              const prepared = await prepareTurn(preflightMessage, true);
+              if (!prepared.ok) throw new ReplayPreparationRejected(prepared.outcome);
+              stagedReplayTurn = prepared.turn;
+            };
+      const connected = await connectAgentForSession(
+        sdk,
+        store,
+        existing,
+        cfg,
+        apiKey,
+        mcpServers,
+        beforeReplayCreate ? { beforeReplayCreate } : undefined
+      );
       agent = connected.agent;
       connectMode = connected.mode;
       replayPrefix = connected.replayPrefix;
@@ -311,6 +499,16 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       }
     } catch (e) {
       await store.close();
+      if (e instanceof ReplayPreparationRejected) {
+        if (e.outcome.kind === "blocked") {
+          return { ok: false, code: EXIT.noperm, message: `blocked — ${e.outcome.reason}` };
+        }
+        return {
+          ok: false,
+          code: e.outcome.exitCode ?? EXIT.software,
+          message: e.outcome.message,
+        };
+      }
       const msg = e instanceof StartupError ? e.message : String(e);
       return { ok: false, code: EXIT.software, message: "resume failed: " + redact(msg) };
     }
@@ -336,9 +534,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
   try {
     await store.upsertSession({
       id: sessionId,
-      title: "chat session",
+      title: sessionTitle,
       cwd: sessionCwd,
-      runtime: cfg.runtime,
+      runtime: sessionRuntime,
       sdk_agent_id: agent.agentId ?? null,
       last_status: connectMode === "fresh" ? "created" : "resumed",
       channel: sessionChannel,
@@ -352,7 +550,6 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
   // Live resume keeps SDK context — skip skills/onStart reinjection (gateway restart post-mortem 2026-06-13).
   let firstTurn = connectMode !== "resumed";
-  const confirm: Confirmer = opts.confirm ?? (async () => false);
 
   const runLogMeta = () =>
     buildRunLogMeta({
@@ -370,90 +567,31 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       const onActivity = turnHooks?.onActivity ?? opts.onActivity;
       const onAssistantDelta = turnHooks?.onAssistantDelta ?? opts.onAssistantDelta;
       const onThinkingDelta = turnHooks?.onThinkingDelta ?? opts.onThinkingDelta;
-      const msg = userMessage.trim();
-      if (!msg) return { kind: "error", message: "empty message", fatal: false };
-
-      let sendMsg: string;
-      const isFirstTurn = firstTurn;
-      // Memory/profile injections are enhancements: when their store is down
-      // the turn must degrade (no memory blocks), not fail — postmortem
-      // 2026-06-18 had PG down keep the poll alive while EVERY turn failed
-      // (I-137). ContextRefError/MemoryError stay user-visible via the catch.
-      const soft = async <T>(label: string, fallback: T, fn: () => Promise<T>): Promise<T> => {
-        try {
-          return await fn();
-        } catch (e) {
-          if (e instanceof ContextRefError || e instanceof MemoryError) throw e;
-          log(
-            `[chat] ${label} failed — continuing without it: ${e instanceof Error ? e.message : String(e)}`
-          );
-          opts.onStoreDegraded?.(label);
-          return fallback;
+      let preparedTurn: PreparedTurn;
+      if (stagedReplayTurn) {
+        const msg = userMessage.trim();
+        if (msg !== stagedReplayTurn.msg) {
+          return {
+            kind: "error",
+            message: "message differs from the preflighted first turn",
+            fatal: false,
+            exitCode: EXIT.usage,
+          };
         }
-      };
-      try {
-        const { taskText, blocks: preTurnBlocks } = await soft(
-          "preTurn blocks",
-          { taskText: msg, blocks: [] as string[] },
-          () =>
-            buildPreTurnBlocks({
-              dir,
-              cfg,
-              rawMessage: msg,
-              includeProfile: isFirstTurn,
-              channel: sessionChannel,
-            })
-        );
-        const sessionMemoryBlocks = isFirstTurn
-          ? await soft("session-start memory", [] as string[], () => sessionStartMemoryBlocks(dir, cfg))
-          : [];
-        const autoRagBlocks = await soft("autoRag memory", [] as string[], () =>
-          autoRagMemoryBlocks(dir, taskText, cfg)
-        );
-        sendMsg = await composePrompt({
-          userPrompt: taskText,
-          cwd: sessionCwd,
-          dir,
-          skills: isFirstTurn ? skills : [],
-          sessionMemoryBlocks,
-          preTurnBlocks,
-          autoRagBlocks,
+        preparedTurn = stagedReplayTurn;
+        stagedReplayTurn = undefined;
+        firstTurn = false;
+      } else {
+        const isFirstTurn = firstTurn;
+        const prepared = await prepareTurn(userMessage, isFirstTurn, () => {
+          firstTurn = false;
         });
-      } catch (e) {
-        if (e instanceof ContextRefError) return { kind: "error", message: e.message, fatal: false };
-        if (e instanceof MemoryError) return { kind: "error", message: e.message, fatal: false };
-        throw e;
-      }
-      // Profile/skills/onStart apply once per session — consume before gate so blocked first turns do not re-inject.
-      firstTurn = false;
-
-      const hookEnv = {
-        prompt: msg,
-        sessionId,
-        channel: sessionChannel,
-        cwd: sessionCwd,
-      };
-      if (cfg.hooks?.preTurn) {
-        const pre = runPreTurnHook(cfg.hooks.preTurn, hookEnv);
-        if (!pre.allowed) {
-          return { kind: "blocked", reason: pre.reason ?? "preTurn hook denied" };
-        }
-        if (pre.appendStdout) {
-          sendMsg = `${sendMsg}\n\n[hook:preTurn]\n${pre.appendStdout}`;
-        }
+        if (!prepared.ok) return prepared.outcome;
+        preparedTurn = prepared.turn;
       }
 
-      // Gate the composed prompt (message + expanded @file/@memory refs), not
-      // the replay transcript — history was already gated when first sent.
-      const gate = await safetyGate({
-        prompt: sendMsg,
-        interactive,
-        confirm,
-        override: opts.yesIUnderstand,
-      });
-      if (!gate.allowed) {
-        return { kind: "blocked", reason: gate.reason };
-      }
+      const { msg, hookEnv, isFirstTurn } = preparedTurn;
+      let sendMsg = preparedTurn.sendMsg;
 
       // Composed prompt without any replay prefix — rotation regenerates its own.
       const coreSendMsg = sendMsg;
@@ -557,7 +695,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             id: sessionId,
             title: await resolveSessionTitle(store, sessionId, msg),
             cwd: sessionCwd,
-            runtime: cfg.runtime,
+            runtime: sessionRuntime,
             sdk_agent_id: agent.agentId ?? null,
             last_status: "agent_rotated",
             channel: sessionChannel,
@@ -676,7 +814,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
               started_at: startedAt,
               finished_at: nowIso(),
               cwd: sessionCwd,
-              runtime: cfg.runtime,
+              runtime: sessionRuntime,
               model: cfg.model,
               input_tokens: usage.inputTokens ?? null,
               output_tokens: usage.outputTokens ?? null,
@@ -690,7 +828,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
               id: sessionId,
               title: await resolveSessionTitle(store, sessionId, msg),
               cwd: sessionCwd,
-              runtime: cfg.runtime,
+              runtime: sessionRuntime,
               sdk_agent_id: agent.agentId ?? null,
               last_status: lastStatus,
               channel: sessionChannel,
@@ -738,7 +876,11 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             ]
               .filter(Boolean)
               .join(" ");
-            if (await tryRotateAgent(rotateReason)) continue;
+            // Replaying a dirty turn can duplicate visible output or tool side
+            // effects. Rotate/retry only while the attempt is still clean.
+            if (toolCalls === 0 && turnText.length === 0 && (await tryRotateAgent(rotateReason))) {
+              continue;
+            }
             const failed = formatRunErrorMessage({ res, toolCalls, turnText });
             log(`[chat] sendTurn failed (no retry) ${failed.message}`);
             return {
@@ -774,7 +916,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
               started_at: startedAt,
               finished_at: nowIso(),
               cwd: sessionCwd,
-              runtime: cfg.runtime,
+              runtime: sessionRuntime,
               model: cfg.model,
               ...runLogMeta(),
             })
@@ -798,14 +940,21 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             continue;
           }
 
-          if (isAgentRotatableError(e) && (await tryRotateAgent(rotateReason))) continue;
+          if (
+            toolCalls === 0 &&
+            turnText.length === 0 &&
+            isAgentRotatableError(e) &&
+            (await tryRotateAgent(rotateReason))
+          ) {
+            continue;
+          }
 
           await persistSoft("upsertSession (error path)", async () =>
             store.upsertSession({
               id: sessionId,
               title: await resolveSessionTitle(store, sessionId, msg),
               cwd: sessionCwd,
-              runtime: cfg.runtime,
+              runtime: sessionRuntime,
               sdk_agent_id: agent.agentId ?? null,
               last_status: "error",
               channel: sessionChannel,
@@ -837,7 +986,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         started_at: nowIso(),
         finished_at: nowIso(),
         cwd: sessionCwd,
-        runtime: cfg.runtime,
+        runtime: sessionRuntime,
         model: cfg.model,
         ...runLogMeta(),
       });

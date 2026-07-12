@@ -25,6 +25,11 @@ export interface ConnectResult {
   liveResumeError: string;
 }
 
+export interface ConnectAgentOptions {
+  /** Last chance to validate replay-only first-turn context before creating a fresh SDK agent. */
+  beforeReplayCreate?: (context: { liveResumeError: string }) => Promise<void>;
+}
+
 export async function replayPreamble(
   store: IStore,
   sessionId: string,
@@ -49,7 +54,8 @@ export async function connectAgentForSession(
   session: SessionRecord,
   cfg: AgentConfig,
   apiKey: string,
-  mcpServers: McpServers
+  mcpServers: McpServers,
+  opts: ConnectAgentOptions = {}
 ): Promise<ConnectResult> {
   const cwd = session.cwd || cfg.cwd;
   let liveResumeError = "";
@@ -65,6 +71,9 @@ export async function connectAgentForSession(
     liveResumeError = "no stored SDK agent id";
   }
 
+  const redactedLiveResumeError = redact(liveResumeError);
+  await opts.beforeReplayCreate?.({ liveResumeError: redactedLiveResumeError });
+
   const agent = await createSession(sdk, {
     apiKey,
     model: cfg.model,
@@ -75,6 +84,6 @@ export async function connectAgentForSession(
     agent,
     mode: "replayed",
     replayPrefix: await replayPreamble(store, session.id),
-    liveResumeError: redact(liveResumeError),
+    liveResumeError: redactedLiveResumeError,
   };
 }

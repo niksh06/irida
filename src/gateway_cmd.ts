@@ -4,7 +4,7 @@
 import { resolve } from "node:path";
 import { iridaHome } from "./env.js";
 import { loadConfig } from "./config.js";
-import { API_KEY_HELP, resolveApiKey, warmCredentialsCache } from "./credentials.js";
+import { warmCredentialsCache } from "./credentials.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import {
   GatewayConfigError,
@@ -50,8 +50,8 @@ export async function startGateway(opts: GatewayRunOptions = {}): Promise<Gatewa
   const dir = opts.dir ?? iridaHome() ?? process.cwd();
   await warmCredentialsCache(dir);
   await warmGatewayAllowlistCache(dir);
-  const { key: apiKey } = resolveApiKey(dir);
-  if (!apiKey) throw new GatewayConfigError(API_KEY_HELP);
+  // Engine selection is per peer; openChatSession performs the matching
+  // Cursor/Anthropic/account credential check when that peer opens a session.
 
   let cfg = loadGatewayConfig(dir);
   cfg = applyCliOverrides(cfg, opts);
@@ -254,4 +254,3 @@ Webhook request:
       return EXIT.usage;
   }
 }
-

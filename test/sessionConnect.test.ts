@@ -39,3 +39,46 @@ test("connectAgentForSession passes model on live resume", async () => {
   assert.deepEqual((resumeOpts as { model?: { id: string } }).model, { id: cfg.model });
   await store.close();
 });
+
+test("replay preparation can stop fallback before fresh agent create", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sessconn-"));
+  const cfg = loadConfig(dir);
+  const store = new Store(dir, cfg.stateDir);
+  await store.upsertSession({
+    id: "sess_1",
+    title: "t",
+    cwd: dir,
+    runtime: cfg.runtime,
+    sdk_agent_id: "agent-stale",
+    last_status: "created",
+    channel: "",
+  });
+
+  const order: string[] = [];
+  const sdk: SdkCreateLike & SdkResumeLike = {
+    resume: async () => {
+      order.push("resume");
+      throw new Error("agent not found CURSOR_API_KEY=cursor_secret_value_123456");
+    },
+    create: async () => {
+      order.push("create");
+      return { send: () => ({ wait: async () => ({ status: "finished" }) }) };
+    },
+  };
+
+  const session = (await store.getSession("sess_1"))!;
+  await assert.rejects(
+    connectAgentForSession(sdk, store, session, cfg, "key", {}, {
+      beforeReplayCreate: async ({ liveResumeError }) => {
+        order.push("prepare");
+        assert.match(liveResumeError, /agent not found/);
+        assert.match(liveResumeError, /<redacted>/);
+        assert.doesNotMatch(liveResumeError, /cursor_secret_value/);
+        throw new Error("blocked replay prompt");
+      },
+    }),
+    /blocked replay prompt/
+  );
+  assert.deepEqual(order, ["resume", "prepare"]);
+  await store.close();
+});

@@ -175,6 +175,43 @@ describe("in-session agent rotation", () => {
     });
   });
 
+  it("does not rotate a run_error after assistant output or tool activity", async () => {
+    await withKey(async () => {
+      const dir = mkdtempSync(resolve(tmpdir(), "rotate-status-partial-"));
+      let sendCount = 0;
+      let createCount = 0;
+      const sdk: SdkCreateLike = {
+        create: async () => {
+          createCount++;
+          return {
+            agentId: createCount === 1 ? "agent-old" : "agent-new",
+            send: async (): Promise<RunLike> => {
+              sendCount++;
+              if (sendCount > 1) return okRun("unsafe duplicate");
+              return {
+                stream: async function* () {
+                  yield { type: "tool_call", name: "shell", arguments: { command: "do-work" } };
+                  yield { type: "text", text: "partial result" };
+                },
+                wait: async () => ({ status: "error", id: "r-partial", error: "tool failed" }),
+              };
+            },
+          };
+        },
+      };
+
+      const opened = await openChatSession({ sdk, dir, interactive: false });
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+
+      const out = await opened.session.sendTurn("hello");
+      assert.equal(out.kind, "error");
+      assert.equal(sendCount, 1);
+      assert.equal(createCount, 1);
+      await opened.session.close();
+    });
+  });
+
   it("returns error when rotation retry also fails", async () => {
     await withKey(async () => {
       const dir = mkdtempSync(resolve(tmpdir(), "rotate-fail-"));

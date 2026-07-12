@@ -13,7 +13,7 @@
  *    `claude setup-token`), or — when no token is supplied — an existing
  *    `claude login` session the bundled binary reads from the OS keychain /
  *    ~/.claude/.credentials.json.
- * `applyEngineAuthEnv` sets one credential and clears the other for the call.
+ * `engineAuthEnv` gives each SDK query an isolated credential environment.
  *
  * Session identity: the Agent SDK's `session_id` is our `agentId`. We persist it
  * across turns (closure) and pass it as `resume` on the next `query()`.
@@ -50,6 +50,11 @@ export interface EngineToolPolicy {
    * worktree + the agent's own projects dir). Read tools are unaffected.
    */
   allowWriteRoots?: string[];
+  /**
+   * I-158: reasoning effort for every query of this engine instance
+   * (low|medium|high|xhigh|max). Omitted → SDK default.
+   */
+  effort?: string;
 }
 
 type ToolDecision =
@@ -194,32 +199,24 @@ export function writeRootsViolation(
   return `${toolName} target ${target} is outside the allowed write roots (${roots.join(", ")})`;
 }
 
-function restoreEnv(name: string, prev: string | undefined): void {
-  if (prev === undefined) delete process.env[name];
-  else process.env[name] = prev;
-}
-
 /**
- * Point the Agent SDK at exactly one credential for the duration of a call, then
- * restore. `secret` may be empty in account mode → rely on the `claude login`
- * session. Returns a restore thunk; always call it in `finally`.
+ * Build the complete subprocess environment for one Agent SDK query. Passing
+ * credentials through query options avoids mutating process.env while parallel
+ * gateway turns are streaming. `secret` may be empty in account mode → inherit
+ * an existing OAuth token or rely on the `claude login` session.
  */
-export function applyEngineAuthEnv(authMode: EngineAuth, secret: string): () => void {
-  const prevApiKey = process.env.ANTHROPIC_API_KEY;
-  const prevOauth = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+export function engineAuthEnv(authMode: EngineAuth, secret: string): NodeJS.ProcessEnv {
+  const env = { ...process.env };
   if (authMode === "account") {
     // API key would take precedence over account auth — clear it for this call.
-    delete process.env.ANTHROPIC_API_KEY;
-    if (secret) process.env.CLAUDE_CODE_OAUTH_TOKEN = secret;
+    delete env.ANTHROPIC_API_KEY;
+    if (secret) env.CLAUDE_CODE_OAUTH_TOKEN = secret;
     // empty secret → leave any inherited token / fall back to `claude login`.
   } else {
-    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
-    if (secret) process.env.ANTHROPIC_API_KEY = secret;
+    delete env.CLAUDE_CODE_OAUTH_TOKEN;
+    if (secret) env.ANTHROPIC_API_KEY = secret;
   }
-  return () => {
-    restoreEnv("ANTHROPIC_API_KEY", prevApiKey);
-    restoreEnv("CLAUDE_CODE_OAUTH_TOKEN", prevOauth);
-  };
+  return env;
 }
 
 /** Map irida MCP entries ({command}|{url}) to Agent SDK McpServerConfig. */
@@ -253,10 +250,13 @@ type QueryOptions = {
   model: string;
   cwd: string;
   permissionMode: string;
+  env?: NodeJS.ProcessEnv;
   canUseTool?: CanUseTool;
   mcpServers?: Record<string, unknown>;
   resume?: string;
   disallowedTools?: string[];
+  /** I-158: reasoning effort for the run (SDK: low|medium|high|xhigh|max). */
+  effort?: string;
 };
 
 /**
@@ -340,6 +340,7 @@ export function createClaudeAgentSdk(opts?: {
   const denyDestructive = opts?.toolPolicy?.denyDestructive ?? false;
   const sanitizeInput = opts?.toolPolicy?.sanitizeInput ?? false;
   const allowWriteRoots = opts?.toolPolicy?.allowWriteRoots;
+  const effort = opts?.toolPolicy?.effort;
 
   /** Interactive agent handle: one Agent SDK session, resumed per turn. */
   function makeAgent(init: {
@@ -354,20 +355,15 @@ export function createClaudeAgentSdk(opts?: {
       agentId: sessionId,
       async send(message: string, sendOpts?: AgentSendOptions): Promise<RunLike> {
         const model = sendOpts?.model?.id?.trim() || init.model;
-        const restore = applyEngineAuthEnv(authMode, init.apiKey);
-        let q: AsyncIterable<Record<string, unknown>>;
-        try {
-          q = await startQuery(message, {
-            model,
-            cwd: init.cwd,
-            ...permissionOptions(denyDestructive, sanitizeInput, allowWriteRoots),
-            ...(init.mcpServers ? { mcpServers: init.mcpServers } : {}),
-            ...(sessionId ? { resume: sessionId } : {}),
-          });
-        } catch (e) {
-          restore();
-          throw e;
-        }
+        const q = await startQuery(message, {
+          model,
+          cwd: init.cwd,
+          env: engineAuthEnv(authMode, init.apiKey),
+          ...permissionOptions(denyDestructive, sanitizeInput, allowWriteRoots),
+          ...(effort ? { effort } : {}),
+          ...(init.mcpServers ? { mcpServers: init.mcpServers } : {}),
+          ...(sessionId ? { resume: sessionId } : {}),
+        });
 
         let status = "finished";
         let sid = sessionId;
@@ -399,7 +395,6 @@ export function createClaudeAgentSdk(opts?: {
               sessionId = sid; // persist for the next turn's resume
               finished = true;
               resolveWait();
-              restore();
             }
           },
           async wait() {
@@ -418,19 +413,16 @@ export function createClaudeAgentSdk(opts?: {
 
   return {
     async prompt(message, sdkOpts): Promise<SdkPromptResult> {
-      const restore = applyEngineAuthEnv(authMode, sdkOpts.apiKey ?? "");
-      try {
-        const q = await startQuery(message, {
-          model: sdkOpts.model.id,
-          cwd: sdkOpts.local.cwd,
-          ...permissionOptions(denyDestructive, sanitizeInput, allowWriteRoots),
-          ...(toAgentMcpServers(sdkOpts.mcpServers) ? { mcpServers: toAgentMcpServers(sdkOpts.mcpServers) } : {}),
-          ...(sdkOpts.disallowedTools?.length ? { disallowedTools: sdkOpts.disallowedTools } : {}),
-        });
-        return await collectOneShot(q);
-      } finally {
-        restore();
-      }
+      const q = await startQuery(message, {
+        model: sdkOpts.model.id,
+        cwd: sdkOpts.local.cwd,
+        env: engineAuthEnv(authMode, sdkOpts.apiKey ?? ""),
+        ...permissionOptions(denyDestructive, sanitizeInput, allowWriteRoots),
+        ...(effort ? { effort } : {}),
+        ...(toAgentMcpServers(sdkOpts.mcpServers) ? { mcpServers: toAgentMcpServers(sdkOpts.mcpServers) } : {}),
+        ...(sdkOpts.disallowedTools?.length ? { disallowedTools: sdkOpts.disallowedTools } : {}),
+      });
+      return collectOneShot(q);
     },
 
     create(o) {

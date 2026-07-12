@@ -1,0 +1,46 @@
+Aleph **daily ops report** — "как прошёл дейлик". Single agent, ONE run.
+
+Output **ONLY** the final Telegram message body (Russian) — no preamble, no tool narration.
+
+## Step 1 — collect the facts (deterministic, do not improvise)
+
+Run via shell (cwd is already /Users/nsh/Downloads/Aleph):
+
+```
+POSTGRES_HOST=127.0.0.1 POSTGRES_HOST_PORT=5439 POSTGRES_DB=aleph \
+POSTGRES_USER=aleph POSTGRES_PASSWORD=aleph \
+PYTHONPATH=scripts .venv/bin/python -m kraken.daily_report
+```
+
+The script is the single source of truth: RESULT verdict, stage problems
+(FAILED / MISSING / ZOMBIE), doctor non-PASS lines, per-stage table, alert-lane
+counts. Exit code 1 = поломки, 0 = чисто.
+
+If the command itself fails (no DB, no venv): output exactly
+`🔧 Aleph · дейлик · {today} · daily_report не запустился: {первая строка ошибки}` and stop.
+
+## Step 2 — format for Telegram
+
+**Breakage-first, две тональности:**
+
+**Если RESULT = ПОЛОМКИ (или exit 1):** начни с `🔴 Aleph · дейлик · {date} · ПОЛОМКИ`,
+затем дословно перечисли каждую строку из «ПРОБЛЕМЫ СТАДИЙ» и «DOCTOR НЕ-PASS»
+(не сокращай и не перефразируй причины — оператор реагирует по ним), затем 1–2
+предложения твоей диагностики (какая стадия корневая, что зацепит downstream), затем
+короткую сводку здоровых стадий одной строкой.
+
+**Если RESULT = OK / OK (с WARN):** компактный heartbeat ≤12 строк:
+```
+🟢 Aleph · дейлик · {date} · OK
+doctor {N} PASS / {M} WARN / 0 FAIL
+Инжест: nvd {wrote} · cvelist {wrote} · osv {wrote} · ghsa {wrote} · vulnx {wrote} · dbugs {wrote}
+Граф: +{new_cves} CVE · алерты: born {n} · solo {n} · cooc {n}
+Пифия: {краткая строка из pythia-stage}
+{если есть WARN — по строке на каждый: ⚠ имя: detail}
+```
+
+## Rules
+
+- Числа и причины — только из вывода скрипта, ничего не выдумывать.
+- Не глотать WARN: каждый non-PASS доктора виден в сообщении всегда.
+- ≤2500 символов. Русский. Без markdown-таблиц (Telegram), без tool-нарратива.

@@ -1,0 +1,61 @@
+Aleph **alerts digest** — single agent. Produce the daily exploitation-proximity digest in ONE run.
+Window: **last 26 hours** — compute `WINDOW_START = now − 26h` (local), `WINDOW_END = now`.
+
+Output **ONLY** the final Telegram message body (Russian) — no preamble, no tool narration.
+
+## Setup
+
+1. Fetch alerts **once**:
+   - `GET http://127.0.0.1:8011/api/v1/alerts?since={WINDOW_START ISO}&limit=200`
+   - (curl via shell; the API is local, no auth.)
+2. If the API is down (connection refused): output exactly
+   `🚨 Aleph · алерты · {WINDOW_END} · API недоступен (aleph-api контейнер?)` and stop.
+3. Optional enrich (≤5 calls, only for items you feature in detail):
+   `GET http://127.0.0.1:8011/api/v1/cve/{cve_id}` — description/CVSS/EPSS.
+
+## What these alerts ARE (frame honestly, never oversell)
+
+Three no-ML lanes of **contemporaneous facts** from the semantic graph — proximity to
+exploitation, NOT forecasts:
+- `born_near_kev` — новый CVE родился семантическим соседом уже эксплуатируемого (KEV);
+  trigger_cve = кто именно; distance = косинус (меньше = ближе).
+- `cooc_partner_kev` — его партнёр по PoC-репозиториям только что вошёл в KEV
+  (used-together evidence, detail.repo_count).
+- `kev_profile_solo` — новый CVE совпал с доминирующим профилем эксплуатируемых
+  одиночек (F-133): семантически уникален + NETWORK/CRITICAL + инъекция/auth-bypass CWE.
+  Это профиль-матч (класс), не связь с конкретным KEV.
+
+## Output (the only thing you print)
+
+**Hard limit ≤3000 characters.** Severity сортировка high → medium → low; внутри — новее раньше.
+Если алертов много — топ-5 на лейн, остальное одной строкой «+N ещё».
+
+```
+🚨 Aleph · алерты · {WINDOW_END date}
+{total} за окно · high {n_high} · medium {n_med} · low {n_low}
+
+**TL;DR:** 1–2 предложения: что сегодня главное (самый горячий алерт/кластер и почему).
+
+## Родились рядом с KEV ({n})
+- **{cve_id}** ← сосед {trigger_cve} (dist {d:.2f}) — {однострочная суть из description, ≤90 симв.}
+  https://nvd.nist.gov/vuln/detail/{cve_id}
+
+## PoC-партнёр вошёл в KEV ({n})
+- **{cve_id}** ⛓ {trigger_cve} (repos ×{repo_count}) — {суть}
+
+## Профиль KEV-одиночки ({n})
+- **{cve_id}** · {detail.cwe} · d5 {detail.d5:.2f} — {суть}
+
+---
+Панель: http://127.0.0.1:5175/?alerts=1 · карточка: ?cve={id}
+```
+
+- Пустой лейн — пропусти секцию целиком (не пиши «нет»).
+- Если алертов нет вообще: `🚨 Aleph · алерты · {WINDOW_END} · за окно тишина (это тоже сигнал).`
+
+## Rules
+
+- Russian. Факты, не прогнозы — не пиши «будет эксплуатироваться», пиши «рядом с
+  эксплуатируемым» / «совпал с профилем».
+- Не выдумывай CVE и описания: только из API. Не делай memory/Obsidian записей.
+- Ссылки nvd.nist.gov голым текстом (без markdown-линков).

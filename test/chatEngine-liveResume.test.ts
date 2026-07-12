@@ -5,6 +5,7 @@ import { saveMemory } from "../src/memory.js";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openChatSession } from "../src/chatEngine.js";
+import { Store } from "../src/store.js";
 import type { AgentLike, RunLike, SdkCreateLike, SdkResumeLike } from "../src/host.js";
 
 async function withKey<T>(fn: () => Promise<T>): Promise<T> {
@@ -134,6 +135,58 @@ test("transcript replay still injects skills on first turn", async () => {
     assert.match(sent[0] ?? "", /UNIQUE_SKILL_BODY_12345/);
     assert.match(sent[0] ?? "", /Earlier in this session/);
     await opened2.session.close();
+  });
+});
+
+test("resume preflight uses the same cwd as the stored session fallback", async () => {
+  await withKey(async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), "chat-resume-cwd-"));
+    const alternateCwd = mkdtempSync(resolve(tmpdir(), "chat-resume-alt-"));
+    writeFileSync(join(alternateCwd, "only-alt.txt"), "available only through opts.cwd");
+    const store = new Store(dir, ".agent");
+    await store.upsertSession({
+      id: "sess_legacy_cwd",
+      title: "legacy",
+      cwd: "",
+      runtime: "local",
+      sdk_agent_id: "agent-live",
+      last_status: "finished",
+      channel: "",
+    });
+    await store.close();
+
+    const calls = { resume: 0, create: 0 };
+    const makeAgent = (): AgentLike => ({
+      agentId: "agent-live",
+      send: async () => okRun(),
+      close: async () => {},
+    });
+    const sdk: SdkCreateLike & SdkResumeLike = {
+      resume: async () => {
+        calls.resume++;
+        return makeAgent();
+      },
+      create: async () => {
+        calls.create++;
+        return makeAgent();
+      },
+    };
+
+    const opened = await openChatSession({
+      sdk,
+      dir,
+      cwd: alternateCwd,
+      resumeSessionId: "sess_legacy_cwd",
+      preflightMessage: "review @file:only-alt.txt",
+      interactive: false,
+    });
+    if (opened.ok) {
+      await opened.session.close();
+      assert.fail("preflight unexpectedly resolved the ref through opts.cwd");
+    }
+    assert.equal(opened.code, 64);
+    assert.match(opened.message, /file not found/);
+    assert.deepEqual(calls, { resume: 0, create: 0 });
   });
 });
 
