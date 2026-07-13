@@ -25,6 +25,7 @@ import {
   classifyTelegramChat,
   authorizeTelegramSender,
   isStoreUnavailableError,
+  isContextOverflowError,
   classifyGatewayFailure,
   TELEGRAM_MESSAGE_MAX,
   TELEGRAM_RICH_MESSAGE_MAX,
@@ -685,6 +686,24 @@ test("classifyGatewayFailure maps errors to typed kinds", () => {
   );
   assert.equal(classifyGatewayFailure(new Error("chat not allowed")), "chat-not-allowed");
   assert.equal(classifyGatewayFailure(new Error("kaboom")), "internal");
+});
+
+test("isContextOverflowError detects the resumed-session-too-large failure", () => {
+  assert.equal(
+    isContextOverflowError("Claude Code returned an error result: Prompt is too long"),
+    true
+  );
+  assert.equal(isContextOverflowError("PROMPT IS TOO LONG"), true);
+  // Not a context overflow:
+  assert.equal(isContextOverflowError("message too long"), false); // Telegram's own maxMessageLength, unrelated
+  assert.equal(isContextOverflowError("kaboom"), false);
+});
+
+test("classifyGatewayFailure maps the context-overflow failure distinctly from internal", () => {
+  assert.equal(
+    classifyGatewayFailure(new Error("Claude Code returned an error result: Prompt is too long")),
+    "context-overflow"
+  );
 });
 
 test("summarizeTelegramUpdateTypes counts batch types", () => {

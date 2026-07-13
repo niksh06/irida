@@ -146,12 +146,25 @@ export function isStoreUnavailableError(message: string): boolean {
   );
 }
 
+/**
+ * A resumed session's cumulative transcript has outgrown what the model
+ * accepts. Rotation-with-replay does not help here (the fresh agent still
+ * resumes the same oversized underlying conversation) — the only real fix is
+ * `/new`, which drops the persisted session id entirely (gatewayRouter's
+ * resetPeer). Surfacing this distinctly turns an infinite, unexplained
+ * "Something went wrong" loop into one actionable message.
+ */
+export function isContextOverflowError(message: string): boolean {
+  return /\bprompt is too long\b/i.test(message);
+}
+
 /** Why an inbound turn failed — adapters branch on this, never on raw messages. */
 export type GatewayFailureKind =
   | "busy"
   | "message-too-long"
   | "chat-not-allowed"
   | "store-unavailable"
+  | "context-overflow"
   | "internal";
 
 /**
@@ -164,6 +177,7 @@ export function classifyGatewayFailure(e: unknown): GatewayFailureKind {
   const message = e instanceof Error ? e.message : String(e);
   if (message === "chat not allowed") return "chat-not-allowed";
   if (isStoreUnavailableError(message)) return "store-unavailable";
+  if (isContextOverflowError(message)) return "context-overflow";
   return "internal";
 }
 
@@ -886,6 +900,15 @@ export function startTelegramPoller(opts: TelegramPollerOptions): TelegramPoller
         await deliverWithRetry(
           result.chatId,
           "Store temporarily unavailable — your message wasn't processed. Try again shortly.",
+          false
+        );
+      } else if (kind === "context-overflow") {
+        // This session's transcript outgrew the model's limit — every message
+        // will keep failing the same way until the session is reset. Say so
+        // instead of the generic "check gateway logs" (which the user can't act on).
+        await deliverWithRetry(
+          result.chatId,
+          "This session's context grew too large for the model. Send /new to start a fresh session — your old messages stay in history.",
           false
         );
       } else {
