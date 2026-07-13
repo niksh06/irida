@@ -360,6 +360,16 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
   let stagedReplayTurn: PreparedTurn | undefined;
 
+  /**
+   * `/compact` must reach the Claude Agent SDK verbatim — its manual-compaction
+   * trigger only recognizes an exact "/compact" prompt (see agent-sdk docs), and
+   * composePrompt/preTurn/replay would otherwise prepend mode/profile/memory/skill
+   * blocks that silently turn a context-reset request into a normal chat message
+   * (I-161 follow-up: this is how a wedged over-long session gets un-wedged
+   * WITHOUT losing history, unlike /new).
+   */
+  const isCompactCommand = (msg: string): boolean => /^\/compact\b/i.test(msg);
+
   // Memory/profile injections are enhancements: when their store is down
   // the turn must degrade (no memory blocks), not fail — postmortem
   // 2026-06-18 had PG down keep the poll alive while EVERY turn failed
@@ -391,42 +401,47 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
     }
 
     let sendMsg: string;
-    try {
-      const { taskText, blocks: preTurnBlocks } = await soft(
-        "preTurn blocks",
-        { taskText: msg, blocks: [] as string[] },
-        () =>
-          buildPreTurnBlocks({
-            dir,
-            cfg,
-            rawMessage: msg,
-            includeProfile: isFirstTurn,
-            channel: sessionChannel,
-          })
-      );
-      const sessionMemoryBlocks = isFirstTurn
-        ? await soft("session-start memory", [] as string[], () => sessionStartMemoryBlocks(dir, cfg))
-        : [];
-      const autoRagBlocks = await soft("autoRag memory", [] as string[], () =>
-        autoRagMemoryBlocks(dir, taskText, cfg)
-      );
-      sendMsg = await composePrompt({
-        userPrompt: taskText,
-        cwd: sessionCwd,
-        dir,
-        skills: isFirstTurn ? skills : [],
-        sessionMemoryBlocks,
-        preTurnBlocks,
-        autoRagBlocks,
-      });
-    } catch (e) {
-      if (e instanceof ContextRefError || e instanceof MemoryError) {
-        return {
-          ok: false,
-          outcome: { kind: "error", message: e.message, fatal: false, exitCode: EXIT.usage },
-        };
+    const bypassComposition = isCompactCommand(msg);
+    if (bypassComposition) {
+      sendMsg = msg;
+    } else {
+      try {
+        const { taskText, blocks: preTurnBlocks } = await soft(
+          "preTurn blocks",
+          { taskText: msg, blocks: [] as string[] },
+          () =>
+            buildPreTurnBlocks({
+              dir,
+              cfg,
+              rawMessage: msg,
+              includeProfile: isFirstTurn,
+              channel: sessionChannel,
+            })
+        );
+        const sessionMemoryBlocks = isFirstTurn
+          ? await soft("session-start memory", [] as string[], () => sessionStartMemoryBlocks(dir, cfg))
+          : [];
+        const autoRagBlocks = await soft("autoRag memory", [] as string[], () =>
+          autoRagMemoryBlocks(dir, taskText, cfg)
+        );
+        sendMsg = await composePrompt({
+          userPrompt: taskText,
+          cwd: sessionCwd,
+          dir,
+          skills: isFirstTurn ? skills : [],
+          sessionMemoryBlocks,
+          preTurnBlocks,
+          autoRagBlocks,
+        });
+      } catch (e) {
+        if (e instanceof ContextRefError || e instanceof MemoryError) {
+          return {
+            ok: false,
+            outcome: { kind: "error", message: e.message, fatal: false, exitCode: EXIT.usage },
+          };
+        }
+        throw e;
       }
-      throw e;
     }
 
     // Preserve the existing once-per-session rule: a composed first turn is
@@ -444,7 +459,9 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
       if (!pre.allowed) {
         return { ok: false, outcome: { kind: "blocked", reason: pre.reason ?? "preTurn hook denied" } };
       }
-      if (pre.appendStdout) {
+      // Policy gate (allow/deny) still runs for /compact; the append is skipped
+      // so the bare command reaches the SDK untouched (see isCompactCommand above).
+      if (pre.appendStdout && !bypassComposition) {
         sendMsg = `${sendMsg}\n\n[hook:preTurn]\n${pre.appendStdout}`;
       }
     }
@@ -595,7 +612,7 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
 
       // Composed prompt without any replay prefix — rotation regenerates its own.
       const coreSendMsg = sendMsg;
-      if (isFirstTurn && replayPrefix) {
+      if (isFirstTurn && replayPrefix && !isCompactCommand(msg)) {
         sendMsg = replayPrefix + "Continue. New request:\n\n" + sendMsg;
       }
       const baseSendMsg = sendMsg;
