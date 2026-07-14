@@ -9,6 +9,10 @@ export const OKF_VERSION = "0.1";
 export const OKF_TYPE_BY_WING: Readonly<Record<string, string>> = {
   "cursor-lesson": "Playbook",
   "cursor-ide": "Archive",
+  "claude-code-lesson": "Playbook",
+  "claude-code": "Archive",
+  "codex-lesson": "Playbook",
+  codex: "Archive",
   default: "Reference",
   meta: "Profile",
   episodic: "Episodic",

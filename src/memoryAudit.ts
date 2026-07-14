@@ -5,7 +5,14 @@ import { existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig, resolveMemoryRoot } from "./config.js";
 import { listMemories, memoryDir } from "./memory.js";
-import { CURSOR_TRANSCRIPT_WING, CURSOR_LESSON_WING, DISTILL_WING, DISTILL_ARCHIVE_WING } from "./memoryWings.js";
+import {
+  CURSOR_TRANSCRIPT_WING,
+  CURSOR_LESSON_WING,
+  DISTILL_WING,
+  DISTILL_ARCHIVE_WING,
+  CLAUDE_CODE_TRANSCRIPT_WING,
+  CODEX_TRANSCRIPT_WING,
+} from "./memoryWings.js";
 import { createMemoryStore, type MemoryNote, type IMemoryStore } from "./memoryStore.js";
 import { gatherMemorySilos, siloIsAligned } from "./memorySiloOps.js";
 import { EXIT } from "./exit.js";
@@ -215,7 +222,12 @@ export async function evaluateMemoryAudit(opts: MemoryAuditOptions = {}): Promis
     );
 
     const opsNotes = notes.filter(isOpsNote);
-    const archiveWings = new Set<string>([CURSOR_TRANSCRIPT_WING, "secure"]);
+    const archiveWings = new Set<string>([
+      CURSOR_TRANSCRIPT_WING,
+      CLAUDE_CODE_TRANSCRIPT_WING,
+      CODEX_TRANSCRIPT_WING,
+      "secure",
+    ]);
     const curatedNotes = notes.filter((n) => !archiveWings.has(n.wing));
     const staleOps = opsNotes.filter((n) => daysSince(n.updated_at) > staleDays);
     const staleCurated = curatedNotes.filter((n) => daysSince(n.updated_at) > staleDays);

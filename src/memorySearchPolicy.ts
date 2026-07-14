@@ -2,11 +2,22 @@
  * Default wings excluded from agent-facing memory search (FTS, semantic, autoRag).
  * Archive wings remain in PG for forensic / explicit lookup.
  */
-import { CURSOR_TRANSCRIPT_WING, EPISODIC_WING, DISTILL_ARCHIVE_WING } from "./memoryWings.js";
+import {
+  CURSOR_TRANSCRIPT_WING,
+  EPISODIC_WING,
+  DISTILL_ARCHIVE_WING,
+  CLAUDE_CODE_TRANSCRIPT_WING,
+  CODEX_TRANSCRIPT_WING,
+} from "./memoryWings.js";
 import type { MemoryConfig } from "./config.js";
 
 /** Raw transcript archive — searchable only with includeArchive. */
-export const MEMORY_ARCHIVE_WINGS = [CURSOR_TRANSCRIPT_WING, DISTILL_ARCHIVE_WING] as const;
+export const MEMORY_ARCHIVE_WINGS = [
+  CURSOR_TRANSCRIPT_WING,
+  CLAUDE_CODE_TRANSCRIPT_WING,
+  CODEX_TRANSCRIPT_WING,
+  DISTILL_ARCHIVE_WING,
+] as const;
 
 export const SECURE_WING_NAME = "secure";
 
