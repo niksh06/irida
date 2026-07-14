@@ -225,6 +225,39 @@ irida memory okf purge-tparser [--apply] [--keep-file deploy/tparser-keep.json]
 irida memory okf purge-gateway [--apply] [--keep-file deploy/gateway-keep.json]
 ```
 
+### Claude Code + Codex transcripts (I-162)
+
+Same shape as Cursor IDE mining (P3-3/R4-4), two independent sources — separate wings per
+source, not a shared wing:
+
+- Claude Code (`~/.claude/projects/<cwd>/<uuid>.jsonl`, top-level only — `subagents/` never
+  walked) → archive wing **`claude-code`** (`cc.<uuid>`), lesson wing **`claude-code-lesson`**.
+- Codex (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, recursive walk — `session_index.jsonl`
+  is not a sufficient discovery source, see I-162) → archive wing **`codex`** (`codex.<uuid>`),
+  lesson wing **`codex-lesson`**.
+
+Both are streamed line-by-line (never `readFileSync` whole-file — source transcripts run
+60-120+MB), restrict to conversational lines only, and run `redact()` on the full assembled
+body before saving — flagged higher-stakes than Cursor since these transcripts routinely
+contain raw `psql`/`curl`/config-dump output from real incident-debugging sessions.
+
+```bash
+irida memory mine-claude-code                # last 7 days, max 30 (default)
+irida memory mine-claude-code --all          # every transcript (backfill)
+irida memory mine-codex                      # last 7 days, max 30 (default)
+irida memory mine-codex --all                # every transcript (backfill)
+
+irida memory distill-claude-code                              # delta-style queue (no baseline yet)
+irida memory distill-claude-code --backfill --run --parallel 3 --limit 10
+irida memory distill-codex --backfill --run --dry-run         # chunk plan only
+```
+
+Cron builtins: `"builtin": "claude-code-mine"`, `"builtin": "codex-mine"` (mirror `cursor-mine`,
+scan all transcripts). Distill is CLI-only for now — no cron builtin wired yet, and no
+`--set-baseline`/`--show-baseline` (that state file is a single unparametrized
+`cursor-distill.baseline.json`; sharing it across sources would mix their timestamps). Run a
+small `--limit`/`--window-hours` pilot before ever using `--all` on these sources (I-162).
+
 ### Auto-RAG (optional, conservative pilot — I-55)
 
 When enabled, each turn silently runs memory search on the user message and prepends top hits **after** preTurn (profile/mode) and **before** `# Task`. Default **off** — MCP-first (`memory_search` on demand).
@@ -344,7 +377,7 @@ Job extras:
 - `"catchUp": "skip"` — drop stale slots instead of catching up (briefings that must not arrive late). Default `"once"`.
 - `"gateScript": "path.sh"` — cheap pre-check before waking the SDK: last stdout line `{"wakeAgent": false, "reason": "…"}` skips the run entirely (no tokens, no notify; slot is consumed). Fail-open: gate errors never block the job. Manual `cron run` bypasses the gate.
 - `"script": "path.sh"` — deterministic shell job with **no SDK at all**: non-empty stdout → notify text; empty stdout → silent success; non-zero exit → failed with stderr. Example: `deploy/scripts/csagent-watchdog.sh` (gateway/outbox/cron health, zero tokens).
-- Builtins: `"builtin": "memory-audit"` (notes/facts/silo QA), `"builtin": "session-export"` (daily transcripts → `Reports/sessions/YYYY-MM-DD/`), `"builtin": "session-ingest"` (sessions → episodic memory notes), `"builtin": "cursor-mine"` (all Cursor IDE transcripts → wing `cursor-ide`), `"builtin": "cursor-distill-queue"` (stale/missing distill candidates for I-65). Legacy `seen_post` facts: `irida memory fact purge-seen-post`.
+- Builtins: `"builtin": "memory-audit"` (notes/facts/silo QA), `"builtin": "session-export"` (daily transcripts → `Reports/sessions/YYYY-MM-DD/`), `"builtin": "session-ingest"` (sessions → episodic memory notes), `"builtin": "cursor-mine"` (all Cursor IDE transcripts → wing `cursor-ide`), `"builtin": "cursor-distill-queue"` (stale/missing distill candidates for I-65), `"builtin": "claude-code-mine"` (all Claude Code transcripts → wing `claude-code`, I-162), `"builtin": "codex-mine"` (all Codex transcripts → wing `codex`, I-162). Legacy `seen_post` facts: `irida memory fact purge-seen-post`.
 - Tick takes a cross-process lock (`cron.tick.lock`) — overlapping ticks skip instead of double-firing.
 - Optional `sessionId` binds to an existing `sess_`. Destructive prompts denied unless `"yesIUnderstand": true`. Doctor checks the **cron prompt guard** (injection patterns).
 
