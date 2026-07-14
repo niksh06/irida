@@ -33,6 +33,10 @@ export interface DistillOrchestratorOptions {
   sdk?: SdkLike;
   /** Test hook — defaults to runPrompt. */
   runFn?: (prompt: string, opts: RunOptions) => Promise<RunResult>;
+  /** Wing to scan for source transcripts (default cursor-ide). */
+  archiveWing?: string;
+  /** Wing to save distilled lessons into (default cursor-lesson). */
+  lessonWing?: string;
 }
 
 export interface DistillTranscriptResult {
@@ -75,13 +79,20 @@ ${chunk.text}
 ---`;
 }
 
-function mergePrompt(source: string, sourceHash: string | undefined, title: string, partials: string[]): string {
+function mergePrompt(
+  source: string,
+  sourceHash: string | undefined,
+  title: string,
+  partials: string[],
+  lessonWing?: string
+): string {
   const header = formatLessonHeader({
     source,
     sourceHash,
     status: "proposal",
     title,
     lessonName: cursorLessonNoteName(source),
+    lessonWing,
   });
   const joined = partials
     .map((p, i) => `### Partial ${i + 1}\n${p.trim()}`)
@@ -109,7 +120,8 @@ function singleChunkLessonPrompt(
   source: string,
   sourceHash: string | undefined,
   title: string,
-  chunk: TranscriptChunk
+  chunk: TranscriptChunk,
+  lessonWing?: string
 ): string {
   const header = formatLessonHeader({
     source,
@@ -117,6 +129,7 @@ function singleChunkLessonPrompt(
     status: "proposal",
     title,
     lessonName: cursorLessonNoteName(source),
+    lessonWing,
   });
   return `Distill this Cursor IDE chat into ONE compact lesson note.
 
@@ -173,13 +186,15 @@ async function runSubagent(
 function wrapLessonBody(
   body: string,
   candidate: DistillCandidate,
-  sourceHash: string | undefined
+  sourceHash: string | undefined,
+  lessonWing?: string
 ): string {
   return ensureOkfLessonDocument(body, {
     source: candidate.sourceName,
     sourceHash,
     lessonName: candidate.lessonName,
     title: candidate.title,
+    lessonWing,
   });
 }
 
@@ -215,7 +230,7 @@ export async function distillOneTranscript(
   dir: string,
   candidate: DistillCandidate,
   archiveBody: string,
-  opts: Pick<DistillOrchestratorOptions, "parallel" | "sdk" | "runFn" | "dryRun"> = {}
+  opts: Pick<DistillOrchestratorOptions, "parallel" | "sdk" | "runFn" | "dryRun" | "lessonWing"> = {}
 ): Promise<{ body: string; chunks: number }> {
   const runFn = opts.runFn ?? runPrompt;
   const parallel = Math.max(1, opts.parallel ?? 3);
@@ -234,7 +249,7 @@ export async function distillOneTranscript(
   let lessonBody: string;
   if (chunks.length === 1) {
     lessonBody = await runSubagent(
-      singleChunkLessonPrompt(candidate.sourceName, sourceHash, candidate.title, chunks[0]!),
+      singleChunkLessonPrompt(candidate.sourceName, sourceHash, candidate.title, chunks[0]!, opts.lessonWing),
       dir,
       model,
       opts.sdk,
@@ -245,7 +260,7 @@ export async function distillOneTranscript(
       runSubagent(chunkPrompt(chunk, candidate.title), dir, model, opts.sdk, runFn)
     );
     lessonBody = await runSubagent(
-      mergePrompt(candidate.sourceName, sourceHash, candidate.title, partials),
+      mergePrompt(candidate.sourceName, sourceHash, candidate.title, partials, opts.lessonWing),
       dir,
       model,
       opts.sdk,
@@ -253,7 +268,7 @@ export async function distillOneTranscript(
     );
   }
 
-  lessonBody = wrapLessonBody(lessonBody, candidate, sourceHash);
+  lessonBody = wrapLessonBody(lessonBody, candidate, sourceHash, opts.lessonWing);
   if (!validateLessonBodySize(lessonBody)) {
     lessonBody = truncateLessonBody(lessonBody, MAX_LESSON_BODY_BYTES);
   }
@@ -288,6 +303,7 @@ export async function runCursorDistillBatch(opts: DistillOrchestratorOptions): P
     force: opts.force,
     minBodyBytes: opts.minBodyBytes,
     backfill: opts.backfill,
+    archiveWing: opts.archiveWing,
   });
 
   const memory = createMemoryStore(opts.dir);
@@ -316,6 +332,7 @@ export async function runCursorDistillBatch(opts: DistillOrchestratorOptions): P
           sdk: opts.sdk,
           runFn: opts.runFn,
           dryRun: opts.dryRun,
+          lessonWing: opts.lessonWing,
         });
 
         if (opts.dryRun) {
@@ -331,7 +348,7 @@ export async function runCursorDistillBatch(opts: DistillOrchestratorOptions): P
 
         await memory.upsertNote({
           name: candidate.lessonName,
-          wing: CURSOR_LESSON_WING,
+          wing: opts.lessonWing ?? CURSOR_LESSON_WING,
           title: candidate.title.replace(/^Cursor chat /, "Lesson: ") || candidate.lessonName,
           body,
         });

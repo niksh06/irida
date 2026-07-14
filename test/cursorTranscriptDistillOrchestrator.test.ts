@@ -121,4 +121,39 @@ describe("cursorTranscriptDistillOrchestrator", () => {
     assert.match(lesson?.body ?? "", /Summary/);
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it("runCursorDistillBatch respects custom archiveWing/lessonWing (I-162 parametrization)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "csagent-distill-customwing-"));
+    writeMinimalConfig(dir);
+    const memory = createMemoryStore(dir);
+    await memory.upsertNote({
+      name: "cc.custom",
+      wing: "claude-code",
+      title: "Claude Code chat custom",
+      body:
+        "<!-- csagent claude-code mine; id=custom; mtime=2026-01-01T00:00:00.000Z; hash=abc123 -->\n\n## User\n\nfix bug\n\n## Assistant\n\nfixed",
+    });
+    await memory.close();
+
+    const runFn = async (): Promise<RunResult> => ({
+      exitCode: EXIT.ok,
+      text: `<!-- csagent cursor-lesson; source=cc.custom; sourceHash=abc123; status=proposal -->\n\n# Summary\n- fixed bug`,
+    });
+
+    const batch = await runCursorDistillBatch({
+      dir,
+      limit: 1,
+      backfill: true,
+      runFn,
+      archiveWing: "claude-code",
+      lessonWing: "claude-code-lesson",
+    });
+    assert.equal(batch.saved, 1);
+    const after = createMemoryStore(dir);
+    const lesson = await after.getNote("lesson.cc.custom");
+    await after.close();
+    assert.equal(lesson?.wing, "claude-code-lesson");
+    assert.match(lesson?.body ?? "", /Summary/);
+    rmSync(dir, { recursive: true, force: true });
+  });
 });

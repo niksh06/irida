@@ -63,6 +63,8 @@ export interface CursorDistillQueueOptions {
   minBodyBytes?: number;
   /** Ignore baseline — queue all stale/missing (one-time backfill). */
   backfill?: boolean;
+  /** Wing to scan for source transcripts (default cursor-ide). */
+  archiveWing?: string;
 }
 
 /** Map `cursor.<uuid>` → `lesson.<uuid>`. */
@@ -118,7 +120,10 @@ export function formatLessonHeader(opts: {
   status?: "proposal" | "approved";
   title?: string;
   lessonName?: string;
+  /** Wing to save the distilled lesson into (default cursor-lesson). */
+  lessonWing?: string;
 }): string {
+  const lessonWing = opts.lessonWing ?? CURSOR_LESSON_WING;
   const fm: OkfFrontmatter = {
     type: "Playbook",
     title: opts.title ?? opts.source,
@@ -126,7 +131,7 @@ export function formatLessonHeader(opts: {
     resource: okfMemoryResource(opts.lessonName ?? cursorLessonNoteName(opts.source)),
     tags: ["csagent", "cursor-lesson"],
     okf_version: OKF_VERSION,
-    wing: CURSOR_LESSON_WING,
+    wing: lessonWing,
     status: opts.status ?? "proposal",
     source: opts.source,
     sourceHash: opts.sourceHash,
@@ -144,15 +149,18 @@ export function ensureOkfLessonDocument(
     lessonName: string;
     title?: string;
     updatedAt?: string;
+    /** Wing to save the distilled lesson into (default cursor-lesson). */
+    lessonWing?: string;
   }
 ): string {
   const lineage = parseLessonLineage(body);
   if (lineage.source && parseOkfDocument(body)) {
     return body.trim();
   }
+  const lessonWing = opts.lessonWing ?? CURSOR_LESSON_WING;
   const migrated = migrateLessonBodyToOkf({
     name: opts.lessonName,
-    wing: CURSOR_LESSON_WING,
+    wing: lessonWing,
     body,
     updatedAt: opts.updatedAt,
   });
@@ -178,8 +186,9 @@ export async function listTranscriptsNeedingDistill(
   const minBodyBytes = Math.max(0, opts.minBodyBytes ?? 0);
   const backfill = opts.backfill === true;
   const mode = backfill ? "backfill" : "delta";
+  const archiveWing = opts.archiveWing?.trim() || CURSOR_TRANSCRIPT_WING;
 
-  const archiveNotes = await memory.listNotes(CURSOR_TRANSCRIPT_WING);
+  const archiveNotes = await memory.listNotes(archiveWing);
   const candidates: DistillCandidate[] = [];
   let skipped = 0;
 
@@ -219,7 +228,11 @@ export async function listTranscriptsNeedingDistill(
   };
 }
 
-export function formatDistillQueueMarkdown(result: CursorDistillQueueResult): string {
+export function formatDistillQueueMarkdown(
+  result: CursorDistillQueueResult,
+  opts: { lessonWing?: string } = {}
+): string {
+  const lessonWing = opts.lessonWing ?? CURSOR_LESSON_WING;
   if (!result.candidates.length) {
     const modeHint =
       result.mode === "delta" && result.baseline
@@ -247,7 +260,7 @@ export function formatDistillQueueMarkdown(result: CursorDistillQueueResult): st
       `| ${i + 1} | ${c.sourceName} | ${c.lessonName} | ${kb} | ${c.reason} | ${c.sourceHash ?? "—"} |`
     );
   }
-  lines.push("", "Read each source with `memory_get`. Save lessons to wing `cursor-lesson`.");
+  lines.push("", `Read each source with \`memory_get\`. Save lessons to wing \`${lessonWing}\`.`);
   lines.push(
     "",
     "**Upsert rule:** use the **Lesson name** column exactly. When Reason=`stale`, overwrite that note — never create a second name for the same source.",

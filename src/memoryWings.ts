@@ -2,6 +2,14 @@
 export const CURSOR_TRANSCRIPT_WING = "cursor-ide";
 /** Distilled IDE chat lessons — included in default memory search (I-65). */
 export const CURSOR_LESSON_WING = "cursor-lesson";
+/** Archived Claude Code CLI transcripts (mined via the shared distill pipeline). */
+export const CLAUDE_CODE_TRANSCRIPT_WING = "claude-code";
+/** Distilled Claude Code CLI lessons — included in default memory search. */
+export const CLAUDE_CODE_LESSON_WING = "claude-code-lesson";
+/** Archived Codex CLI transcripts (mined via the shared distill pipeline). */
+export const CODEX_TRANSCRIPT_WING = "codex";
+/** Distilled Codex CLI lessons — included in default memory search. */
+export const CODEX_LESSON_WING = "codex-lesson";
 export const EPISODIC_WING = "episodic";
 /** Ops corpus split from wing `default` (I-81). */
 export const TPARSER_WING = "tparser";
