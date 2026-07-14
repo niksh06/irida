@@ -21,6 +21,8 @@ export const CRON_BUILTIN_HANDLERS = [
   "cursor-mine",
   "cursor-distill-queue",
   "cursor-distill-backfill-queue",
+  "claude-code-mine",
+  "codex-mine",
   "claude-session-prune",
   "self-monitor",
   "memory-distill",

@@ -9,9 +9,17 @@ import { importHappyinKb } from "./importHappyinKb.js";
 import { MemoryError, deleteMemory, listMemories, readMemory, saveMemory } from "./memory.js";
 import { alignMemorySilos } from "./memorySiloOps.js";
 import { createMemoryStore, SECURE_WING } from "./memoryStore.js";
-import { CURSOR_TRANSCRIPT_WING } from "./memoryWings.js";
+import {
+  CURSOR_TRANSCRIPT_WING,
+  CLAUDE_CODE_TRANSCRIPT_WING,
+  CLAUDE_CODE_LESSON_WING,
+  CODEX_TRANSCRIPT_WING,
+  CODEX_LESSON_WING,
+} from "./memoryWings.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
 import { mineCursorTranscripts } from "./cursorTranscriptMine.js";
+import { mineClaudeCodeTranscripts } from "./claudeCodeTranscriptMine.js";
+import { mineCodexTranscripts } from "./codexTranscriptMine.js";
 import {
   buildCursorDistillQueue,
   formatDistillQueueJson,
@@ -715,6 +723,200 @@ export async function cmdMemoryDistillCursor(
   }
 }
 
+export async function cmdMemoryMineClaudeCode(
+  argv: string[],
+  opts: MemoryCmdOptions = {}
+): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  let windowHours = 168;
+  let limit = 30;
+  let force = false;
+  let scanAll = false;
+  let projectsRoot: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--force") force = true;
+    else if (a === "--all") scanAll = true;
+    else if (a === "--window-hours" && argv[i + 1]) windowHours = Number(argv[++i]);
+    else if (a === "--limit" && argv[i + 1]) limit = Number(argv[++i]);
+    else if (a === "--projects-root" && argv[i + 1]) projectsRoot = argv[++i];
+  }
+  if (!scanAll && (!Number.isFinite(windowHours) || windowHours < 1)) {
+    console.error("memory mine-claude-code: --window-hours must be a positive number");
+    return EXIT.usage;
+  }
+  if (!scanAll && (!Number.isFinite(limit) || limit < 1)) {
+    console.error("memory mine-claude-code: --limit must be a positive number");
+    return EXIT.usage;
+  }
+  try {
+    loadConfig(dir);
+    const out = await mineClaudeCodeTranscripts(dir, {
+      all: scanAll,
+      windowHours,
+      limit,
+      force,
+      projectsRoot,
+    });
+    const total = out.ingested + out.updated;
+    console.log(
+      `claude-code-mine: ${total} note(s) (${out.ingested} new, ${out.updated} updated, ${out.skipped} skipped)`
+    );
+    for (const name of out.names) console.log(`  ${name}`);
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory mine-claude-code: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
+export async function cmdMemoryMineCodex(
+  argv: string[],
+  opts: MemoryCmdOptions = {}
+): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  let windowHours = 168;
+  let limit = 30;
+  let force = false;
+  let scanAll = false;
+  let sessionsRoot: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--force") force = true;
+    else if (a === "--all") scanAll = true;
+    else if (a === "--window-hours" && argv[i + 1]) windowHours = Number(argv[++i]);
+    else if (a === "--limit" && argv[i + 1]) limit = Number(argv[++i]);
+    else if (a === "--sessions-root" && argv[i + 1]) sessionsRoot = argv[++i];
+  }
+  if (!scanAll && (!Number.isFinite(windowHours) || windowHours < 1)) {
+    console.error("memory mine-codex: --window-hours must be a positive number");
+    return EXIT.usage;
+  }
+  if (!scanAll && (!Number.isFinite(limit) || limit < 1)) {
+    console.error("memory mine-codex: --limit must be a positive number");
+    return EXIT.usage;
+  }
+  try {
+    loadConfig(dir);
+    const out = await mineCodexTranscripts(dir, {
+      all: scanAll,
+      windowHours,
+      limit,
+      force,
+      sessionsRoot,
+    });
+    const total = out.ingested + out.updated;
+    console.log(
+      `codex-mine: ${total} note(s) (${out.ingested} new, ${out.updated} updated, ${out.skipped} skipped)`
+    );
+    for (const name of out.names) console.log(`  ${name}`);
+    return EXIT.ok;
+  } catch (e) {
+    console.error("memory mine-codex: " + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
+/**
+ * Shared body for distill-claude-code/distill-codex — same shape as
+ * cmdMemoryDistillCursor minus baseline tracking (cursor-distill.baseline.json
+ * is a single unparametrized file; sharing it across sources would wrongly mix
+ * their timestamps — see I-162). Without a baseline, delta mode already
+ * degrades to "queue everything stale/missing" (archiveIsDelta returns true
+ * when no baseline is set), so this is a correctness-neutral scope cut, not a
+ * functional gap.
+ */
+async function runDistillCommand(
+  label: string,
+  archiveWing: string,
+  lessonWing: string,
+  argv: string[],
+  opts: MemoryCmdOptions
+): Promise<ExitCode> {
+  const dir = opts.dir ?? process.cwd();
+  let limit = 10;
+  let force = false;
+  let json = false;
+  let minBodyBytes = 0;
+  let backfill = false;
+  let runBatch = false;
+  let dryRun = false;
+  let parallel = 3;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--force") force = true;
+    else if (a === "--json") json = true;
+    else if (a === "--backfill") backfill = true;
+    else if (a === "--run") runBatch = true;
+    else if (a === "--dry-run") dryRun = true;
+    else if (a === "--limit" && argv[i + 1]) limit = Number(argv[++i]);
+    else if (a === "--min-bytes" && argv[i + 1]) minBodyBytes = Number(argv[++i]);
+    else if (a === "--parallel" && argv[i + 1]) parallel = Number(argv[++i]);
+  }
+  if (!Number.isFinite(limit) || limit < 1) {
+    console.error(`memory ${label}: --limit must be a positive number`);
+    return EXIT.usage;
+  }
+  if (!Number.isFinite(minBodyBytes) || minBodyBytes < 0) {
+    console.error(`memory ${label}: --min-bytes must be a non-negative number`);
+    return EXIT.usage;
+  }
+  if (!Number.isFinite(parallel) || parallel < 1) {
+    console.error(`memory ${label}: --parallel must be a positive number`);
+    return EXIT.usage;
+  }
+  try {
+    if (runBatch) {
+      const batch = await runCursorDistillBatch({
+        dir,
+        limit,
+        parallel,
+        force,
+        minBodyBytes,
+        backfill,
+        dryRun,
+        archiveWing,
+        lessonWing,
+      });
+      for (const r of batch.results) {
+        const status = r.ok ? "ok" : "fail";
+        console.log(`${status}\t${r.sourceName}\t${r.chunks} chunk(s)\t${r.message}`);
+      }
+      console.log(
+        `${label} --run: ${batch.saved} saved, ${batch.failed} failed, ${batch.processed} processed` +
+          (dryRun ? " (dry-run)" : "")
+      );
+      return batch.failed > 0 ? EXIT.software : EXIT.ok;
+    }
+    const out = await buildCursorDistillQueue(dir, { limit, force, minBodyBytes, backfill, archiveWing });
+    console.log(json ? formatDistillQueueJson(out) : formatDistillQueueMarkdown(out, { lessonWing }));
+    return EXIT.ok;
+  } catch (e) {
+    console.error(`memory ${label}: ` + (e instanceof ConfigError ? e.message : String(e)));
+    return EXIT.config;
+  }
+}
+
+export async function cmdMemoryDistillClaudeCode(
+  argv: string[],
+  opts: MemoryCmdOptions = {}
+): Promise<ExitCode> {
+  return runDistillCommand(
+    "distill-claude-code",
+    CLAUDE_CODE_TRANSCRIPT_WING,
+    CLAUDE_CODE_LESSON_WING,
+    argv,
+    opts
+  );
+}
+
+export async function cmdMemoryDistillCodex(
+  argv: string[],
+  opts: MemoryCmdOptions = {}
+): Promise<ExitCode> {
+  return runDistillCommand("distill-codex", CODEX_TRANSCRIPT_WING, CODEX_LESSON_WING, argv, opts);
+}
+
 export async function cmdMemoryOkf(argv: string[], opts: MemoryCmdOptions = {}): Promise<ExitCode> {
   const dir = opts.dir ?? process.cwd();
   const [action, ...rest] = argv;
@@ -1120,6 +1322,14 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
       return cmdMemoryMineCursor([name ?? "", ...rest].filter(Boolean), opts);
     case "distill-cursor":
       return cmdMemoryDistillCursor([name ?? "", ...rest].filter(Boolean), opts);
+    case "mine-claude-code":
+      return cmdMemoryMineClaudeCode([name ?? "", ...rest].filter(Boolean), opts);
+    case "distill-claude-code":
+      return cmdMemoryDistillClaudeCode([name ?? "", ...rest].filter(Boolean), opts);
+    case "mine-codex":
+      return cmdMemoryMineCodex([name ?? "", ...rest].filter(Boolean), opts);
+    case "distill-codex":
+      return cmdMemoryDistillCodex([name ?? "", ...rest].filter(Boolean), opts);
     case "okf":
       return cmdMemoryOkf([name ?? "", ...rest].filter(Boolean), opts);
     case "fact":
@@ -1170,6 +1380,10 @@ export async function cmdMemory(argv: string[], opts: MemoryCmdOptions = {}): Pr
   irida memory lesson-eval validate|list|sheet|record|summary  (I-79 paired eval)
   irida memory purge-archive [--wing cursor-ide] [--older-than-days 180] [--require-lesson] [--apply]
   irida memory fact add|query|invalidate …
+  irida memory mine-claude-code [--window-hours N] [--limit N] [--all] [--force] [--projects-root DIR]
+  irida memory distill-claude-code [--run] [--dry-run] [--backfill] [--force] [--limit N] [--json]
+  irida memory mine-codex [--window-hours N] [--limit N] [--all] [--force] [--sessions-root DIR]
+  irida memory distill-codex [--run] [--dry-run] [--backfill] [--force] [--limit N] [--json]
 
 In chat/TUI, inject with @memory:<name> or @memory: for all.
 Notes live in DB (sqlite/postgres) + mirror .agent/memory/*.md for @memory.

@@ -40,6 +40,8 @@ import { executeMemoryAuditBuiltin } from "./memoryAudit.js";
 import { exportRecentSessions } from "./sessionExport.js";
 import { ingestRecentSessions } from "./sessionIngest.js";
 import { mineCursorTranscripts } from "./cursorTranscriptMine.js";
+import { mineClaudeCodeTranscripts } from "./claudeCodeTranscriptMine.js";
+import { mineCodexTranscripts } from "./codexTranscriptMine.js";
 import {
   buildCursorDistillQueue,
   formatDistillQueueMarkdown,
@@ -173,6 +175,40 @@ export async function executeCronJob(
         ok: false,
         exitCode: EXIT.software,
         message: `cursor-mine failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "claude-code-mine") {
+    try {
+      const out = await mineClaudeCodeTranscripts(configDir, { all: true });
+      const total = out.ingested + out.updated;
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `claude-code-mine: ${total} note(s) (${out.ingested} new, ${out.updated} updated, ${out.skipped} skipped)`,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `claude-code-mine failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "codex-mine") {
+    try {
+      const out = await mineCodexTranscripts(configDir, { all: true });
+      const total = out.ingested + out.updated;
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `codex-mine: ${total} note(s) (${out.ingested} new, ${out.updated} updated, ${out.skipped} skipped)`,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `codex-mine failed: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }
