@@ -14,6 +14,7 @@ import {
   resolveApiKey,
   resolveAnthropicKey,
   resolveClaudeOAuthToken,
+  resolveClaudeOAuthTokenPool,
   resolveTelegramBotToken,
   telegramTokenSourceLabel,
   validateAnthropicApiKeyFormat,
@@ -84,11 +85,29 @@ export function gatherDoctorChecks(dir: string = process.cwd()): DoctorCheck[] {
 
   if (engineProvider === "claude-agent" && engineAuth === "account") {
     const t = resolveClaudeOAuthToken(dir);
+    const { pool } = resolveClaudeOAuthTokenPool(dir);
+    const invalidCount = pool.filter((e) => e.invalidAt).length;
+    let detail: string;
+    if (t.source === "none" && pool.length === 0) {
+      detail = "not set — using `claude login` session if present";
+    } else if (t.source === "none") {
+      detail = `all ${pool.length} pooled token(s) invalid — using \`claude login\` session if present`;
+    } else if (pool.length > 1) {
+      detail = `set (${t.source}) — pool: ${pool.length} token(s)${invalidCount ? `, ${invalidCount} invalid` : ""}`;
+    } else {
+      detail = `set (${t.source})`;
+    }
     checks.push({
       name: "CLAUDE_CODE_OAUTH_TOKEN",
-      ok: true, // empty is fine — account mode falls back to a `claude login` session
-      detail: t.source === "none" ? "not set — using `claude login` session if present" : `set (${t.source})`,
-      fix: "claude setup-token   # then: irida auth claude token --stdin",
+      // Empty/all-invalid is fine — account mode falls back to a `claude login`
+      // session; warn (not fail) when the pool exists but every entry is dead,
+      // since that's silently degraded rather than a hard config error.
+      ok: pool.length === 0 || invalidCount < pool.length,
+      detail,
+      fix:
+        pool.length > 1
+          ? "irida auth claude token-list   # then token-use <id> or token-add --stdin"
+          : "claude setup-token   # then: irida auth claude token --stdin (or token-add --stdin for a 2nd account)",
     });
   } else if (engineProvider === "claude-agent") {
     const a = resolveAnthropicKey(dir);

@@ -85,7 +85,7 @@ export function formatSdkError(e: unknown): FormattedSdkError {
   // from its bundled binary — no typed exceptions reach us, so auth failures are
   // classified heuristically. Marking them auth (recoverable, non-rotatable) stops
   // chat from rotating+retrying uselessly and gives the user a fix hint.
-  if (!auth && /invalid api key|authentication|unauthorized|\bnot logged in\b|oauth|\/login|expired|credit balance/i.test(raw)) {
+  if (!auth && isAuthErrorText(raw)) {
     return {
       message: redact(
         `Authentication failed — ${raw}. Set ANTHROPIC_API_KEY (auth=api-key), or run \`claude login\` / \`claude setup-token\` (auth=account).`
@@ -121,6 +121,19 @@ export function isAgentRotatableError(e: unknown): boolean {
 export function isOverloadErrorText(text: string | null | undefined): boolean {
   if (!text) return false;
   return /\b(403 request not allowed|429|503|529)\b|overloaded|rate.?limit|too many requests|service unavailable/i.test(
+    text
+  );
+}
+
+/**
+ * Auth-classified error text — same heuristic formatSdkError uses for thrown
+ * exceptions, exported so the run-RESULT error path (chatEngine.ts, `is_error`
+ * result messages never reach the catch) can recognize the same failures and
+ * attempt a Claude OAuth token pool rotation (I-169) before giving up.
+ */
+export function isAuthErrorText(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return /invalid api key|authentication|unauthorized|\bnot logged in\b|oauth|\/login|expired|credit balance/i.test(
     text
   );
 }

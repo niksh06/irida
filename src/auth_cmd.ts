@@ -11,6 +11,10 @@ import {
   clearClaudeOAuthToken,
   resolveAnthropicKey,
   resolveClaudeOAuthToken,
+  resolveClaudeOAuthTokenPool,
+  addClaudeOAuthTokenToPool,
+  removeClaudeOAuthTokenFromPool,
+  useClaudeOAuthTokenInPool,
   saveAnthropicApiKey,
   saveClaudeOAuthToken,
   clearAllStoredCredentials,
@@ -46,7 +50,11 @@ Usage:
   irida auth anthropic login --stdin    Anthropic API key (claude-agent engine, auth=api-key)
   irida auth anthropic logout           remove stored Anthropic API key
   irida auth claude token --stdin       Claude OAuth token from \`claude setup-token\` (auth=account)
-  irida auth claude logout              remove stored Claude OAuth token
+  irida auth claude token-add --stdin   add another account to the pool (I-169 failover)
+  irida auth claude token-list          show pool + active/invalid status
+  irida auth claude token-use <id>      make this token active
+  irida auth claude token-remove <id>   drop one from the pool
+  irida auth claude logout              remove all stored Claude OAuth token(s)
   irida auth telegram login --stdin     Telegram bot token
   irida auth telegram login --from-env  copy TELEGRAM_BOT_TOKEN from environment
   irida auth logout                     remove stored secrets
@@ -150,11 +158,20 @@ async function cmdAuthAnthropic(args: string[], dir: string): Promise<ExitCode> 
   }
 }
 
-/** `irida auth claude …` — Claude account OAuth token for the claude-agent engine (auth=account). */
+/** first 10 + last 4 chars — enough to tell tokens apart without exposing the secret. */
+function maskToken(token: string): string {
+  if (token.length <= 18) return `${token.slice(0, 4)}…`;
+  return `${token.slice(0, 10)}…${token.slice(-4)}`;
+}
+
+/** `irida auth claude …` — Claude account OAuth token(s) for the claude-agent engine (auth=account). */
 async function cmdAuthClaude(args: string[], dir: string): Promise<ExitCode> {
   const [sub, ...rest] = args;
   switch (sub) {
     case "token": {
+      // Bare `token --stdin` replaces the WHOLE pool with a single entry — kept
+      // for backward compat with pre-I-169 single-token installs/scripts. Use
+      // `token add` to grow a multi-account pool instead.
       const r = await readSecretArg(rest, "CLAUDE_CODE_OAUTH_TOKEN", "auth claude token");
       if ("error" in r) return r.error;
       if (pgSecretsEnabled()) await persistClaudeOAuthToken(r.value, dir);
@@ -166,12 +183,92 @@ async function cmdAuthClaude(args: string[], dir: string): Promise<ExitCode> {
       );
       return EXIT.ok;
     }
+    case "token-add": {
+      const labelFlag = rest.indexOf("--label");
+      let label: string | undefined;
+      let restArgs = rest;
+      if (labelFlag >= 0) {
+        label = rest[labelFlag + 1];
+        restArgs = rest.filter((_, i) => i !== labelFlag && i !== labelFlag + 1);
+        // Guard against `--label <the-actual-token>` — an easy mistake (the
+        // token ends up stored as a plaintext-ish label instead of the secret
+        // field, and --stdin/inline never receives a real value). Labels are
+        // short human names; anything token-shaped is almost certainly a
+        // misplaced secret, not a label.
+        if (label && (label.length > 40 || /^sk-/i.test(label))) {
+          console.error(
+            "auth claude token-add: --label value looks like a secret token, not a label.\n" +
+              "Usage: irida auth claude token-add <token> --label <short-name>\n" +
+              "   or: irida auth claude token-add --stdin --label <short-name>   (then paste the token when prompted)"
+          );
+          return EXIT.usage;
+        }
+      }
+      const r = await readSecretArg(restArgs, "CLAUDE_CODE_OAUTH_TOKEN", "auth claude token-add");
+      if ("error" in r) return r.error;
+      try {
+        const { id } = await addClaudeOAuthTokenToPool(r.value, dir, label);
+        console.log(`auth: claude OAuth token added to pool — id=${id}${label ? ` label=${label}` : ""}`);
+        return EXIT.ok;
+      } catch (e) {
+        console.error(`auth claude token-add: ${e instanceof Error ? e.message : String(e)}`);
+        return EXIT.usage;
+      }
+    }
+    case "token-list": {
+      await warmCredentialsCache(dir);
+      const { pool, source } = resolveClaudeOAuthTokenPool(dir);
+      if (!pool.length) {
+        console.log("auth: no claude OAuth tokens stored");
+        return EXIT.ok;
+      }
+      console.log(`auth: claude OAuth token pool (source=${source})`);
+      console.log("ACTIVE  ID        LABEL              TOKEN                 STATUS");
+      let sawActive = false;
+      for (const e of pool) {
+        const isActive = !sawActive && !e.invalidAt;
+        if (isActive) sawActive = true;
+        const status = e.invalidAt ? `invalid since ${e.invalidAt.slice(0, 19).replace("T", " ")}` : "ok";
+        console.log(
+          `${(isActive ? "*" : " ").padEnd(7)} ${e.id.padEnd(9)} ${(e.label ?? "").padEnd(18)} ${maskToken(e.token).padEnd(21)} ${status}`
+        );
+      }
+      if (!sawActive) {
+        console.log("\nauth: WARNING — every pooled token is marked invalid; add a fresh one or `token-use <id>`");
+      }
+      return EXIT.ok;
+    }
+    case "token-remove": {
+      const id = rest[0];
+      if (!id) {
+        console.error("auth claude token-remove: usage — irida auth claude token-remove <id> (see token-list)");
+        return EXIT.usage;
+      }
+      try {
+        const removed = await removeClaudeOAuthTokenFromPool(id, dir);
+        console.log(removed ? `auth: removed token ${id}` : `auth: no token with id ${id}`);
+        return EXIT.ok;
+      } catch (e) {
+        console.error(`auth claude token-remove: ${e instanceof Error ? e.message : String(e)}`);
+        return EXIT.usage;
+      }
+    }
+    case "token-use": {
+      const id = rest[0];
+      if (!id) {
+        console.error("auth claude token-use: usage — irida auth claude token-use <id> (see token-list)");
+        return EXIT.usage;
+      }
+      const used = await useClaudeOAuthTokenInPool(id, dir);
+      console.log(used ? `auth: token ${id} is now active` : `auth: no token with id ${id}`);
+      return used ? EXIT.ok : EXIT.usage;
+    }
     case "logout": {
       let removed = clearClaudeOAuthToken(dir);
       if (pgSecretsEnabled()) {
         removed = (await deletePgCredentialSecret("claude_code_oauth_token")) || removed;
       }
-      console.log(removed ? "auth: claude OAuth token removed" : "auth: no stored claude OAuth token");
+      console.log(removed ? "auth: claude OAuth token(s) removed" : "auth: no stored claude OAuth token");
       return EXIT.ok;
     }
     case undefined:
@@ -181,6 +278,11 @@ async function cmdAuthClaude(args: string[], dir: string): Promise<ExitCode> {
       console.log(
         "To connect your Claude account: run `claude setup-token` then `irida auth claude token --stdin`,\n" +
           "or run `claude login` (the Agent SDK reads the keychain / ~/.claude/.credentials.json).\n\n" +
+          "Multiple accounts (I-169) — automatic failover when one hits an auth error:\n" +
+          "  irida auth claude token-add --stdin [--label work]   add another account to the pool\n" +
+          "  irida auth claude token-list                         show pool + active/invalid status\n" +
+          "  irida auth claude token-use <id>                     make this one active, clear invalid mark\n" +
+          "  irida auth claude token-remove <id>                  drop one (refuses to drop the last)\n\n" +
           AUTH_HELP
       );
       return EXIT.ok;
@@ -323,11 +425,17 @@ export async function cmdAuth(args: string[], dir: string = process.cwd()): Prom
       console.log(`auth: TELEGRAM_BOT_TOKEN — ${telegramTokenSourceLabel(tg.source, dir)}`);
       const ant = resolveAnthropicKey(dir);
       const oauth = resolveClaudeOAuthToken(dir);
+      const oauthPool = resolveClaudeOAuthTokenPool(dir);
       console.log(
         `auth: ANTHROPIC_API_KEY — ${ant.source === "none" ? "not configured" : `set (${ant.source})`} [claude-agent engine, auth=api-key]`
       );
+      const invalidCount = oauthPool.pool.filter((e) => e.invalidAt).length;
+      const poolNote =
+        oauthPool.pool.length > 1
+          ? ` · pool: ${oauthPool.pool.length} token(s)${invalidCount ? `, ${invalidCount} invalid` : ""} (irida auth claude token-list)`
+          : "";
       console.log(
-        `auth: CLAUDE_CODE_OAUTH_TOKEN — ${oauth.source === "none" ? "not configured (account mode may still use a `claude login` session)" : `set (${oauth.source})`} [claude-agent engine, auth=account]`
+        `auth: CLAUDE_CODE_OAUTH_TOKEN — ${oauth.source === "none" ? "not configured (account mode may still use a `claude login` session)" : `set (${oauth.source})`} [claude-agent engine, auth=account]${poolNote}`
       );
       if (hasStoredCredentials(dir) && !pgSecretsEnabled()) {
         console.log(`auth: file ${credentialsPath(dir)}`);

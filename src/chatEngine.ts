@@ -53,6 +53,7 @@ import {
   consumeRunStream,
   formatSdkError,
   isAgentRotatableError,
+  isAuthErrorText,
   isOverloadErrorText,
   OVERLOAD_RETRY_DELAYS_MS,
 } from "./sdkErrors.js";
@@ -62,6 +63,7 @@ import {
   resolveApiKey,
   resolveAnthropicKey,
   resolveClaudeOAuthToken,
+  markClaudeOAuthTokenInvalid,
 } from "./credentials.js";
 import { formatRunErrorMessage, pickRunErrorDetail } from "./runErrors.js";
 import { formatErrorDetail } from "./runErrorDetail.js";
@@ -732,6 +734,29 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
         return rotateAgent(reason);
       };
 
+      /**
+       * Claude OAuth token pool failover (I-169): an auth-classified failure
+       * normally isn't rotatable (a fresh agent would hit the same bad
+       * credential) — but with more than one account configured, marking the
+       * current token invalid and re-resolving may hand back a different one.
+       * Only meaningful for claude-agent/account mode; a no-op (false) for
+       * cursor/api-key auth or when no alternate pool entry is available,
+       * falling through to the normal (non-rotatable) auth failure message.
+       * Shares tryRotateAgent's one-retry-per-turn budget — a turn gets at
+       * most one rotation total, whether triggered by a token swap or a
+       * regular SDK error.
+       */
+      const tryRotateOnAuthFailure = async (reason: string): Promise<boolean> => {
+        if (provider !== "claude-agent" || authMode !== "account" || !apiKey) return false;
+        const invalidated = await markClaudeOAuthTokenInvalid(apiKey, dir);
+        if (!invalidated) return false;
+        const revised = resolveClaudeOAuthToken(dir).key;
+        if (!revised || revised === apiKey) return false;
+        log(`[chat] claude oauth token invalidated (auth error) — rotating to next pool entry`);
+        apiKey = revised;
+        return tryRotateAgent(reason);
+      };
+
       if (agentBroken) {
         if (!(await rotateAgent("recover_failed_rotation"))) {
           return {
@@ -895,6 +920,14 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
               .join(" ");
             // Replaying a dirty turn can duplicate visible output or tool side
             // effects. Rotate/retry only while the attempt is still clean.
+            if (
+              isAuthErrorText(detail) &&
+              toolCalls === 0 &&
+              turnText.length === 0 &&
+              (await tryRotateOnAuthFailure(rotateReason))
+            ) {
+              continue;
+            }
             if (toolCalls === 0 && turnText.length === 0 && (await tryRotateAgent(rotateReason))) {
               continue;
             }
@@ -954,6 +987,15 @@ export async function openChatSession(opts: ChatSessionOptions = {}): Promise<Op
             log(`[chat] sendTurn overload retry attempt=${overloadAttempts} delayMs=${delayMs}`);
             opts.onTurnRetry?.(rotateReason);
             await sleep(delayMs);
+            continue;
+          }
+
+          if (
+            formatted.errorKind === "auth" &&
+            toolCalls === 0 &&
+            turnText.length === 0 &&
+            (await tryRotateOnAuthFailure(rotateReason))
+          ) {
             continue;
           }
 

@@ -13,6 +13,7 @@
  * postmortems; unify with care.
  */
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, chmodSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { loadConfig } from "./config.js";
@@ -74,6 +75,24 @@ export interface SecretFormatCheck {
   detail: string;
 }
 
+/**
+ * A real secret is one unbroken token — never internal whitespace. Catches a
+ * whole class of paste mistakes a length-only check misses: a shell command
+ * typed into a `--stdin` prompt by accident, an `export FOO=...` line pasted
+ * whole, multi-line clipboard content, etc. (I-169 incident: a full `npm run
+ * dev -- auth claude token-add ...` command line was accepted as a token
+ * because it happened to be ≥20 chars.)
+ */
+function whitespaceShapeIssue(trimmed: string): SecretFormatCheck | null {
+  if (/\s/.test(trimmed)) {
+    return {
+      ok: false,
+      detail: "contains whitespace — a real secret is one unbroken token (did you paste a command or an export line instead of just the value?)",
+    };
+  }
+  return null;
+}
+
 /** Shape check only — does not call external APIs. Never logs the secret. */
 export function validateCursorApiKeyFormat(key: string): SecretFormatCheck {
   const k = key.trim();
@@ -83,6 +102,8 @@ export function validateCursorApiKeyFormat(key: string): SecretFormatCheck {
       detail: `too short (${k.length} chars) — likely corrupt decryption or wrong secret`,
     };
   }
+  const ws = whitespaceShapeIssue(k);
+  if (ws) return ws;
   if (/^(crsr_|cursor_|key_)/.test(k) || k.startsWith("sk-")) {
     return { ok: true, detail: "ok" };
   }
@@ -102,6 +123,8 @@ export function validateAnthropicApiKeyFormat(key: string): SecretFormatCheck {
       detail: `too short (${k.length} chars) — likely corrupt decryption or wrong secret`,
     };
   }
+  const ws = whitespaceShapeIssue(k);
+  if (ws) return ws;
   if (k.startsWith("sk-ant-")) return { ok: true, detail: "ok" };
   if (k.length >= 40) return { ok: true, detail: "ok" };
   return {
@@ -110,15 +133,35 @@ export function validateAnthropicApiKeyFormat(key: string): SecretFormatCheck {
   };
 }
 
-/** `claude setup-token` emits `sk-ant-oat…`; stay loose beyond a corruption floor. */
-export function validateClaudeOAuthTokenFormat(token: string): SecretFormatCheck {
-  const t = token.trim();
-  if (t.length < 20) {
+/**
+ * `claude setup-token` emits `sk-ant-oat…`; stay loose beyond a corruption
+ * floor. The stored value can ALSO be a pool-wrapper JSON array (I-169) — a
+ * container, not a token — validated shallowly here (well-formed, non-empty
+ * array). Per-entry token shape (length, no whitespace) is enforced once,
+ * when that entry is added (`addClaudeOAuthTokenToPool`), not re-checked on
+ * every read of the whole blob — one bad/legacy entry, or a label containing
+ * spaces, must not make `guardResolvedSecret` reject the entire pool.
+ */
+export function validateClaudeOAuthTokenFormat(value: string): SecretFormatCheck {
+  const v = value.trim();
+  if (v.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(v);
+      return Array.isArray(parsed) && parsed.length > 0
+        ? { ok: true, detail: "ok" }
+        : { ok: false, detail: "empty or malformed token pool" };
+    } catch {
+      return { ok: false, detail: "malformed token pool JSON" };
+    }
+  }
+  if (v.length < 20) {
     return {
       ok: false,
-      detail: `too short (${t.length} chars) — likely corrupt decryption or wrong secret`,
+      detail: `too short (${v.length} chars) — likely corrupt decryption or wrong secret`,
     };
   }
+  const ws = whitespaceShapeIssue(v);
+  if (ws) return ws;
   return { ok: true, detail: "ok" };
 }
 
@@ -395,28 +438,21 @@ export function resolveAnthropicKey(dir: string = process.cwd()): ResolvedApiKey
 }
 
 /**
- * Resolve the Claude account OAuth token for the claude-agent engine (auth=account, I-100).
- * Env `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) overrides the plaintext
- * credentials.json field. May legitimately return "none": when no token is stored, the
- * Agent SDK falls back to an existing `claude login` session (~/.claude/.credentials.json),
- * so callers should NOT hard-fail on an empty token in account mode.
+ * Resolve the ACTIVE Claude account OAuth token for the claude-agent engine
+ * (auth=account, I-100). Env `CLAUDE_CODE_OAUTH_TOKEN` (from `claude
+ * setup-token`) overrides everything else. Otherwise resolves the pool
+ * (I-169) and returns its first non-invalidated entry, sticky across calls —
+ * a single legacy token behaves exactly as before (one-entry pool). May
+ * legitimately return "none": when no token is stored/valid, the Agent SDK
+ * falls back to an existing `claude login` session
+ * (~/.claude/.credentials.json), so callers should NOT hard-fail on an empty
+ * token in account mode.
  */
 export function resolveClaudeOAuthToken(dir: string = process.cwd()): ResolvedApiKey {
-  const fromEnv = (process.env.CLAUDE_CODE_OAUTH_TOKEN ?? "").trim();
-  if (fromEnv) return { key: fromEnv, source: "env" };
-  const fromPg = guardResolvedSecret(
-    "claude_code_oauth_token",
-    pgCachedSecret("claude_code_oauth_token"),
-    "pg"
-  );
-  if (fromPg) return { key: fromPg, source: "pg" };
-  const fromFile = guardResolvedSecret(
-    "claude_code_oauth_token",
-    readCredentialsFileFromDisk(dir).claude_code_oauth_token ?? "",
-    "file"
-  );
-  if (fromFile) return { key: fromFile, source: "file" };
-  return { key: "", source: "none" };
+  const { pool, source } = resolveClaudeOAuthTokenPool(dir);
+  const active = pool.find((e) => !e.invalidAt);
+  if (!active) return { key: "", source: "none" };
+  return { key: active.token, source };
 }
 
 /**
@@ -534,6 +570,176 @@ export function clearClaudeOAuthToken(dir: string = process.cwd()): boolean {
   const next = { ...existing };
   delete next.claude_code_oauth_token;
   writeCredentialsFile(dir, next);
+  return true;
+}
+
+/**
+ * Multi-account Claude OAuth token pool (I-169), by analogy with LLMAPIProxy's
+ * account rotation: several `claude setup-token` accounts, automatic failover
+ * when the currently active one hits an auth error, no single-token outage.
+ *
+ * Storage: the pool is JSON-serialized into the SAME `claude_code_oauth_token`
+ * secret slot used by the single-token API above — zero new schema, reuses the
+ * existing pgcrypto/file/history machinery as-is. A legacy plaintext token
+ * value (from before this feature, or written by the single-token
+ * save/persist functions above) is auto-wrapped into a one-entry pool on read
+ * — old installs keep working unchanged, `resolveClaudeOAuthToken` returns the
+ * identical value/source it always did.
+ *
+ * Unlike LLMAPIProxy's Qwen tokens, Claude's `sk-ant-oat-…` OAuth token is not
+ * a JWT — there's no local expiry to decode, so "invalid" can only be learned
+ * reactively (an auth-classified SDK error), never predicted. And unlike
+ * LLMAPIProxy's per-request round-robin (spreading load across many parallel
+ * proxy calls), this is a single-user agent — the active token is STICKY (the
+ * first non-invalidated pool entry, in insertion order) rather than rotated
+ * per turn; only an auth failure or an explicit `use` advances it.
+ */
+export interface ClaudeOAuthTokenEntry {
+  id: string;
+  token: string;
+  label?: string;
+  addedAt: string;
+  /** Set when an auth-classified SDK error was attributed to this token. */
+  invalidAt?: string;
+}
+
+function parseClaudeOAuthTokenPool(raw: string): ClaudeOAuthTokenEntry[] {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (e): e is ClaudeOAuthTokenEntry =>
+            Boolean(e) &&
+            typeof e === "object" &&
+            typeof (e as ClaudeOAuthTokenEntry).id === "string" &&
+            typeof (e as ClaudeOAuthTokenEntry).token === "string" &&
+            (e as ClaudeOAuthTokenEntry).token.trim() !== ""
+        );
+      }
+    } catch {
+      // Not valid JSON — fall through and treat the raw value as a legacy bare token.
+    }
+  }
+  return [{ id: "legacy", token: trimmed, addedAt: new Date(0).toISOString() }];
+}
+
+function serializeClaudeOAuthTokenPool(pool: ClaudeOAuthTokenEntry[]): string {
+  return JSON.stringify(pool);
+}
+
+/** Stored pool only — ignores the CLAUDE_CODE_OAUTH_TOKEN env override (mutation target). */
+function loadStoredClaudeOAuthTokenPool(dir: string): ClaudeOAuthTokenEntry[] {
+  const fromPg = guardResolvedSecret("claude_code_oauth_token", pgCachedSecret("claude_code_oauth_token"), "pg");
+  if (fromPg) return parseClaudeOAuthTokenPool(fromPg);
+  const fromFile = guardResolvedSecret(
+    "claude_code_oauth_token",
+    readCredentialsFileFromDisk(dir).claude_code_oauth_token ?? "",
+    "file"
+  );
+  if (fromFile) return parseClaudeOAuthTokenPool(fromFile);
+  return [];
+}
+
+async function persistClaudeOAuthTokenPool(pool: ClaudeOAuthTokenEntry[], dir: string): Promise<void> {
+  const serialized = serializeClaudeOAuthTokenPool(pool);
+  if (pgSecretsEnabled()) {
+    await persistSecret("claude_code_oauth_token", serialized, dir);
+    return;
+  }
+  const existing = readCredentialsFileFromDisk(dir);
+  writeCredentialsFile(dir, { ...existing, claude_code_oauth_token: serialized });
+}
+
+/**
+ * Resolve the full token pool for display/management (`irida auth claude token
+ * list`, rotation). Env override short-circuits to a synthetic single-entry
+ * pool, same precedence as `resolveClaudeOAuthToken` — env always wins, and
+ * mutation commands (add/remove/use/invalidate) deliberately bypass it via
+ * `loadStoredClaudeOAuthTokenPool` so they always target the real stored pool.
+ */
+export function resolveClaudeOAuthTokenPool(
+  dir: string = process.cwd()
+): { pool: ClaudeOAuthTokenEntry[]; source: SecretSource } {
+  const fromEnv = (process.env.CLAUDE_CODE_OAUTH_TOKEN ?? "").trim();
+  if (fromEnv) {
+    return { pool: [{ id: "env", token: fromEnv, addedAt: new Date(0).toISOString() }], source: "env" };
+  }
+  const stored = loadStoredClaudeOAuthTokenPool(dir);
+  if (!stored.length) return { pool: [], source: "none" };
+  const pgHas = Boolean(guardResolvedSecret("claude_code_oauth_token", pgCachedSecret("claude_code_oauth_token"), "pg"));
+  return { pool: stored, source: pgHas ? "pg" : "file" };
+}
+
+/** Add a token to the pool. Rejects an exact duplicate already present. */
+export async function addClaudeOAuthTokenToPool(
+  token: string,
+  dir: string = process.cwd(),
+  label?: string
+): Promise<{ id: string }> {
+  const trimmed = token.trim();
+  if (!trimmed) throw new Error("Claude OAuth token must be a non-empty string");
+  const fmt = validateClaudeOAuthTokenFormat(trimmed);
+  if (!fmt.ok) throw new Error(`refusing to add claude oauth token: ${fmt.detail}`);
+  const pool = loadStoredClaudeOAuthTokenPool(dir);
+  if (pool.some((e) => e.token === trimmed)) {
+    throw new Error("this token is already in the pool");
+  }
+  const entry: ClaudeOAuthTokenEntry = {
+    id: randomUUID().slice(0, 8),
+    token: trimmed,
+    addedAt: new Date().toISOString(),
+  };
+  if (label?.trim()) entry.label = label.trim();
+  await persistClaudeOAuthTokenPool([...pool, entry], dir);
+  return { id: entry.id };
+}
+
+/** Remove one token by id. Refuses to drop the last remaining entry (use `auth claude logout`). */
+export async function removeClaudeOAuthTokenFromPool(id: string, dir: string = process.cwd()): Promise<boolean> {
+  const pool = loadStoredClaudeOAuthTokenPool(dir);
+  const idx = pool.findIndex((e) => e.id === id);
+  if (idx === -1) return false;
+  if (pool.length === 1) {
+    throw new Error("refusing to remove the last token — use `irida auth claude logout` to clear it entirely");
+  }
+  await persistClaudeOAuthTokenPool(pool.filter((e) => e.id !== id), dir);
+  return true;
+}
+
+/**
+ * Manually select a token: moves it to the front (making it the sticky active
+ * entry) and clears any prior invalid mark — an operator picking a token by id
+ * is asserting it's good now (e.g. after refreshing it out of band).
+ */
+export async function useClaudeOAuthTokenInPool(id: string, dir: string = process.cwd()): Promise<boolean> {
+  const pool = loadStoredClaudeOAuthTokenPool(dir);
+  const idx = pool.findIndex((e) => e.id === id);
+  if (idx === -1) return false;
+  const rest = [...pool];
+  const [entry] = rest.splice(idx, 1);
+  const revived: ClaudeOAuthTokenEntry = { ...entry!, invalidAt: undefined };
+  await persistClaudeOAuthTokenPool([revived, ...rest], dir);
+  return true;
+}
+
+/**
+ * Mark the pool entry matching this exact token value as invalid (auth error
+ * attributed to it). Returns false when the token isn't found in the stored
+ * pool (e.g. it came from the CLAUDE_CODE_OAUTH_TOKEN env override, or was
+ * already marked) — callers should treat that as "nothing to rotate to".
+ */
+export async function markClaudeOAuthTokenInvalid(token: string, dir: string = process.cwd()): Promise<boolean> {
+  const trimmed = token.trim();
+  if (!trimmed) return false;
+  const pool = loadStoredClaudeOAuthTokenPool(dir);
+  const idx = pool.findIndex((e) => e.token === trimmed && !e.invalidAt);
+  if (idx === -1) return false;
+  const next = [...pool];
+  next[idx] = { ...next[idx]!, invalidAt: new Date().toISOString() };
+  await persistClaudeOAuthTokenPool(next, dir);
   return true;
 }
 
