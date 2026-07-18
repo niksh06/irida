@@ -130,10 +130,18 @@ export function isOverloadErrorText(text: string | null | undefined): boolean {
  * exceptions, exported so the run-RESULT error path (chatEngine.ts, `is_error`
  * result messages never reach the catch) can recognize the same failures and
  * attempt a Claude OAuth token pool rotation (I-169) before giving up.
+ *
+ * `organization has disabled|ask your admin` added from a real I-169 pool
+ * test (2026-07-18): an account-level org policy block ("Your organization
+ * has disabled Claude subscription access for Claude Code") doesn't contain
+ * any of "authentication/unauthorized/oauth/expired/..." at all — a token
+ * pool exists precisely to fail over past exactly this kind of per-account
+ * restriction, so it needs its own classification, not just literal
+ * credential corruption/expiry.
  */
 export function isAuthErrorText(text: string | null | undefined): boolean {
   if (!text) return false;
-  return /invalid api key|authentication|unauthorized|\bnot logged in\b|oauth|\/login|expired|credit balance/i.test(
+  return /invalid api key|authentication|unauthorized|\bnot logged in\b|oauth|\/login|expired|credit balance|organization has disabled|ask your admin/i.test(
     text
   );
 }

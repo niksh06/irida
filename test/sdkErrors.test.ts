@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { formatSdkError, consumeRunStream, isAgentRotatableError } from "../src/sdkErrors.js";
+import { formatSdkError, consumeRunStream, isAgentRotatableError, isAuthErrorText } from "../src/sdkErrors.js";
 import { openChatSession } from "../src/chatEngine.js";
 import type { RunLike, SdkCreateLike } from "../src/host.js";
 
@@ -44,6 +44,15 @@ describe("formatSdkError", () => {
     assert.equal(out.recoverable, true);
     assert.equal(out.rotatable, false);
     assert.match(out.message, /ANTHROPIC_API_KEY|claude login/);
+  });
+
+  it("classifies an org-policy account block as auth (I-169 live finding, 2026-07-18)", () => {
+    const raw =
+      "Your organization has disabled Claude subscription access for Claude Code · Use an Anthropic API key instead, or ask your admin to enable access";
+    assert.equal(isAuthErrorText(raw), true);
+    const out = formatSdkError(new Error(raw));
+    assert.equal(out.errorKind, "auth");
+    assert.equal(out.rotatable, false); // still non-rotatable via the generic path — I-169 pool rotation is a separate, additive hook in chatEngine.ts
   });
 
   it("classifies rotatable vs auth", () => {
