@@ -46,6 +46,12 @@ import {
   buildCursorDistillQueue,
   formatDistillQueueMarkdown,
 } from "./cursorTranscriptDistill.js";
+import {
+  CLAUDE_CODE_TRANSCRIPT_WING,
+  CLAUDE_CODE_LESSON_WING,
+  CODEX_TRANSCRIPT_WING,
+  CODEX_LESSON_WING,
+} from "./memoryWings.js";
 import { resolveCronScriptPath, runCronGate, runCronScript } from "./cronScript.js";
 import {
   applyContextFromPlaceholder,
@@ -247,6 +253,52 @@ export async function executeCronJob(
         ok: false,
         exitCode: EXIT.software,
         message: `cursor-distill-backfill-queue failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "claude-code-distill-backfill-queue") {
+    try {
+      const out = await buildCursorDistillQueue(configDir, {
+        limit: 10,
+        backfill: true,
+        archiveWing: CLAUDE_CODE_TRANSCRIPT_WING,
+      });
+      const markdown = formatDistillQueueMarkdown(out, { lessonWing: CLAUDE_CODE_LESSON_WING });
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `claude-code-distill-backfill-queue: ${out.candidates.length} candidate(s) (${out.skipped} skipped)`,
+        output: markdown,
+        silent: out.candidates.length === 0,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `claude-code-distill-backfill-queue failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  if (job.builtin === "codex-distill-backfill-queue") {
+    try {
+      const out = await buildCursorDistillQueue(configDir, {
+        limit: 10,
+        backfill: true,
+        archiveWing: CODEX_TRANSCRIPT_WING,
+      });
+      const markdown = formatDistillQueueMarkdown(out, { lessonWing: CODEX_LESSON_WING });
+      return withDuration(started, {
+        ok: true,
+        exitCode: EXIT.ok,
+        message: `codex-distill-backfill-queue: ${out.candidates.length} candidate(s) (${out.skipped} skipped)`,
+        output: markdown,
+        silent: out.candidates.length === 0,
+      });
+    } catch (e) {
+      return withDuration(started, {
+        ok: false,
+        exitCode: EXIT.software,
+        message: `codex-distill-backfill-queue failed: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }

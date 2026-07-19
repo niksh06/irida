@@ -1,0 +1,20 @@
+[cron:codex-lesson-backfill]
+
+Codex transcript distill backfill batch (I-162, mirrors I-65 cursor-lesson-backfill). Follow skill **codex-lesson-ops**.
+
+Distill queue (from upstream `codex-distill-backfill-queue`):
+
+{{context_from}}
+
+If the queue says empty — reply "codex-lesson backfill: queue empty" and stop (no memory_save).
+
+For each queued source (max 10 per run):
+
+1. `memory_get` the source note (`codex.*`, wing `codex`).
+2. **`memory_save` upsert** — use the queue **Lesson name** exactly (e.g. `lesson.codex.<uuid>`), wing `codex-lesson`. If Reason=`stale`, overwrite; never invent a new name.
+3. OKF Playbook body per `deploy/prompts/cursor-lesson.template.md` (YAML frontmatter + sections) — replace `wing: cursor-lesson` → `wing: codex-lesson` and `source: cursor.<uuid>` → `source: codex.<uuid>`.
+4. Optional: up to **3** `memory_fact_add` triples (`subject=codex_lesson`, `predicate=<lesson name>`, `object=<decision>`).
+
+Profile patches are proposals only — never save to wing `meta`. Do not write files under `deploy/prompts/`.
+
+No code changes, no cron edits, no git. HITL: user approves profile patches and may delete weak lessons.

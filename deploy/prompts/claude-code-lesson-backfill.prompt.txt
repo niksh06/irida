@@ -1,0 +1,20 @@
+[cron:claude-code-lesson-backfill]
+
+Claude Code transcript distill backfill batch (I-162, mirrors I-65 cursor-lesson-backfill). Follow skill **claude-code-lesson-ops**.
+
+Distill queue (from upstream `claude-code-distill-backfill-queue`):
+
+{{context_from}}
+
+If the queue says empty — reply "claude-code-lesson backfill: queue empty" and stop (no memory_save).
+
+For each queued source (max 10 per run):
+
+1. `memory_get` the source note (`cc.*`, wing `claude-code`).
+2. **`memory_save` upsert** — use the queue **Lesson name** exactly (e.g. `lesson.cc.<uuid>`), wing `claude-code-lesson`. If Reason=`stale`, overwrite; never invent a new name.
+3. OKF Playbook body per `deploy/prompts/cursor-lesson.template.md` (YAML frontmatter + sections) — replace `wing: cursor-lesson` → `wing: claude-code-lesson` and `source: cursor.<uuid>` → `source: cc.<uuid>`.
+4. Optional: up to **3** `memory_fact_add` triples (`subject=claude_code_lesson`, `predicate=<lesson name>`, `object=<decision>`).
+
+Profile patches are proposals only — never save to wing `meta`. Do not write files under `deploy/prompts/`.
+
+No code changes, no cron edits, no git. HITL: user approves profile patches and may delete weak lessons.
