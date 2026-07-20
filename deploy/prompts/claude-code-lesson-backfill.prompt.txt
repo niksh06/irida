@@ -1,6 +1,6 @@
 [cron:claude-code-lesson-backfill]
 
-Claude Code transcript distill backfill batch (I-162, mirrors I-65 cursor-lesson-backfill). Follow skill **claude-code-lesson-ops**.
+Claude Code transcript distill backfill batch (I-162, mirrors I-65 cursor-lesson-backfill). Follow skill **claude-code-lesson-ops** — including its **Grounding** section: every specific claim (number, root cause, "who did X," how it was resolved) must be traceable to literal text in the source archive, or it does not go in the lesson. Do not pattern-match a plausible-sounding incident onto a vague situation. This was audited on the first batch and ~50% of claims were fabricated — that failure mode is what this rule exists to stop.
 
 Distill queue (from upstream `claude-code-distill-backfill-queue`):
 
