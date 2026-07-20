@@ -25,7 +25,7 @@ import { autoRagMemoryBlocks } from "./autoRag.js";
 import { buildPreTurnBlocks } from "./preTurn.js";
 import { redact } from "./redact.js";
 import { newId, preview, resultPreview, nowIso, sleep } from "./util.js";
-import { formatSdkError, isOverloadErrorText, OVERLOAD_RETRY_DELAYS_MS } from "./sdkErrors.js";
+import { formatSdkError, isAuthErrorText, isOverloadErrorText, OVERLOAD_RETRY_DELAYS_MS } from "./sdkErrors.js";
 import { EXIT, type ExitCode } from "./exit.js";
 import {
   API_KEY_HELP,
@@ -33,6 +33,7 @@ import {
   resolveApiKey,
   resolveAnthropicKey,
   resolveClaudeOAuthToken,
+  markClaudeOAuthTokenInvalid,
 } from "./credentials.js";
 import { formatErrorDetail } from "./runErrorDetail.js";
 import { buildRunLogMeta } from "./runContext.js";
@@ -217,6 +218,26 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
     // One-shot overload retry (H-10, parity with I-133 in chat): a transient
     // 529/429/503 must not fail a cron/delegate run that a 5s wait would save.
     const overloadDelays = opts.overloadRetryDelaysMs ?? OVERLOAD_RETRY_DELAYS_MS;
+    // Auth-failure pool rotation (I-169 parity): runPrompt is the one-shot path
+    // used by cron/delegate callers — chatEngine.ts's tryRotateOnAuthFailure only
+    // covers interactive chat sessions, so a cron job on an org-blocked account
+    // token fails outright (exit 70) instead of failing over to the next pool
+    // entry, same as an interactive turn would. One rotation attempt per run;
+    // sdk.prompt() takes apiKey per-call (see engines/claudeAgentSdk.ts), so
+    // retrying with a revised apiKey needs no session/sdk recreation.
+    let rotated = false;
+    const tryRotateOnAuthFailure = async (): Promise<boolean> => {
+      if (provider !== "claude-agent" || authMode !== "account" || !apiKey || rotated) return false;
+      const invalidated = await markClaudeOAuthTokenInvalid(apiKey, dir);
+      if (!invalidated) return false;
+      const revised = resolveClaudeOAuthToken(dir).key;
+      if (!revised || revised === apiKey) return false;
+      if (!quiet) console.error("run: claude oauth token invalidated (auth error) — rotating to next pool entry");
+      apiKey = revised;
+      rotated = true;
+      return true;
+    };
+
     let r!: Awaited<ReturnType<typeof runOneShot>>;
     for (let attempt = 0; ; attempt++) {
       try {
@@ -229,12 +250,18 @@ export async function runPrompt(prompt: string, opts: RunOptions = {}): Promise<
           disallowedTools: opts.disallowedTools,
         });
       } catch (e) {
+        if (e instanceof StartupError && isAuthErrorText(e.message) && (await tryRotateOnAuthFailure())) {
+          continue;
+        }
         if (attempt < overloadDelays.length && formatSdkError(e).errorKind === "overload") {
           if (!quiet) console.error(`run: overload retry attempt=${attempt + 1} delayMs=${overloadDelays[attempt]}`);
           await sleep(overloadDelays[attempt]!);
           continue;
         }
         throw e;
+      }
+      if (r.status === "error" && isAuthErrorText(r.text) && (await tryRotateOnAuthFailure())) {
+        continue;
       }
       if (r.status === "error" && attempt < overloadDelays.length && isOverloadErrorText(r.text)) {
         if (!quiet) console.error(`run: overload retry attempt=${attempt + 1} delayMs=${overloadDelays[attempt]}`);
